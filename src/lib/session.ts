@@ -8,8 +8,26 @@ export type RequestSession = {
   error: string;
   elapsed: number;
   sentFingerprint: string;
+  view: RequestView;
 };
+export type RequestView = {
+  requestTab: string;
+  responseTab: string;
+  pretty: boolean;
+  wrap: boolean;
+  responseScroll: number;
+};
+export const createView = (): RequestView => ({
+  requestTab: "query",
+  responseTab: "body",
+  pretty: true,
+  wrap: false,
+  responseScroll: 0,
+});
 let sequence = 0;
+export function reserveSessionId(id: number) {
+  sequence = Math.max(sequence, id);
+}
 export function draftFingerprint(draft: Draft) {
   const rows = (items: Draft["query"]) =>
     items.map(({ key, value, enabled }) => ({ key, value, enabled }));
@@ -43,6 +61,7 @@ export function createSession(source?: Draft): RequestSession {
     error: "",
     elapsed: 0,
     sentFingerprint: "",
+    view: createView(),
   };
 }
 export function sessionLabel(session: RequestSession) {

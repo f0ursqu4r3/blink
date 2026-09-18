@@ -1,7 +1,23 @@
 <script setup lang="ts">
-import { computed } from "vue";
+import { computed, ref, watch, nextTick } from "vue";
 import { JSON_HIGHLIGHT_LIMIT } from "@/lib/json";
-const props = defineProps<{ text: string; json?: boolean; wrap?: boolean }>();
+const props = defineProps<{
+  text: string;
+  json?: boolean;
+  wrap?: boolean;
+  active?: boolean;
+}>();
+const scroll = defineModel<number>("scroll", { default: 0 });
+const element = ref<HTMLElement>();
+watch([element, () => props.active, () => props.text], async () => {
+  await nextTick();
+  if (element.value && props.active !== false)
+    element.value.scrollTop = scroll.value;
+});
+function saveScroll() {
+  if (element.value && props.active !== false)
+    scroll.value = element.value.scrollTop;
+}
 const lines = computed(() =>
   Array.from({ length: props.text.split("\n").length }, (_, i) => i + 1).join(
     "\n",
@@ -38,6 +54,8 @@ const tokens = computed(() => {
 <template>
   <div
     class="code-view"
+    ref="element"
+    @scroll.passive="saveScroll"
     :class="{ wrapped: wrap }"
     tabindex="0"
     aria-label="Response body"

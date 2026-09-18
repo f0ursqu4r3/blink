@@ -1,8 +1,9 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import App from "../App.vue";
 
 const wrappers: ReturnType<typeof mount>[] = [];
+beforeEach(() => localStorage.clear());
 function render() {
   const app = mount(App, { attachTo: document.body });
   wrappers.push(app);

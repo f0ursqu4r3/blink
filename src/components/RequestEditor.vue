@@ -9,7 +9,7 @@ import { formatJson } from "@/lib/json";
 const draft = defineModel<Draft>({ required: true });
 defineProps<{ busy: boolean }>();
 const id = useId();
-const tab = ref("query");
+const tab = defineModel<string>("tab", { default: "query" });
 const formatError = ref("");
 const bodyPlaceholder = computed(() =>
   draft.value.bodyMode === "json" ? '{\n  "key": "value"\n}' : "Request body",

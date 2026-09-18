@@ -116,14 +116,41 @@ fn network_error(error: reqwest::Error) -> String {
     }
 }
 
+mod app_state;
 #[cfg(test)]
 mod request_tests;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    use tauri::Manager;
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
-        .invoke_handler(tauri::generate_handler![send_request])
-        .run(tauri::generate_context!())
-        .expect("error while running Blink");
+        .plugin(tauri_plugin_window_state::Builder::default().build())
+        .setup(|app| {
+            app.manage(app_state::AppState::new(app.path().app_data_dir()?));
+            Ok(())
+        })
+        .on_window_event(|window, event| {
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if app_state::request_exit(window.app_handle()) {
+                    api.prevent_close();
+                }
+            }
+        })
+        .invoke_handler(tauri::generate_handler![
+            send_request,
+            app_state::load_app_state,
+            app_state::save_app_state,
+            app_state::app_state_ready,
+            app_state::finish_app_exit
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building Blink")
+        .run(|app, event| {
+            if let tauri::RunEvent::ExitRequested { api, .. } = event {
+                if app_state::request_exit(app) {
+                    api.prevent_exit();
+                }
+            }
+        });
 }

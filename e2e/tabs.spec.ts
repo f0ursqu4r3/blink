@@ -131,10 +131,10 @@ test("keyboard new, switch, duplicate and close remain scoped to requests", asyn
   await expect(tabs).toHaveCount(2);
   expect(
     await page.evaluate(() => ({
-      local: localStorage.length,
+      local: localStorage.getItem("blink.workspace.v1") !== null,
       session: sessionStorage.length,
     })),
-  ).toEqual({ local: 0, session: 0 });
+  ).toEqual({ local: true, session: 0 });
 });
 
 test("tab switches preserve response scrolling and send only the active request", async ({

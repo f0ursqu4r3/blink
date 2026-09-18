@@ -143,8 +143,14 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       <p v-if="copyError" role="alert">{{ copyError }}</p>
     </section>
     <div class="panels">
-      <RequestEditor v-model="session.draft" :busy="session.busy" />
+      <RequestEditor
+        v-model="session.draft"
+        v-model:tab="session.view.requestTab"
+        :busy="session.busy"
+      />
       <ResponsePanel
+        v-model:view="session.view"
+        :active="active"
         :response="session.response"
         :busy="session.busy"
         :error="session.error"

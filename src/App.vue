@@ -1,19 +1,27 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { CopyPlus, LockKeyhole, ScanLine } from "lucide-vue-next";
+import { CopyPlus, HardDrive, ScanLine } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestTabs from "@/components/RequestTabs.vue";
 import RequestWorkspace from "@/components/RequestWorkspace.vue";
-import {
-  createSession,
-  hasDraft,
-  sessionLabel,
-  type RequestSession,
-} from "@/lib/session";
+import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
+import { useWorkspaceState } from "@/composables/useWorkspaceState";
+import { createSession, hasDraft, sessionLabel } from "@/lib/session";
 import { nativeTransport } from "@/lib/transport";
 
-const sessions = ref<RequestSession[]>([createSession()]);
-const activeId = ref(sessions.value[0].id);
+const {
+  sessions,
+  activeId,
+  ready,
+  closing,
+  error: storageError,
+  status: storageStatus,
+  exitBlocked,
+  restore,
+  flush,
+  reset,
+  quitWithoutSaving,
+} = useWorkspaceState();
 const active = computed(() =>
   sessions.value.find((session) => session.id === activeId.value)!,
 );
@@ -33,6 +41,7 @@ function cancelClose() {
   document.getElementById(`request-tab-${activeId.value}`)?.focus();
 }
 function create(duplicate = false) {
+  if (!ready.value) return;
   const session = createSession(duplicate ? active.value.draft : undefined);
   sessions.value.push(session);
   select(session.id);
@@ -55,6 +64,7 @@ async function close(id: number, confirmed = false) {
   document.getElementById(`request-tab-${activeId.value}`)?.focus();
 }
 function onKey(event: KeyboardEvent) {
+  if (!ready.value || closing.value) return;
   if (
     event.isComposing ||
     event.repeat ||
@@ -100,7 +110,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <template>
-  <main class="console-shell">
+  <main class="console-shell" :inert="closing || undefined">
     <header class="console-header">
       <div class="brand">
         <span class="brand-mark"
@@ -116,6 +126,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         <Button
           variant="ghost"
           data-duplicate-request
+          :disabled="!ready"
           aria-label="Duplicate request"
           title="Duplicate request · Cmd/Ctrl+Shift+D"
           @click="create(true)"
@@ -126,7 +137,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         >
       </div>
     </header>
+    <WorkspaceStorageNotice
+      :error="storageError"
+      :ready="ready"
+      :exit-blocked="exitBlocked"
+      @retry="ready ? flush() : restore()"
+      @reset="reset"
+      @quit="quitWithoutSaving"
+    />
     <RequestTabs
+      v-if="ready"
       :sessions="sessions"
       :active-id="activeId"
       @select="select"
@@ -155,14 +175,17 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       >
     </div>
     <RequestWorkspace
-      v-for="session in sessions"
+      v-for="session in ready ? sessions : []"
       :key="session.id"
       :session="session"
       :active="session.id === activeId"
     />
     <footer class="console-footer">
-      <span class="privacy-label"
-        ><LockKeyhole :size="11" aria-hidden="true" />MEMORY ONLY</span
+      <span
+        class="privacy-label"
+        role="status"
+        title="Saved on this device, including credentials and response content. Not encrypted."
+        ><HardDrive :size="11" aria-hidden="true" />{{ storageStatus }}</span
       >
       <span
         >{{ sessions.length }}

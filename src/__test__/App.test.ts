@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
 import App from "../App.vue";
+beforeEach(() => localStorage.clear());
 
 const wrappers: ReturnType<typeof mount>[] = [];
 function render() {

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, ref, watch, useId } from "vue";
+import { computed, watch, useId } from "vue";
+import { createView, type RequestView } from "@/lib/session";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
 import {
   Check,
@@ -19,11 +20,28 @@ const props = defineProps<{
   error: string;
   elapsed: number;
   stale?: boolean;
+  active?: boolean;
 }>();
 const headingId = useId();
-const tab = ref("body");
-const pretty = ref(true);
-const wrap = ref(false);
+const view = defineModel<RequestView>("view", { default: createView });
+const tab = computed({
+  get: () => view.value.responseTab,
+  set: (responseTab) => {
+    view.value = { ...view.value, responseTab };
+  },
+});
+const pretty = computed({
+  get: () => view.value.pretty,
+  set: (pretty) => {
+    view.value = { ...view.value, pretty };
+  },
+});
+const wrap = computed({
+  get: () => view.value.wrap,
+  set: (wrap) => {
+    view.value = { ...view.value, wrap };
+  },
+});
 const { copied, copyError, copy } = useClipboard();
 const parsed = computed(() => {
   if (!props.response) return null;
@@ -57,6 +75,7 @@ watch(
   () => props.response,
   () => {
     tab.value = "body";
+    view.value.responseScroll = 0;
   },
 );
 function copyResult() {
@@ -145,6 +164,8 @@ function copyResult() {
         <p v-if="copyError" role="alert" class="copy-error">{{ copyError }}</p>
         <TabsContent value="body" class="body-content">
           <CodeView
+            v-model:scroll="view.responseScroll"
+            :active="active !== false && tab === 'body'"
             v-if="response.body"
             :text="text"
             :json="Boolean(parsed) && pretty"

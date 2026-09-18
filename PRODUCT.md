@@ -18,7 +18,8 @@ compact, inspectable workspace instead of a project-management tool.
 ## Design principles
 
 - Make the request path the primary control surface.
-- Keep all request data local and in memory for the current session.
+- Keep request data local. Restore the current session without cloud sync.
+- Disclose that saved drafts, credentials, and responses are not encrypted.
 - Show protocol facts with clear labels and tabular alignment.
 - Use a quiet desktop workspace that supports sustained technical work.
 

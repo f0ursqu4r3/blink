@@ -37,6 +37,9 @@ export type ApiResponse = {
   sizeBytes: number;
 };
 let nextId = 0;
+export function reservePairId(id: number) {
+  nextId = Math.max(nextId, id);
+}
 export const pair = (key = "", value = ""): Pair => ({
   id: ++nextId,
   key,

@@ -45,5 +45,8 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Mark responses as previous when their request draft changes after sending.
 - Keep body/header tabs keyboard-accessible with visible focus indicators.
 - Render response content as text. Never execute or embed response HTML.
-- Store no request history, credentials, or drafts between launches.
+- Restore the current open tabs, drafts, responses, and view settings locally.
+  Never replay interrupted requests or build an implicit request history.
+- Make saving and storage failures visible. Preserve corrupt snapshots until
+  the user explicitly replaces them. Disclose local plaintext credentials.
 - Explain browser limitations; use native HTTP for unrestricted inspection.
