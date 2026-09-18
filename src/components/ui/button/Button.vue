@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { computed } from "vue";
+import { Primitive } from "reka-ui";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
 
 const buttonVariants = cva(
-  "inline-flex h-9 items-center justify-center gap-2 rounded-md px-3 text-sm font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-cyan-400 disabled:pointer-events-none disabled:opacity-45",
+  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-xs px-2.5 font-mono text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 [@media(pointer:coarse)]:min-h-11",
   {
     variants: {
       variant: {
-        default: "bg-cyan-400 text-slate-950 hover:bg-cyan-300 active:bg-cyan-500",
+        default:
+          "border border-primary bg-primary text-primary-foreground hover:bg-primary/90 active:bg-primary/80",
         secondary:
-          "border border-slate-700 bg-slate-900 text-slate-200 hover:border-slate-600 hover:bg-slate-800 active:bg-slate-700",
-        ghost: "text-slate-400 hover:bg-slate-800 hover:text-slate-100 active:bg-slate-700",
+          "border border-input bg-secondary text-foreground hover:bg-accent active:bg-muted",
+        ghost:
+          "border border-transparent text-muted-foreground hover:bg-accent hover:text-foreground active:bg-muted",
       },
     },
     defaultVariants: {
@@ -29,11 +32,19 @@ const props = defineProps<{
   variant?: ButtonVariants["variant"];
 }>();
 
-const buttonClass = computed(() => cn(buttonVariants({ variant: props.variant }), props.class));
+const buttonClass = computed(() =>
+  cn(buttonVariants({ variant: props.variant }), props.class),
+);
 </script>
 
 <template>
-  <button :class="buttonClass" :disabled="disabled" :type="type ?? 'button'">
+  <Primitive
+    as="button"
+    :class="buttonClass"
+    :disabled="disabled"
+    :type="type ?? 'button'"
+    :data-variant="variant ?? 'default'"
+  >
     <slot />
-  </button>
+  </Primitive>
 </template>

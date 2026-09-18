@@ -1,7 +1,9 @@
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use reqwest::{header::HeaderName, header::HeaderValue, Client, Method};
 use serde::{Deserialize, Serialize};
+
+const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -26,14 +28,35 @@ struct ResponseOutput {
     duration_ms: u128,
     headers: Vec<HeaderInput>,
     body: String,
+    size_bytes: usize,
 }
 
 #[tauri::command]
 async fn send_request(request: RequestInput) -> Result<ResponseOutput, String> {
+    let url = reqwest::Url::parse(&request.url)
+        .map_err(|_| "Enter an absolute HTTP or HTTPS URL.".to_string())?;
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Only HTTP and HTTPS URLs are supported.".to_string());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("Use the Auth tab instead of credentials in the URL.".to_string());
+    }
+    if !matches!(
+        request.method.as_str(),
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+    ) {
+        return Err("Unsupported HTTP method.".to_string());
+    }
     let method = Method::from_bytes(request.method.as_bytes())
         .map_err(|_| format!("Unsupported HTTP method: {}", request.method))?;
-    let client = Client::new();
-    let mut builder = client.request(method, &request.url);
+    let has_body = method != Method::GET && method != Method::HEAD;
+    let client = Client::builder()
+        .timeout(Duration::from_secs(30))
+        .connect_timeout(Duration::from_secs(10))
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .map_err(|error| error.without_url().to_string())?;
+    let mut builder = client.request(method, url);
 
     for header in request.headers {
         if header.key.trim().is_empty() {
@@ -42,21 +65,19 @@ async fn send_request(request: RequestInput) -> Result<ResponseOutput, String> {
 
         let name = HeaderName::from_bytes(header.key.trim().as_bytes())
             .map_err(|_| format!("Invalid header name: {}", header.key))?;
-        let value = HeaderValue::from_str(header.value.trim())
+        let value = HeaderValue::from_str(&header.value)
             .map_err(|_| format!("Invalid value for header: {}", header.key))?;
         builder = builder.header(name, value);
     }
 
-    if let Some(body) = request.body.filter(|body| !body.is_empty()) {
-        builder = builder.body(body);
+    if has_body {
+        if let Some(body) = request.body {
+            builder = builder.body(body);
+        }
     }
 
     let started_at = Instant::now();
-    let response = builder
-        .send()
-        .await
-        .map_err(|error| format!("Network request failed: {error}"))?;
-    let duration_ms = started_at.elapsed().as_millis();
+    let mut response = builder.send().await.map_err(network_error)?;
     let status = response.status();
     let headers = response
         .headers()
@@ -66,10 +87,16 @@ async fn send_request(request: RequestInput) -> Result<ResponseOutput, String> {
             value: value.to_str().unwrap_or("[binary value]").to_string(),
         })
         .collect();
-    let body = response
-        .text()
-        .await
-        .map_err(|error| format!("Could not read response body: {error}"))?;
+    let mut bytes = Vec::new();
+    while let Some(chunk) = response.chunk().await.map_err(network_error)? {
+        if bytes.len() + chunk.len() > RESPONSE_LIMIT {
+            return Err("Response exceeds the 4 MiB inspection limit.".to_string());
+        }
+        bytes.extend_from_slice(&chunk);
+    }
+    let duration_ms = started_at.elapsed().as_millis();
+    let size_bytes = bytes.len();
+    let body = String::from_utf8_lossy(&bytes).into_owned();
 
     Ok(ResponseOutput {
         status: status.as_u16(),
@@ -77,8 +104,20 @@ async fn send_request(request: RequestInput) -> Result<ResponseOutput, String> {
         duration_ms,
         headers,
         body,
+        size_bytes,
     })
 }
+
+fn network_error(error: reqwest::Error) -> String {
+    if error.is_timeout() {
+        "Request timed out (10 s connection / 30 s total limit).".to_string()
+    } else {
+        format!("Network request failed: {}", error.without_url())
+    }
+}
+
+#[cfg(test)]
+mod request_tests;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
