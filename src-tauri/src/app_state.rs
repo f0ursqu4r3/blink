@@ -55,8 +55,11 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
     }
     let value: serde_json::Value =
         serde_json::from_str(content).map_err(|_| "Workspace data is not valid JSON.")?;
-    if value.get("version").and_then(|v| v.as_u64()) != Some(1)
+    let version = value.get("version").and_then(|v| v.as_u64());
+    let supports_groups = version == Some(2) && value.get("groups").is_some_and(|v| v.is_array());
+    if !matches!(version, Some(1) | Some(2))
         || !value.get("tabs").is_some_and(|v| v.is_array())
+        || (version == Some(2) && !supports_groups)
     {
         return Err("Unsupported workspace format.".into());
     }
@@ -139,6 +142,8 @@ mod tests {
     use super::*;
     const FIRST: &str = r#"{"version":1,"activeId":1,"tabs":[{"name":"first"}]}"#;
     const SECOND: &str = r#"{"version":1,"activeId":2,"tabs":[{"name":"second"}]}"#;
+    const GROUPED: &str =
+        "{\"version\":2,\"activeId\":1,\"groups\":[],\"tabs\":[{\"name\":\"grouped\"}]}";
     #[test]
     fn round_trip_and_atomic_replace() {
         let dir = tempfile::tempdir().unwrap();
@@ -148,6 +153,8 @@ mod tests {
         assert_eq!(load(&path).unwrap().as_deref(), Some(FIRST));
         save(&path, SECOND).unwrap();
         assert_eq!(load(&path).unwrap().as_deref(), Some(SECOND));
+        save(&path, GROUPED).unwrap();
+        assert_eq!(load(&path).unwrap().as_deref(), Some(GROUPED));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -163,7 +170,7 @@ mod tests {
         let path = dir.path().join(FILE_NAME);
         save(&path, FIRST).unwrap();
         assert!(save(&path, "invalid").is_err());
-        assert!(save(&path, r#"{"version":2,"tabs":[]}"#).is_err());
+        assert!(save(&path, "{\"version\":3,\"tabs\":[]}").is_err());
         assert_eq!(load(&path).unwrap().as_deref(), Some(FIRST));
     }
     #[test]

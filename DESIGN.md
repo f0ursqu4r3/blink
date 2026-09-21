@@ -16,9 +16,10 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
   metrics, and compact uppercase section labels. System sans-serif for tabs
   and explanatory text. No web font requests.
 - **Layout:** A compact 36-pixel request tab strip and 34-pixel URL control
-  above two bordered panels. Request at
-  42%, response at 58%. No navigation rail, cards, collections, or workspaces.
-  Below 760 pixels, panels stack without hiding core request controls.
+  sit beside a 244-pixel Browser sidebar. The Browser lists ungrouped requests
+  and nested groups. Request and response panels use the remaining width at
+  42% and 58%. Below 760 pixels, panels stack without hiding core request
+  controls.
 - **Shape:** Mostly square surfaces. Use a 2-pixel radius for controls.
 - **Density:** Small icon-and-label controls. No floating toolbars, large
   buttons, repeated summaries, or redundant metadata badges.
@@ -40,6 +41,9 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Preserve background sends across tab switches. Never write a completed
   response to whichever tab happens to be active.
 - Duplicate draft values, not object references. Do not duplicate responses.
+- Keep the Browser sidebar visible. Groups can nest. Creating or duplicating a
+  request places it in the active request's group. Deleting a group moves its
+  requests to the parent and promotes direct child groups.
 - Keep the add-tab action visible when the tab strip overflows. Support
   keyboard selection, protected closing, and a usable final blank tab.
 - Mark responses as previous when their request draft changes after sending.

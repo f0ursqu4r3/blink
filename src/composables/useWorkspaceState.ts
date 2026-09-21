@@ -2,6 +2,11 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createSession, type RequestSession } from "@/lib/session";
+import {
+  createGroup,
+  deleteGroupAndPromoteContents,
+  type RequestGroup,
+} from "@/lib/groups";
 import { nativeTransport } from "@/lib/transport";
 import {
   decodeWorkspace,
@@ -18,6 +23,7 @@ import {
 
 export function useWorkspaceState() {
   const sessions = ref<RequestSession[]>([createSession()]);
+  const groups = ref<RequestGroup[]>([]);
   const activeId = ref(sessions.value[0].id);
   const ready = ref(false);
   const error = ref("");
@@ -40,6 +46,7 @@ export function useWorkspaceState() {
     if (content !== null) {
       const restored = decodeWorkspace(content);
       sessions.value = restored.sessions;
+      groups.value = restored.groups;
       activeId.value = restored.activeId;
     }
     error.value = "";
@@ -71,7 +78,9 @@ export function useWorkspaceState() {
     const current = ++revision;
     saving.value = true;
     try {
-      await writer.save(encodeWorkspace(sessions.value, activeId.value));
+      await writer.save(
+        encodeWorkspace(sessions.value, activeId.value, groups.value),
+      );
       if (current === revision) error.value = "";
       return true;
     } catch (cause) {
@@ -84,7 +93,9 @@ export function useWorkspaceState() {
   // Do not observe elapsed time. A running request must not cause timer-driven disk writes.
   watch(
     () =>
-      ready.value ? encodeWorkspace(sessions.value, activeId.value) : null,
+      ready.value
+        ? encodeWorkspace(sessions.value, activeId.value, groups.value)
+        : null,
     () => {
       if (ready.value && sessions.value.length) void flush();
     },
@@ -92,8 +103,9 @@ export function useWorkspaceState() {
   async function reset() {
     const session = createSession();
     try {
-      await writer.save(encodeWorkspace([session], session.id));
+      await writer.save(encodeWorkspace([session], session.id, []));
       sessions.value = [session];
+      groups.value = [];
       activeId.value = session.id;
       error.value = "";
       ready.value = true;
@@ -115,20 +127,26 @@ export function useWorkspaceState() {
     }
     let snapshot: string;
     do {
-      snapshot = encodeWorkspace(sessions.value, activeId.value);
+      snapshot = encodeWorkspace(sessions.value, activeId.value, groups.value);
       if (!(await flush())) {
         exitBlocked.value = true;
         closing.value = false;
         return;
       }
       await nextTick();
-    } while (snapshot !== encodeWorkspace(sessions.value, activeId.value));
+    } while (
+      snapshot !== encodeWorkspace(sessions.value, activeId.value, groups.value)
+    );
     await quitWithoutSaving();
   }
   function beforeUnload(event: BeforeUnloadEvent) {
     if (ready.value) {
       try {
-        const content = encodeWorkspace(sessions.value, activeId.value);
+        const content = encodeWorkspace(
+          sessions.value,
+          activeId.value,
+          groups.value,
+        );
         validateWorkspace(content);
         localStorage.setItem(WORKSPACE_KEY, content);
         error.value = "";
@@ -161,8 +179,38 @@ export function useWorkspaceState() {
       void invoke("app_state_ready", { ready: false }).catch(() => {});
     window.removeEventListener("beforeunload", beforeUnload);
   });
+  function addGroup(name: string, parentId: number | null) {
+    groups.value.push(createGroup(name, parentId));
+  }
+  function renameGroup(id: number, name: string) {
+    const group = groups.value.find((candidate) => candidate.id === id);
+    if (group && name.trim()) group.name = name.trim();
+  }
+  function toggleGroup(id: number) {
+    const group = groups.value.find((candidate) => candidate.id === id);
+    if (group) group.collapsed = !group.collapsed;
+  }
+  function moveRequest(sessionId: number, groupId: number | null) {
+    const session = sessions.value.find(
+      (candidate) => candidate.id === sessionId,
+    );
+    if (!session) return;
+    if (groupId !== null && !groups.value.some((group) => group.id === groupId))
+      return;
+    session.groupId = groupId;
+  }
+  function deleteGroup(id: number) {
+    const result = deleteGroupAndPromoteContents(
+      groups.value,
+      sessions.value,
+      id,
+    );
+    groups.value = result.groups;
+    sessions.value = result.sessions;
+  }
   return {
     sessions,
+    groups,
     activeId,
     ready,
     closing,
@@ -173,5 +221,10 @@ export function useWorkspaceState() {
     flush,
     reset,
     quitWithoutSaving,
+    addGroup,
+    renameGroup,
+    toggleGroup,
+    moveRequest,
+    deleteGroup,
   };
 }

@@ -28,6 +28,23 @@ describe("compact request console", () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  it("organizes the active request in a browser group", async () => {
+    const app = render();
+
+    await app.get('[aria-label="Add top-level group"]').trigger("click");
+    await app.get('[aria-label="Top-level group name"]').setValue("Platform");
+    await app.get(".top-level-form").trigger("submit");
+    await app
+      .get('[aria-label="Move active request to Platform"]')
+      .trigger("click");
+
+    expect(
+      app
+        .get('[aria-label="Move active request to Platform"]')
+        .attributes("disabled"),
+    ).toBeDefined();
+  });
+
   it("sends a GET without a body and exposes actual response headers", async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response('{"ok":true}', {

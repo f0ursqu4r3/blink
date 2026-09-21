@@ -2,6 +2,7 @@ import { createDraft, pair, type Draft, type ApiResponse } from "./request";
 
 export type RequestSession = {
   id: number;
+  groupId: number | null;
   draft: Draft;
   response: ApiResponse | null;
   busy: boolean;
@@ -49,6 +50,7 @@ export function createSession(source?: Draft): RequestSession {
     rows.map((row) => ({ ...pair(row.key, row.value), enabled: row.enabled }));
   return {
     id: ++sequence,
+    groupId: null,
     draft: source
       ? {
           ...source,

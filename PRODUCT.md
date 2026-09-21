@@ -7,8 +7,8 @@ product
 ## Product purpose
 
 Blink is a fast, private desktop REST API client for one-off requests. It
-helps developers send, inspect, and debug API calls without accounts,
-workspaces, saved collections, or cloud sync.
+helps developers send, inspect, and debug API calls without accounts or cloud
+sync. Its local Browser sidebar keeps temporary request tabs organized.
 
 ## Users
 

@@ -1,12 +1,21 @@
 import { methods, reservePairId } from "./request";
 import { reserveSessionId, type RequestSession } from "./session";
+import { reserveGroupId, type RequestGroup } from "./groups";
 
 export const WORKSPACE_KEY = "blink.workspace.v1";
 export const MAX_STATE_BYTES = 64 * 1024 * 1024;
-type StoredTab = Omit<RequestSession, "busy" | "elapsed"> & {
+type StoredTab = Omit<RequestSession, "busy" | "elapsed" | "groupId"> & {
   interrupted: boolean;
+  groupId?: number | null;
 };
-type Snapshot = { version: 1; activeId: number; tabs: StoredTab[] };
+type SnapshotV1 = { version: 1; activeId: number; tabs: StoredTab[] };
+type SnapshotV2 = {
+  version: 2;
+  activeId: number;
+  tabs: StoredTab[];
+  groups: RequestGroup[];
+};
+type Snapshot = SnapshotV1 | SnapshotV2;
 const invalid = () =>
   new Error(
     "Saved workspace is invalid or from an unsupported version. It has not been changed.",
@@ -72,6 +81,34 @@ function validateResponse(input: unknown) {
     check(text(header.key) && text(header.value));
   }
 }
+function validateGroups(input: unknown): RequestGroup[] {
+  const groups = array(input, 128).map((value) => {
+    const group = record(value);
+    check(
+      id(group.id) &&
+        text(group.name) &&
+        group.name.trim().length > 0 &&
+        group.name.length <= 80 &&
+        (group.parentId === null || id(group.parentId)) &&
+        typeof group.collapsed === "boolean",
+    );
+    return group as unknown as RequestGroup;
+  });
+  const byId = new Map(groups.map((group) => [group.id, group]));
+  check(byId.size === groups.length);
+  for (const group of groups) {
+    const visited = new Set<number>([group.id]);
+    let parentId = group.parentId;
+    while (parentId !== null) {
+      check(!visited.has(parentId));
+      visited.add(parentId);
+      const parent = byId.get(parentId);
+      check(parent);
+      parentId = parent.parentId;
+    }
+  }
+  return groups;
+}
 function parseSnapshot(content: string): Snapshot {
   if (
     content.length > MAX_STATE_BYTES ||
@@ -87,7 +124,7 @@ function parseSnapshot(content: string): Snapshot {
     throw invalid();
   }
   const data = record(raw);
-  check(data.version === 1 && id(data.activeId));
+  check((data.version === 1 || data.version === 2) && id(data.activeId));
   const tabs = array(data.tabs, 128);
   check(tabs.length > 0);
   const ids = new Set();
@@ -97,6 +134,7 @@ function parseSnapshot(content: string): Snapshot {
     ids.add(tab.id);
     validateDraft(tab.draft);
     validateResponse(tab.response);
+    check(tab.groupId === undefined || tab.groupId === null || id(tab.groupId));
     check(
       text(tab.error) &&
         text(tab.sentFingerprint) &&
@@ -114,18 +152,38 @@ function parseSnapshot(content: string): Snapshot {
     );
   }
   check(ids.has(data.activeId));
+  if (data.version === 2) {
+    const groups = validateGroups(data.groups);
+    const groupIds = new Set(groups.map((group) => group.id));
+    for (const item of tabs) {
+      const tab = record(item);
+      check(tab.groupId === null || groupIds.has(tab.groupId as number));
+    }
+  }
   return raw as Snapshot;
 }
 export function encodeWorkspace(
   sessions: RequestSession[],
   activeId: number,
+  groups: RequestGroup[] = [],
 ): string {
   return JSON.stringify({
-    version: 1,
+    version: 2,
     activeId,
+    groups,
     tabs: sessions.map(
-      ({ id, draft, response, error, sentFingerprint, view, busy }) => ({
+      ({
         id,
+        groupId,
+        draft,
+        response,
+        error,
+        sentFingerprint,
+        view,
+        busy,
+      }) => ({
+        id,
+        groupId,
         draft,
         response,
         error,
@@ -142,8 +200,9 @@ export function validateWorkspace(content: string) {
 export function decodeWorkspace(content: string) {
   const data = parseSnapshot(content);
   const sessions: RequestSession[] = data.tabs.map(
-    ({ interrupted, ...tab }) => ({
+    ({ interrupted, groupId = null, ...tab }) => ({
       ...tab,
+      groupId,
       busy: false,
       elapsed: 0,
       error: interrupted
@@ -157,5 +216,7 @@ export function decodeWorkspace(content: string) {
       reservePairId(row.id),
     );
   }
-  return { sessions, activeId: data.activeId };
+  const groups = data.version === 2 ? data.groups : [];
+  for (const group of groups) reserveGroupId(group.id);
+  return { sessions, activeId: data.activeId, groups };
 }

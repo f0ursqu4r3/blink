@@ -33,6 +33,33 @@ describe("durable workspace snapshots", () => {
     });
     expect(createSession().id).toBeGreaterThan(second.id);
   });
+  it("round-trips nested groups and request membership", () => {
+    const first = createSession();
+    const second = createSession();
+    const workspace = JSON.parse(encodeWorkspace([first, second], first.id));
+    workspace.groups = [
+      { id: 1, name: "Platform", parentId: null, collapsed: false },
+      { id: 2, name: "Identity", parentId: 1, collapsed: true },
+    ];
+    workspace.tabs[0].groupId = 2;
+    workspace.version = 2;
+
+    const result = decodeWorkspace(JSON.stringify(workspace));
+
+    expect(result.groups).toEqual(workspace.groups);
+    expect(result.sessions[0].groupId).toBe(2);
+  });
+  it("migrates version 1 snapshots into the ungrouped browser section", () => {
+    const session = createSession();
+    const legacy = JSON.parse(encodeWorkspace([session], session.id));
+    legacy.version = 1;
+    delete legacy.groups;
+    delete legacy.tabs[0].groupId;
+    const result = decodeWorkspace(JSON.stringify(legacy));
+
+    expect(result.groups).toEqual([]);
+    expect(result.sessions[0].groupId).toBeNull();
+  });
   it("restores interrupted requests as idle errors without replaying them", () => {
     const session = createSession();
     session.busy = true;

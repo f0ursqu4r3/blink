@@ -1,13 +1,16 @@
 # Blink
 
 Blink is a fast, private REST API client for one-off requests. It runs as a
-Tauri desktop app. It does not require an account, workspace, collection, or
-cloud service.
+Tauri desktop app. It does not require an account or cloud service. The local
+Browser sidebar organizes the request tabs in the current session.
 
 ## Included
 
 - Open independent request tabs with the `+` button. Each tab retains its
-  draft, response, editor selection, wrapping, and scroll position.
+  draft, response, editor selection, wrapping, scroll position, and Browser
+  group.
+- Use the Browser sidebar to create, nest, collapse, rename, and delete groups.
+  Move the active request to any group or back to Ungrouped.
 - Run requests in the background while working in another tab.
 - Duplicate a complete draft without copying its response or sending it.
 - See methods, endpoint paths, hosts, and request status in compact tabs.
@@ -46,10 +49,27 @@ In the request tab strip, use Left/Right, Home/End, and Delete to select or
 close tabs. Escape dismisses the close confirmation or cURL preview. Browser
 hosts can reserve shortcuts; the native Tauri app is the primary target.
 
+## Browser groups
+
+The Browser sidebar is a local tree for the open request tabs. Select a request
+in the tree to make it active. Select the move action beside a group to place the
+active request there. Use the Browser move action to return it to Ungrouped.
+
+Groups can nest to any depth. The Browser indents the first levels and keeps
+later levels usable in the same compact tree. Use a group row to create a child,
+rename it, collapse it, or delete it. Deleting a group does not discard requests:
+its direct requests move to the parent, and its direct child groups are promoted
+to that parent.
+
+New and duplicated request tabs start in the active request's group. This makes
+related endpoint work stay together without creating request history or sharing
+it outside this device.
+
 ## Local state and privacy
 
-Blink saves tab order, the active tab, complete request drafts, responses,
-errors, editor tabs, Pretty/Raw mode, wrapping, and response scroll position.
+Blink saves tab order, groups, group hierarchy, request membership, the active
+tab, complete request drafts, responses, errors, editor tabs, Pretty/Raw mode,
+wrapping, and response scroll position.
 The desktop app also restores window size and position. Closing the window
 or quitting waits for the latest workspace save. Interrupted requests restore
 as idle tabs with an explanation; Blink never replays them automatically.
@@ -66,7 +86,9 @@ On macOS, the snapshot is stored at
 `~/Library/Application Support/com.kyle.blink/workspace-v1.json`.
 Other desktop systems use Tauri's application data directory. Native saves
 write a temporary file, sync it, then replace the snapshot atomically.
-The versioned format supports up to 128 tabs and a 64 MiB total snapshot.
+The versioned format supports up to 128 tabs, 128 groups, and a 64 MiB total
+snapshot. Existing version 1 snapshots restore into Ungrouped and become version
+2 only after Blink saves the changed session.
 
 The footer reports saving and failure states. Failed saves preserve the
 previous snapshot and expose Retry. A corrupt or unsupported snapshot is

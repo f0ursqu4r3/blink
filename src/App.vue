@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { CopyPlus, HardDrive, ScanLine } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestTabs from "@/components/RequestTabs.vue";
+import RequestBrowser from "@/components/RequestBrowser.vue";
 import RequestWorkspace from "@/components/RequestWorkspace.vue";
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
@@ -11,6 +12,7 @@ import { nativeTransport } from "@/lib/transport";
 
 const {
   sessions,
+  groups,
   activeId,
   ready,
   closing,
@@ -21,6 +23,11 @@ const {
   flush,
   reset,
   quitWithoutSaving,
+  addGroup,
+  renameGroup,
+  toggleGroup,
+  moveRequest,
+  deleteGroup,
 } = useWorkspaceState();
 const active = computed(() =>
   sessions.value.find((session) => session.id === activeId.value)!,
@@ -42,7 +49,9 @@ function cancelClose() {
 }
 function create(duplicate = false) {
   if (!ready.value) return;
-  const session = createSession(duplicate ? active.value.draft : undefined);
+  const groupId = active.value?.groupId ?? null;
+  const session = createSession(duplicate ? active.value?.draft : undefined);
+  session.groupId = groupId;
   sessions.value.push(session);
   select(session.id);
 }
@@ -145,41 +154,55 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       @reset="reset"
       @quit="quitWithoutSaving"
     />
-    <RequestTabs
-      v-if="ready"
-      :sessions="sessions"
-      :active-id="activeId"
-      @select="select"
-      @create="create()"
-      @close="close"
-    />
-    <div
-      v-if="closeTarget"
-      class="close-confirmation"
-      role="group"
-      aria-label="Confirm close request"
-    >
-      <p>
-        Discard <strong>{{ sessionLabel(closeTarget) }}</strong
-        >?
-      </p>
-      <Button variant="ghost" data-cancel-close @click="cancelClose"
-        >Keep open</Button
-      >
-      <Button
-        variant="secondary"
-        data-confirm-close
-        :disabled="closeTarget.busy"
-        @click="close(closeTarget.id, true)"
-        >Discard tab</Button
-      >
+    <div v-if="ready" class="console-content">
+      <RequestBrowser
+        :sessions="sessions"
+        :active-id="activeId"
+        :groups="groups"
+        @select="select"
+        @create-group="addGroup"
+        @rename-group="renameGroup"
+        @toggle-group="toggleGroup"
+        @move-request="moveRequest"
+        @delete-group="deleteGroup"
+      />
+      <div class="workspace-content">
+        <RequestTabs
+          :sessions="sessions"
+          :active-id="activeId"
+          @select="select"
+          @create="create()"
+          @close="close"
+        />
+        <div
+          v-if="closeTarget"
+          class="close-confirmation"
+          role="group"
+          aria-label="Confirm close request"
+        >
+          <p>
+            Discard <strong>{{ sessionLabel(closeTarget) }}</strong
+            >?
+          </p>
+          <Button variant="ghost" data-cancel-close @click="cancelClose"
+            >Keep open</Button
+          >
+          <Button
+            variant="secondary"
+            data-confirm-close
+            :disabled="closeTarget.busy"
+            @click="close(closeTarget.id, true)"
+            >Discard tab</Button
+          >
+        </div>
+        <RequestWorkspace
+          v-for="session in sessions"
+          :key="session.id"
+          :session="session"
+          :active="session.id === activeId"
+        />
+      </div>
     </div>
-    <RequestWorkspace
-      v-for="session in ready ? sessions : []"
-      :key="session.id"
-      :session="session"
-      :active="session.id === activeId"
-    />
     <footer class="console-footer">
       <span
         class="privacy-label"
@@ -209,6 +232,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   display: flex;
   flex-direction: column;
   border-top: 2px solid var(--primary);
+}
+.console-content,
+.workspace-content {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+}
+.workspace-content {
+  flex-direction: column;
 }
 .console-header {
   height: 42px;
