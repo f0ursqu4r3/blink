@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { nextTick, onMounted, onUnmounted, ref } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { ArrowUpRight, Check, ChevronDown, Terminal } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestEditor from "./RequestEditor.vue";
@@ -13,8 +13,33 @@ const { prepared, curl, stale, send } = useRequestRunner(props.session);
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
 const urlInput = ref<HTMLInputElement>();
+const workspace = ref<HTMLElement>();
+const requestPanelWidth = ref(420);
+const resizing = ref(false);
 const prefix = `request-${props.session.id}`;
 const shortcut = /Mac/i.test(navigator.platform) ? "⌘" : "Ctrl";
+const minimumPanelWidth = 280;
+const minimumResponseWidth = 340;
+const resizeHandleWidth = 8;
+const maximumPanelWidth = computed(() =>
+  Math.max(
+    minimumPanelWidth,
+    (workspace.value?.clientWidth ?? 900) -
+      minimumResponseWidth -
+      resizeHandleWidth,
+  ),
+);
+const panelWidth = computed(() =>
+  Math.round(
+    Math.min(
+      maximumPanelWidth.value,
+      Math.max(minimumPanelWidth, requestPanelWidth.value),
+    ),
+  ),
+);
+const panelStyle = computed(() => ({
+  "--request-panel-width": `${panelWidth.value}px`,
+}));
 async function focusUrl() {
   await nextTick();
   urlInput.value?.focus();
@@ -44,11 +69,48 @@ onMounted(() => {
   window.addEventListener("keydown", onKey);
   if (props.active) void focusUrl();
 });
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+onUnmounted(() => {
+  window.removeEventListener("keydown", onKey);
+  stopResize();
+});
+
+function setPanelWidth(width: number) {
+  requestPanelWidth.value = Math.min(
+    maximumPanelWidth.value,
+    Math.max(minimumPanelWidth, width),
+  );
+}
+function resizePointer(event: PointerEvent) {
+  setPanelWidth(
+    event.clientX - (workspace.value?.getBoundingClientRect().left ?? 0),
+  );
+}
+function stopResize() {
+  resizing.value = false;
+  window.removeEventListener("pointermove", resizePointer);
+  window.removeEventListener("pointerup", stopResize);
+}
+function startResize(event: PointerEvent) {
+  if (event.button !== 0) return;
+  event.preventDefault();
+  resizing.value = true;
+  window.addEventListener("pointermove", resizePointer);
+  window.addEventListener("pointerup", stopResize, { once: true });
+}
+function resizeWithKeyboard(event: KeyboardEvent) {
+  const step = event.shiftKey ? 48 : 16;
+  if (event.key === "ArrowLeft") setPanelWidth(panelWidth.value - step);
+  else if (event.key === "ArrowRight") setPanelWidth(panelWidth.value + step);
+  else if (event.key === "Home") setPanelWidth(minimumPanelWidth);
+  else if (event.key === "End") setPanelWidth(maximumPanelWidth.value);
+  else return;
+  event.preventDefault();
+}
 </script>
 
 <template>
   <section
+    ref="workspace"
     class="request-workspace"
     data-request-pane
     :data-active="active"
@@ -142,11 +204,24 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       <pre tabindex="0">{{ curl }}</pre>
       <p v-if="copyError" role="alert">{{ copyError }}</p>
     </section>
-    <div class="panels">
+    <div class="panels" :class="{ resizing }" :style="panelStyle">
       <RequestEditor
         v-model="session.draft"
         v-model:tab="session.view.requestTab"
         :busy="session.busy"
+      />
+      <div
+        class="panel-resize"
+        data-panel-resize
+        role="separator"
+        aria-label="Resize panels"
+        aria-orientation="vertical"
+        :aria-valuemin="minimumPanelWidth"
+        :aria-valuemax="maximumPanelWidth"
+        :aria-valuenow="panelWidth"
+        tabindex="0"
+        @pointerdown="startResize"
+        @keydown="resizeWithKeyboard"
       />
       <ResponsePanel
         v-model:view="session.view"
@@ -275,14 +350,42 @@ kbd {
 }
 .panels {
   display: grid;
-  grid-template-columns: minmax(300px, 0.85fr) minmax(340px, 1.15fr);
+  grid-template-columns: minmax(280px, var(--request-panel-width)) 8px minmax(
+      340px,
+      1fr
+    );
   min-height: 0;
   flex: 1;
 }
 .panels > :first-child {
   border-right: 1px solid var(--border);
 }
-@media (max-width: 760px) {
+.panel-resize {
+  position: relative;
+  z-index: 1;
+  margin: 0 -3px;
+  cursor: col-resize;
+  outline-offset: -2px;
+}
+.panel-resize::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 3px;
+  width: 1px;
+  background: var(--border);
+  content: "";
+}
+.panel-resize:hover::after,
+.panel-resize:focus-visible::after,
+.panels.resizing .panel-resize::after {
+  width: 2px;
+  background: var(--primary);
+}
+.panels.resizing {
+  user-select: none;
+}
+@media (max-width: 900px) {
   .panels {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -291,6 +394,9 @@ kbd {
     border-bottom: 1px solid var(--border);
     min-height: 300px;
     max-height: 480px;
+  }
+  .panel-resize {
+    display: none;
   }
   .panels > :last-child {
     min-height: 360px;

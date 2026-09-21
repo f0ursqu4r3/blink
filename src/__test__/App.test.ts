@@ -45,6 +45,19 @@ describe("compact request console", () => {
     ).toBeDefined();
   });
 
+  it("collapses and restores the request browser", async () => {
+    const app = render();
+    const toggle = app.get('[aria-label="Collapse request browser"]');
+
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+    await toggle.trigger("click");
+
+    expect(app.get('[aria-label="Expand request browser"]')).toBeTruthy();
+    expect(app.get("[data-request-browser]").attributes("data-collapsed")).toBe(
+      "true",
+    );
+  });
+
   it("sends a GET without a body and exposes actual response headers", async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response('{"ok":true}', {

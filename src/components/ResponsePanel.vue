@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, watch, useId } from "vue";
+import { computed, ref, useId, watch } from "vue";
 import { createView, type RequestView } from "@/lib/session";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
 import {
@@ -7,13 +7,18 @@ import {
   Copy,
   Crosshair,
   AlertTriangle,
+  Search,
   WrapText,
+  X,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import { formatBytes, type ApiResponse } from "@/lib/request";
 import { useClipboard } from "@/composables/useClipboard";
 import { formatJson, JSON_HIGHLIGHT_LIMIT } from "@/lib/json";
+import { runJq } from "@/lib/jq";
+import { responseLanguage } from "@/lib/response-content";
 import CodeView from "./CodeView.vue";
+import JsonTreeView from "./JsonTreeView.vue";
 const props = defineProps<{
   response: ApiResponse | null;
   busy: boolean;
@@ -43,7 +48,11 @@ const wrap = computed({
   },
 });
 const { copied, copyError, copy } = useClipboard();
-const parsed = computed(() => {
+const search = ref("");
+const jqQuery = ref("");
+const jqOutput = ref<string | null>(null);
+const jqError = ref("");
+const sourceParsed = computed(() => {
   if (!props.response) return null;
   try {
     return { text: formatJson(props.response.body) };
@@ -51,10 +60,19 @@ const parsed = computed(() => {
     return null;
   }
 });
+const parsed = computed(() => {
+  const body = jqOutput.value ?? props.response?.body;
+  if (body === undefined) return null;
+  try {
+    return { text: formatJson(body) };
+  } catch {
+    return null;
+  }
+});
 const text = computed(() =>
   pretty.value && parsed.value
     ? parsed.value.text
-    : (props.response?.body ?? ""),
+    : (jqOutput.value ?? props.response?.body ?? ""),
 );
 const contentType = computed(
   () =>
@@ -62,6 +80,17 @@ const contentType = computed(
       .find((header) => header.key.toLowerCase() === "content-type")
       ?.value.split(";")[0] ?? "No Content-Type",
 );
+const language = computed(() =>
+  parsed.value ? "json" : responseLanguage(contentType.value),
+);
+const showJsonTree = computed(() => pretty.value && Boolean(parsed.value));
+const filteredHeaders = computed(() => {
+  const query = search.value.trim().toLocaleLowerCase();
+  if (!query) return props.response?.headers ?? [];
+  return (props.response?.headers ?? []).filter(({ key, value }) =>
+    `${key}: ${value}`.toLocaleLowerCase().includes(query),
+  );
+});
 const tone = computed(() =>
   !props.response
     ? ""
@@ -76,6 +105,10 @@ watch(
   () => {
     tab.value = "body";
     view.value.responseScroll = 0;
+    search.value = "";
+    jqQuery.value = "";
+    jqOutput.value = null;
+    jqError.value = "";
   },
 );
 function copyResult() {
@@ -86,6 +119,16 @@ function copyResult() {
           .join("\n") ?? "")
       : text.value,
   );
+}
+async function executeJq() {
+  if (!props.response || !jqQuery.value.trim()) return;
+  jqError.value = "";
+  try {
+    jqOutput.value = await runJq(props.response.body, jqQuery.value);
+    view.value.responseScroll = 0;
+  } catch (error) {
+    jqError.value = error instanceof Error ? error.message : "jq query failed.";
+  }
 }
 </script>
 
@@ -161,14 +204,67 @@ function copyResult() {
             /></Button>
           </div>
         </div>
+        <div v-if="tab === 'body'" class="response-inspector">
+          <label class="response-search">
+            <Search :size="13" aria-hidden="true" />
+            <span class="sr-only">Filter response</span>
+            <input
+              v-model="search"
+              data-response-search
+              type="search"
+              placeholder="Filter response"
+              autocomplete="off"
+            />
+          </label>
+          <form
+            v-if="sourceParsed"
+            class="jq-query"
+            aria-label="jq query"
+            @submit.prevent="executeJq"
+          >
+            <input
+              v-model="jqQuery"
+              data-response-jq
+              placeholder="jq query, e.g. .items[]"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <Button
+              type="submit"
+              variant="ghost"
+              data-run-jq
+              :disabled="!jqQuery.trim()"
+              >Run jq</Button
+            >
+            <Button
+              v-if="jqOutput !== null"
+              type="button"
+              variant="ghost"
+              class="size-7 shrink-0 p-0"
+              aria-label="Clear jq result"
+              title="Clear jq result"
+              @click="jqOutput = null"
+              ><X :size="14" aria-hidden="true"
+            /></Button>
+          </form>
+        </div>
         <p v-if="copyError" role="alert" class="copy-error">{{ copyError }}</p>
+        <p v-if="jqError" role="alert" class="copy-error">{{ jqError }}</p>
         <TabsContent value="body" class="body-content">
-          <CodeView
+          <JsonTreeView
             v-model:scroll="view.responseScroll"
             :active="active !== false && tab === 'body'"
-            v-if="response.body"
+            v-if="response.body && showJsonTree"
             :text="text"
-            :json="Boolean(parsed) && pretty"
+            :filter="search"
+          />
+          <CodeView
+            v-else-if="response.body"
+            v-model:scroll="view.responseScroll"
+            :active="active !== false && tab === 'body'"
+            :text="text"
+            :language="language"
+            :filter="search"
             :wrap="wrap"
           />
           <p v-else class="empty-body">Empty response body.</p>
@@ -182,14 +278,14 @@ function copyResult() {
               </tr>
             </thead>
             <tbody>
-              <tr v-for="(header, index) in response.headers" :key="index">
+              <tr v-for="(header, index) in filteredHeaders" :key="index">
                 <td>{{ header.key }}</td>
                 <td>{{ header.value }}</td>
               </tr>
             </tbody>
           </table>
-          <p v-if="!response.headers.length" class="empty-body">
-            No visible response headers.
+          <p v-if="!filteredHeaders.length" class="empty-body">
+            No response headers match this filter.
           </p>
         </TabsContent>
       </TabsRoot>
@@ -198,13 +294,15 @@ function copyResult() {
         ><span
           v-if="
             tab === 'body' &&
-            parsed &&
             pretty &&
+            text &&
             text.length > JSON_HIGHLIGHT_LIMIT
           "
-          title="Syntax highlighting is disabled above 64,000 characters. Pretty formatting remains active."
+          title="Full syntax highlighting is disabled above 64,000 characters. The virtualized JSON tree remains available."
           >HIGHLIGHT OFF · LARGE BODY</span
-        ><span v-else>UTF-8 VIEW</span>
+        ><span v-else>{{
+          jqOutput !== null ? "JQ OUTPUT" : "UTF-8 VIEW"
+        }}</span>
       </footer>
     </template>
     <div v-else-if="error" class="error-state" role="alert">
@@ -324,6 +422,50 @@ h2 span {
 .response-actions {
   display: flex;
   align-items: center;
+}
+.response-inspector {
+  display: flex;
+  min-height: 38px;
+  gap: 8px;
+  padding: 5px 8px;
+  border-bottom: 1px solid var(--border);
+  background: var(--muted);
+}
+.response-search,
+.jq-query {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--input);
+  background: var(--background);
+}
+.response-search {
+  flex: 1 1 180px;
+  padding-left: 8px;
+  color: var(--muted-foreground);
+}
+.response-search:focus-within,
+.jq-query:focus-within {
+  border-color: var(--primary);
+}
+.response-search input,
+.jq-query input {
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  border: 0;
+  border-radius: 0;
+  padding: 0 7px;
+  background: transparent;
+  font: 0.6875rem var(--font-mono);
+}
+.jq-query {
+  flex: 1 1 260px;
+}
+.jq-query > button {
+  flex: none;
+  white-space: nowrap;
 }
 .tab-trigger {
   height: 38px;
@@ -478,6 +620,15 @@ h3 {
 @media (pointer: coarse) {
   .tab-trigger {
     min-height: 44px;
+  }
+}
+@media (max-width: 680px) {
+  .response-inspector {
+    flex-direction: column;
+  }
+  .response-search,
+  .jq-query {
+    flex-basis: 34px;
   }
 }
 </style>

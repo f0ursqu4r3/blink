@@ -6,6 +6,8 @@ import {
   Folder,
   FolderPlus,
   MoveRight,
+  PanelLeftClose,
+  PanelLeftOpen,
   Pencil,
   Plus,
   Trash2,
@@ -17,6 +19,7 @@ const props = defineProps<{
   sessions: RequestSession[];
   activeId: number;
   groups: RequestGroup[];
+  collapsed?: boolean;
 }>();
 const emit = defineEmits<{
   select: [id: number];
@@ -25,6 +28,7 @@ const emit = defineEmits<{
   toggleGroup: [id: number];
   moveRequest: [sessionId: number, groupId: number | null];
   deleteGroup: [id: number];
+  toggleSidebar: [];
 }>();
 
 type BrowserRow =
@@ -108,13 +112,34 @@ function parentName(parentId: number | null) {
 </script>
 
 <template>
-  <aside class="request-browser" aria-label="Request browser">
+  <aside
+    class="request-browser"
+    data-request-browser
+    :data-collapsed="Boolean(collapsed)"
+    :aria-label="collapsed ? 'Request browser collapsed' : 'Request browser'"
+  >
     <header class="browser-header">
-      <div>
+      <div v-if="!collapsed">
         <span class="browser-eyebrow">BROWSER</span>
         <strong>REQUESTS</strong>
       </div>
       <button
+        type="button"
+        class="browser-action sidebar-toggle"
+        :aria-label="
+          collapsed ? 'Expand request browser' : 'Collapse request browser'
+        "
+        :aria-expanded="!collapsed"
+        :title="
+          collapsed ? 'Expand request browser' : 'Collapse request browser'
+        "
+        @click="emit('toggleSidebar')"
+      >
+        <PanelLeftOpen v-if="collapsed" :size="14" aria-hidden="true" />
+        <PanelLeftClose v-else :size="14" aria-hidden="true" />
+      </button>
+      <button
+        v-if="!collapsed"
         type="button"
         class="browser-action"
         aria-label="Add top-level group"
@@ -126,7 +151,7 @@ function parentName(parentId: number | null) {
     </header>
 
     <form
-      v-if="creatingParent === null"
+      v-if="!collapsed && creatingParent === null"
       class="browser-form top-level-form"
       @submit.prevent="submitCreate"
     >
@@ -151,7 +176,7 @@ function parentName(parentId: number | null) {
       </button>
     </form>
 
-    <div class="browser-tree">
+    <div v-if="!collapsed" class="browser-tree">
       <div class="browser-root-row">
         <span class="browser-root-label">UNGROUPED</span>
         <button
@@ -341,6 +366,10 @@ function parentName(parentId: number | null) {
   background: var(--muted);
   overflow: hidden;
 }
+.request-browser[data-collapsed="true"] {
+  width: 42px;
+  min-width: 42px;
+}
 .browser-header {
   display: flex;
   height: 42px;
@@ -348,6 +377,10 @@ function parentName(parentId: number | null) {
   justify-content: space-between;
   padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--border);
+}
+.request-browser[data-collapsed="true"] .browser-header {
+  justify-content: center;
+  padding: 0;
 }
 .browser-header > div {
   display: flex;
@@ -408,6 +441,12 @@ function parentName(parentId: number | null) {
   height: 22px;
   flex: none;
   color: var(--muted-foreground);
+}
+.sidebar-toggle {
+  margin-left: auto;
+}
+.request-browser[data-collapsed="true"] .sidebar-toggle {
+  margin-left: 0;
 }
 .tree-toggle:hover,
 .browser-action:hover:not(:disabled) {
@@ -558,6 +597,11 @@ function parentName(parentId: number | null) {
   .browser-group-row,
   .browser-request {
     min-height: 38px;
+  }
+}
+@media (max-width: 760px) {
+  .request-browser {
+    display: none;
   }
 }
 </style>

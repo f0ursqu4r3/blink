@@ -33,6 +33,7 @@ const active = computed(() =>
   sessions.value.find((session) => session.id === activeId.value)!,
 );
 const pendingClose = ref<number | null>(null);
+const sidebarCollapsed = ref(false);
 const closeTarget = computed(() =>
   sessions.value.find((session) => session.id === pendingClose.value),
 );
@@ -159,12 +160,14 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         :sessions="sessions"
         :active-id="activeId"
         :groups="groups"
+        :collapsed="sidebarCollapsed"
         @select="select"
         @create-group="addGroup"
         @rename-group="renameGroup"
         @toggle-group="toggleGroup"
         @move-request="moveRequest"
         @delete-group="deleteGroup"
+        @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
       />
       <div class="workspace-content">
         <RequestTabs

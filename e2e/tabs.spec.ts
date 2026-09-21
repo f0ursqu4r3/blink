@@ -164,12 +164,13 @@ test("tab switches preserve response scrolling and send only the active request"
     .fill("https://example.test/first");
   await pane.getByLabel("Request URL", { exact: true }).press("Control+Enter");
   await expect(pane.locator("[data-response-status]")).toBeVisible();
-  await pane.locator(".code-view").evaluate((element) => {
+  const responseScroller = pane.locator("[data-json-tree], .code-view");
+  await responseScroller.evaluate((element) => {
     element.scrollTop = 320;
   });
-  const scroll = await pane
-    .locator(".code-view")
-    .evaluate((element) => element.scrollTop);
+  const scroll = await responseScroller.evaluate(
+    (element) => element.scrollTop,
+  );
   expect(scroll).toBeGreaterThan(0);
   await page.getByRole("button", { name: "New request", exact: true }).click();
   await pane
@@ -183,7 +184,9 @@ test("tab switches preserve response scrolling and send only the active request"
   ]);
   await tabs.first().click();
   expect(
-    await pane.locator(".code-view").evaluate((element) => element.scrollTop),
+    await pane
+      .locator("[data-json-tree], .code-view")
+      .evaluate((element) => element.scrollTop),
   ).toBe(scroll);
 });
 
