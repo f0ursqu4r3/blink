@@ -17,6 +17,7 @@ const props = defineProps<{
   text: string;
   filter?: string;
   active?: boolean;
+  wrap?: boolean;
 }>();
 
 const scroll = defineModel<number>("scroll", { default: 0 });
@@ -135,12 +136,16 @@ function valueClass(value: unknown) {
     return "number";
   return "container";
 }
+function measureRow(node: unknown) {
+  if (node instanceof HTMLElement) virtualizer.value.measureElement(node);
+}
 </script>
 
 <template>
   <div
     ref="element"
     class="json-tree"
+    :class="{ wrapped: wrap }"
     data-json-tree
     data-response-body
     data-virtual-scroller
@@ -156,6 +161,7 @@ function valueClass(value: unknown) {
       <div
         v-for="virtualRow in virtualRows"
         :key="String(virtualRow.key)"
+        :ref="measureRow"
         class="tree-row"
         :data-index="virtualRow.index"
         :style="{
@@ -208,7 +214,7 @@ function valueClass(value: unknown) {
   align-items: center;
   width: max-content;
   min-width: 100%;
-  height: 25px;
+  min-height: 25px;
   gap: 7px;
   white-space: pre;
 }
@@ -240,6 +246,22 @@ function valueClass(value: unknown) {
 }
 .container {
   color: var(--muted-foreground);
+}
+.json-tree.wrapped .tree-canvas {
+  min-width: 0;
+}
+.json-tree.wrapped .tree-row {
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  white-space: pre-wrap;
+}
+.json-tree.wrapped .key,
+.json-tree.wrapped .string,
+.json-tree.wrapped .number,
+.json-tree.wrapped .literal,
+.json-tree.wrapped .container {
+  overflow-wrap: anywhere;
 }
 .empty-tree {
   padding: 16px;

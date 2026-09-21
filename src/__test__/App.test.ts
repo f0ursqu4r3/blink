@@ -58,6 +58,14 @@ describe("compact request console", () => {
     );
   });
 
+  it("keeps the shell free of promotional labels", () => {
+    const app = render();
+
+    expect(app.text()).not.toContain("HTTP OPERATIONS");
+    expect(app.text()).not.toContain("BROWSER PREVIEW");
+    expect(app.text()).not.toContain("Enter an endpoint. Send. Inspect.");
+  });
+
   it("sends a GET without a body and exposes actual response headers", async () => {
     const fetch = vi.fn().mockResolvedValue(
       new Response('{"ok":true}', {

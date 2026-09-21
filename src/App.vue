@@ -8,7 +8,6 @@ import RequestWorkspace from "@/components/RequestWorkspace.vue";
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
 import { createSession, hasDraft, sessionLabel } from "@/lib/session";
-import { nativeTransport } from "@/lib/transport";
 
 const {
   sessions,
@@ -27,6 +26,8 @@ const {
   renameGroup,
   toggleGroup,
   moveRequest,
+  moveRequests,
+  reorderGroup,
   deleteGroup,
 } = useWorkspaceState();
 const active = computed(() =>
@@ -34,6 +35,8 @@ const active = computed(() =>
 );
 const pendingClose = ref<number | null>(null);
 const sidebarCollapsed = ref(false);
+const selectedRequestIds = ref<number[]>([]);
+const selectionAnchorId = ref<number | null>(null);
 const closeTarget = computed(() =>
   sessions.value.find((session) => session.id === pendingClose.value),
 );
@@ -43,6 +46,19 @@ const sending = computed(
 function select(id: number) {
   activeId.value = id;
   pendingClose.value = null;
+  updateSelection([id], id);
+}
+function updateSelection(ids: number[], anchorId: number | null) {
+  selectedRequestIds.value = ids;
+  selectionAnchorId.value = anchorId;
+}
+function createGroup(
+  name: string,
+  parentId: number | null,
+  sessionIds?: number[],
+) {
+  const group = addGroup(name, parentId);
+  if (sessionIds?.length) moveRequests(sessionIds, group.id, null);
 }
 function cancelClose() {
   pendingClose.value = null;
@@ -55,6 +71,7 @@ function create(duplicate = false) {
   session.groupId = groupId;
   sessions.value.push(session);
   select(session.id);
+  updateSelection([session.id], session.id);
 }
 async function close(id: number, confirmed = false) {
   const index = sessions.value.findIndex((session) => session.id === id);
@@ -66,6 +83,10 @@ async function close(id: number, confirmed = false) {
   }
   pendingClose.value = null;
   sessions.value.splice(index, 1);
+  updateSelection(
+    selectedRequestIds.value.filter((selectedId) => selectedId !== id),
+    selectionAnchorId.value === id ? null : selectionAnchorId.value,
+  );
   if (!sessions.value.length) create();
   else if (activeId.value === id)
     activeId.value =
@@ -127,12 +148,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           ><ScanLine :size="19" aria-hidden="true"
         /></span>
         <h1>BLINK</h1>
-        <span class="designation">HTTP OPERATIONS</span>
       </div>
       <div class="header-actions">
-        <span class="transport-mode">{{
-          nativeTransport ? "NATIVE / HTTP" : "WEB / CORS"
-        }}</span>
         <Button
           variant="ghost"
           data-duplicate-request
@@ -161,11 +178,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         :active-id="activeId"
         :groups="groups"
         :collapsed="sidebarCollapsed"
+        :selected-ids="selectedRequestIds"
+        :selection-anchor-id="selectionAnchorId"
         @select="select"
-        @create-group="addGroup"
+        @update-selection="updateSelection"
+        @create-group="createGroup"
         @rename-group="renameGroup"
         @toggle-group="toggleGroup"
         @move-request="moveRequest"
+        @move-requests="moveRequests"
+        @reorder-group="reorderGroup"
         @delete-group="deleteGroup"
         @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
       />
@@ -221,9 +243,6 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         >{{ sending }} SENDING</span
       >
       <span v-else class="limit-note">30 s TIMEOUT · 4 MiB LIMIT</span>
-      <span class="footer-end">{{
-        nativeTransport ? "REDIRECTS OFF" : "BROWSER PREVIEW · CORS APPLIES"
-      }}</span>
     </footer>
   </main>
 </template>
@@ -277,24 +296,12 @@ h1 {
   font-weight: 800;
   letter-spacing: 0.17em;
 }
-.designation {
-  margin-left: 5px;
-  padding-left: 14px;
-  border-left: 1px solid var(--input);
-  font: 0.5625rem var(--font-mono);
-  letter-spacing: 0.13em;
-  color: var(--muted-foreground);
-}
 .header-actions {
   display: flex;
   align-items: center;
   gap: 16px;
 }
-.transport-mode {
-  font: 0.5625rem var(--font-mono);
-  letter-spacing: 0.1em;
-  color: var(--muted-foreground);
-}
+
 .close-confirmation {
   display: flex;
   align-items: center;
@@ -338,16 +345,11 @@ h1 {
 .sending-count {
   color: var(--primary);
 }
-.footer-end {
-  margin-left: auto;
-}
 @media (max-width: 760px) {
   .console-shell {
     height: auto;
     min-height: 100dvh;
   }
-  .designation,
-  .transport-mode,
   .limit-note {
     display: none;
   }

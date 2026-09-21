@@ -180,7 +180,9 @@ export function useWorkspaceState() {
     window.removeEventListener("beforeunload", beforeUnload);
   });
   function addGroup(name: string, parentId: number | null) {
-    groups.value.push(createGroup(name, parentId));
+    const group = createGroup(name, parentId);
+    groups.value.push(group);
+    return group;
   }
   function renameGroup(id: number, name: string) {
     const group = groups.value.find((candidate) => candidate.id === id);
@@ -198,6 +200,58 @@ export function useWorkspaceState() {
     if (groupId !== null && !groups.value.some((group) => group.id === groupId))
       return;
     session.groupId = groupId;
+  }
+  function moveRequests(
+    sessionIds: number[],
+    groupId: number | null,
+    beforeSessionId: number | null,
+  ) {
+    const ids = new Set(sessionIds);
+    if (!ids.size) return;
+    if (groupId !== null && !groups.value.some((group) => group.id === groupId))
+      return;
+
+    const moving = sessions.value.filter((session) => ids.has(session.id));
+    if (!moving.length) return;
+    const remaining = sessions.value.filter((session) => !ids.has(session.id));
+    const beforeIndex =
+      beforeSessionId === null
+        ? -1
+        : remaining.findIndex((session) => session.id === beforeSessionId);
+    const endIndex = remaining.reduce(
+      (index, session, current) =>
+        session.groupId === groupId ? current + 1 : index,
+      -1,
+    );
+    const insertAt = beforeIndex >= 0 ? beforeIndex : endIndex + 1;
+    moving.forEach((session) => {
+      session.groupId = groupId;
+    });
+    remaining.splice(insertAt, 0, ...moving);
+    sessions.value = remaining;
+  }
+  function reorderGroup(groupId: number, beforeGroupId: number) {
+    const sourceIndex = groups.value.findIndex((group) => group.id === groupId);
+    const targetIndex = groups.value.findIndex(
+      (group) => group.id === beforeGroupId,
+    );
+    const source = groups.value[sourceIndex];
+    const target = groups.value[targetIndex];
+    if (
+      !source ||
+      !target ||
+      source.id === target.id ||
+      source.parentId !== target.parentId
+    )
+      return;
+    const next = [...groups.value];
+    next.splice(sourceIndex, 1);
+    next.splice(
+      next.findIndex((group) => group.id === target.id),
+      0,
+      source,
+    );
+    groups.value = next;
   }
   function deleteGroup(id: number) {
     const result = deleteGroupAndPromoteContents(
@@ -225,6 +279,8 @@ export function useWorkspaceState() {
     renameGroup,
     toggleGroup,
     moveRequest,
+    moveRequests,
+    reorderGroup,
     deleteGroup,
   };
 }

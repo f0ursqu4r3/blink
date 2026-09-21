@@ -67,6 +67,9 @@ function saveScroll() {
   if (element.value && props.active !== false)
     scroll.value = element.value.scrollTop;
 }
+function measureRow(node: unknown) {
+  if (node instanceof HTMLElement) virtualizer.value.measureElement(node);
+}
 </script>
 
 <template>
@@ -79,10 +82,24 @@ function saveScroll() {
     aria-label="Response body"
     @scroll.passive="saveScroll"
   >
-    <pre
-      class="source"
+    <pre class="source" :data-language="language"><code
+      class="virtual-canvas"
+      data-response-body
       :data-language="language"
-    ><code class="virtual-canvas" data-response-body :data-language="language" :style="{ height: `${virtualizer.getTotalSize()}px` }"><span v-for="virtualRow in virtualRows" :key="String(virtualRow.key)" class="code-line" :data-index="virtualRow.index" :data-line="lines[virtualRow.index].number" :style="{ transform: `translateY(${virtualRow.start}px)` }"><span class="line-source" v-html="lines[virtualRow.index].html" /></span></code></pre>
+      :style="{ height: `${virtualizer.getTotalSize()}px` }"
+      ><span
+        v-for="virtualRow in virtualRows"
+        :key="String(virtualRow.key)"
+        :ref="measureRow"
+        class="code-line"
+        :data-index="virtualRow.index"
+        :data-line="lines[virtualRow.index].number"
+        :style="{ transform: `translateY(${virtualRow.start}px)` }"
+        ><span
+          class="line-source"
+          v-html="lines[virtualRow.index].html"
+        /></span></code
+    ></pre>
     <p v-if="!lines.length" class="empty-code">
       No response lines match this filter.
     </p>

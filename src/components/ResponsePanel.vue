@@ -1,11 +1,18 @@
 <script setup lang="ts">
-import { computed, ref, useId, watch } from "vue";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  ref,
+  useId,
+  watch,
+} from "vue";
 import { createView, type RequestView } from "@/lib/session";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
 import {
   Check,
   Copy,
-  Crosshair,
   AlertTriangle,
   Search,
   WrapText,
@@ -14,7 +21,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { formatBytes, type ApiResponse } from "@/lib/request";
 import { useClipboard } from "@/composables/useClipboard";
-import { formatJson, JSON_HIGHLIGHT_LIMIT } from "@/lib/json";
+import { formatJson } from "@/lib/json";
 import { runJq } from "@/lib/jq";
 import { responseLanguage } from "@/lib/response-content";
 import CodeView from "./CodeView.vue";
@@ -49,6 +56,8 @@ const wrap = computed({
 });
 const { copied, copyError, copy } = useClipboard();
 const search = ref("");
+const inspectorVisible = ref(false);
+const searchInput = ref<HTMLInputElement | null>(null);
 const jqQuery = ref("");
 const jqOutput = ref<string | null>(null);
 const jqError = ref("");
@@ -106,6 +115,7 @@ watch(
     tab.value = "body";
     view.value.responseScroll = 0;
     search.value = "";
+    inspectorVisible.value = false;
     jqQuery.value = "";
     jqOutput.value = null;
     jqError.value = "";
@@ -130,6 +140,31 @@ async function executeJq() {
     jqError.value = error instanceof Error ? error.message : "jq query failed.";
   }
 }
+function toggleInspector() {
+  inspectorVisible.value = !inspectorVisible.value;
+  if (inspectorVisible.value) void nextTick(() => searchInput.value?.focus());
+  else search.value = "";
+}
+function onKey(event: KeyboardEvent) {
+  if (props.active === false || event.defaultPrevented || event.isComposing)
+    return;
+  if (
+    (event.metaKey || event.ctrlKey) &&
+    !event.shiftKey &&
+    !event.altKey &&
+    event.key.toLowerCase() === "f" &&
+    tab.value === "body"
+  ) {
+    event.preventDefault();
+    if (!inspectorVisible.value) toggleInspector();
+    else void nextTick(() => searchInput.value?.focus());
+  } else if (event.key === "Escape" && inspectorVisible.value) {
+    event.preventDefault();
+    toggleInspector();
+  }
+}
+onMounted(() => window.addEventListener("keydown", onKey));
+onUnmounted(() => window.removeEventListener("keydown", onKey));
 </script>
 
 <template>
@@ -139,7 +174,7 @@ async function executeJq() {
     :aria-busy="busy"
   >
     <header class="panel-heading">
-      <h2 :id="headingId"><span>02</span> Response</h2>
+      <h2 :id="headingId">Response</h2>
       <span class="state-label" role="status">{{
         busy
           ? "RECEIVING"
@@ -192,6 +227,16 @@ async function executeJq() {
               ><WrapText :size="14" aria-hidden="true"
             /></Button>
             <Button
+              v-if="tab === 'body'"
+              variant="ghost"
+              class="size-7 shrink-0 p-0"
+              :aria-pressed="inspectorVisible"
+              aria-label="Find response"
+              title="Find and filter response · Cmd/Ctrl+F"
+              @click="toggleInspector"
+              ><Search :size="14" aria-hidden="true"
+            /></Button>
+            <Button
               variant="ghost"
               class="size-7 shrink-0 p-0"
               :aria-label="copied ? 'Copied response' : 'Copy response'"
@@ -204,11 +249,15 @@ async function executeJq() {
             /></Button>
           </div>
         </div>
-        <div v-if="tab === 'body'" class="response-inspector">
+        <div
+          v-if="tab === 'body' && inspectorVisible"
+          class="response-inspector"
+        >
           <label class="response-search">
             <Search :size="13" aria-hidden="true" />
             <span class="sr-only">Filter response</span>
             <input
+              ref="searchInput"
               v-model="search"
               data-response-search
               type="search"
@@ -257,6 +306,7 @@ async function executeJq() {
             v-if="response.body && showJsonTree"
             :text="text"
             :filter="search"
+            :wrap="wrap"
           />
           <CodeView
             v-else-if="response.body"
@@ -290,26 +340,13 @@ async function executeJq() {
         </TabsContent>
       </TabsRoot>
       <footer class="panel-footer">
-        <span class="truncate">{{ contentType }}</span
-        ><span
-          v-if="
-            tab === 'body' &&
-            pretty &&
-            text &&
-            text.length > JSON_HIGHLIGHT_LIMIT
-          "
-          title="Full syntax highlighting is disabled above 64,000 characters. The virtualized JSON tree remains available."
-          >HIGHLIGHT OFF · LARGE BODY</span
-        ><span v-else>{{
-          jqOutput !== null ? "JQ OUTPUT" : "UTF-8 VIEW"
-        }}</span>
+        <span class="truncate">{{ contentType }}</span>
       </footer>
     </template>
     <div v-else-if="error" class="error-state" role="alert">
       <AlertTriangle :size="22" aria-hidden="true" />
       <h3>REQUEST FAILED</h3>
       <p>{{ error }}</p>
-      <span>Edit the request, then send again.</span>
     </div>
     <div v-else-if="busy" class="waiting-state">
       <div class="receiving-bars" aria-hidden="true">
@@ -319,10 +356,7 @@ async function executeJq() {
       <p>{{ (elapsed / 1000).toFixed(1) }} s elapsed · 30 s timeout</p>
     </div>
     <div v-else class="waiting-state">
-      <Crosshair :size="32" :stroke-width="1" aria-hidden="true" />
       <h3>AWAITING REQUEST</h3>
-      <p>Enter an endpoint. Send. Inspect.</p>
-      <span class="empty-protocol">HTTP / HTTPS</span>
     </div>
   </section>
 </template>
@@ -358,10 +392,7 @@ h2 {
   font-size: 0.6875rem;
   text-transform: uppercase;
 }
-h2 span {
-  color: var(--primary);
-  margin-right: 10px;
-}
+
 .state-label {
   color: var(--muted-foreground);
 }
@@ -534,10 +565,7 @@ td:first-child {
   font: 0.5625rem var(--font-mono);
   color: var(--muted-foreground);
 }
-.panel-footer > span:last-child {
-  flex-shrink: 0;
-  letter-spacing: 0.12em;
-}
+
 .waiting-state,
 .error-state {
   flex: 1;
@@ -550,10 +578,7 @@ td:first-child {
   color: var(--muted-foreground);
   text-align: center;
 }
-.waiting-state > svg {
-  color: var(--input);
-  margin-bottom: 24px;
-}
+
 h3 {
   font: 0.6875rem var(--font-mono);
   letter-spacing: 0.14em;
@@ -563,11 +588,7 @@ h3 {
   margin-top: 10px;
   font-size: 0.75rem;
 }
-.empty-protocol {
-  margin-top: 28px;
-  font: 0.5625rem var(--font-mono);
-  letter-spacing: 0.15em;
-}
+
 .error-state {
   align-items: flex-start;
   justify-content: flex-start;
@@ -579,10 +600,7 @@ h3 {
   font: 0.75rem/1.8 var(--font-mono);
   overflow-wrap: anywhere;
 }
-.error-state span {
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-}
+
 .empty-body,
 .copy-error {
   padding: 16px;

@@ -20,13 +20,22 @@ const props = defineProps<{
   activeId: number;
   groups: RequestGroup[];
   collapsed?: boolean;
+  selectedIds?: number[];
+  selectionAnchorId?: number | null;
 }>();
 const emit = defineEmits<{
   select: [id: number];
-  createGroup: [name: string, parentId: number | null];
+  updateSelection: [ids: number[], anchorId: number | null];
+  createGroup: [name: string, parentId: number | null, sessionIds?: number[]];
   renameGroup: [id: number, name: string];
   toggleGroup: [id: number];
   moveRequest: [sessionId: number, groupId: number | null];
+  moveRequests: [
+    ids: number[],
+    groupId: number | null,
+    beforeId: number | null,
+  ];
+  reorderGroup: [groupId: number, beforeGroupId: number];
   deleteGroup: [id: number];
   toggleSidebar: [];
 }>();
@@ -38,6 +47,9 @@ const creatingParent = ref<number | null | undefined>(undefined);
 const editingId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
 const draftName = ref("");
+const groupingSelection = ref<number[] | null>(null);
+const requestMime = "application/x-blink-request-ids";
+const groupMime = "application/x-blink-group-id";
 
 const groupById = computed(
   () => new Map(props.groups.map((group) => [group.id, group])),
@@ -52,9 +64,6 @@ const rows = computed<BrowserRow[]>(() => {
     siblings.push(group);
     children.set(group.parentId, siblings);
   }
-  for (const siblings of children.values())
-    siblings.sort((left, right) => left.name.localeCompare(right.name));
-
   const items: BrowserRow[] = props.sessions
     .filter((session) => session.groupId === null)
     .map((session) => ({ type: "request", session, level: 0 }));
@@ -72,16 +81,25 @@ const rows = computed<BrowserRow[]>(() => {
   append(null, 0);
   return items;
 });
-function startCreating(parentId: number | null) {
+const selected = computed(() => new Set(props.selectedIds ?? []));
+const visibleRequestIds = computed(() =>
+  rows.value.flatMap((row) => (row.type === "request" ? [row.session.id] : [])),
+);
+
+function startCreating(parentId: number | null, sessionIds?: number[]) {
   creatingParent.value = parentId;
   editingId.value = null;
   deletingId.value = null;
   draftName.value = "";
+  groupingSelection.value = sessionIds?.length ? sessionIds : null;
 }
 function submitCreate() {
   const name = draftName.value.trim();
   if (!name || creatingParent.value === undefined) return;
-  emit("createGroup", name, creatingParent.value);
+  if (groupingSelection.value)
+    emit("createGroup", name, creatingParent.value, groupingSelection.value);
+  else emit("createGroup", name, creatingParent.value);
+  groupingSelection.value = null;
   creatingParent.value = undefined;
   draftName.value = "";
 }
@@ -98,8 +116,29 @@ function submitRename(group: RequestGroup) {
   editingId.value = null;
   draftName.value = "";
 }
-function moveActive(groupId: number | null) {
-  if (active.value) emit("moveRequest", active.value.id, groupId);
+function moveSelection(groupId: number | null) {
+  const ids = props.selectedIds?.length
+    ? props.selectedIds
+    : active.value
+      ? [active.value.id]
+      : [];
+  if (ids.length > 1) emit("moveRequests", ids, groupId, null);
+  else if (ids[0] !== undefined) emit("moveRequest", ids[0], groupId);
+}
+function selectionAlreadyIn(groupId: number | null) {
+  const ids = props.selectedIds?.length
+    ? props.selectedIds
+    : active.value
+      ? [active.value.id]
+      : [];
+  return (
+    ids.length > 0 &&
+    ids.every(
+      (id) =>
+        props.sessions.find((session) => session.id === id)?.groupId ===
+        groupId,
+    )
+  );
 }
 function levelClass(level: number) {
   return `level-${Math.min(level, 6)}`;
@@ -108,6 +147,96 @@ function parentName(parentId: number | null) {
   return parentId === null
     ? "Browser"
     : (groupById.value.get(parentId)?.name ?? "Browser");
+}
+
+function selectRequest(id: number, event: MouseEvent) {
+  let ids: number[];
+  let anchorId = id;
+  if (
+    event.shiftKey &&
+    props.selectionAnchorId !== null &&
+    props.selectionAnchorId !== undefined
+  ) {
+    const start = visibleRequestIds.value.indexOf(props.selectionAnchorId);
+    const end = visibleRequestIds.value.indexOf(id);
+    ids =
+      start < 0 || end < 0
+        ? [id]
+        : visibleRequestIds.value.slice(
+            Math.min(start, end),
+            Math.max(start, end) + 1,
+          );
+    anchorId = props.selectionAnchorId;
+  } else if (event.metaKey || event.ctrlKey) {
+    ids = selected.value.has(id)
+      ? (props.selectedIds ?? []).filter((selectedId) => selectedId !== id)
+      : [...(props.selectedIds ?? []), id];
+  } else {
+    ids = [id];
+  }
+  emit("select", id);
+  emit("updateSelection", ids, anchorId);
+}
+
+function requestIdsFrom(event: DragEvent) {
+  try {
+    const value = event.dataTransfer?.getData(requestMime);
+    const ids = value ? JSON.parse(value) : [];
+    return Array.isArray(ids) && ids.every(Number.isSafeInteger) ? ids : [];
+  } catch {
+    return [];
+  }
+}
+
+function hasType(event: DragEvent, type: string) {
+  return Array.from(event.dataTransfer?.types ?? []).includes(type);
+}
+
+function startRequestDrag(id: number, event: DragEvent) {
+  const ids = selected.value.has(id) ? (props.selectedIds ?? []) : [id];
+  if (!selected.value.has(id)) emit("updateSelection", ids, id);
+  event.dataTransfer?.setData(requestMime, JSON.stringify(ids));
+  event.dataTransfer?.setData("text/plain", ids.join(","));
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+}
+
+function allowDrop(event: DragEvent) {
+  if (hasType(event, requestMime) || hasType(event, groupMime))
+    event.preventDefault();
+}
+
+function dropOnRequest(event: DragEvent, session: RequestSession) {
+  const ids = requestIdsFrom(event);
+  if (!ids.length) return;
+  event.preventDefault();
+  emit("moveRequests", ids, session.groupId, session.id);
+}
+
+function dropOnGroup(event: DragEvent, group: RequestGroup) {
+  const ids = requestIdsFrom(event);
+  if (ids.length) {
+    event.preventDefault();
+    emit("moveRequests", ids, group.id, null);
+    return;
+  }
+  const source = Number(event.dataTransfer?.getData(groupMime));
+  if (Number.isSafeInteger(source)) {
+    event.preventDefault();
+    emit("reorderGroup", source, group.id);
+  }
+}
+
+function dropOnUngrouped(event: DragEvent) {
+  const ids = requestIdsFrom(event);
+  if (!ids.length) return;
+  event.preventDefault();
+  emit("moveRequests", ids, null, null);
+}
+
+function startGroupDrag(id: number, event: DragEvent) {
+  event.dataTransfer?.setData(groupMime, String(id));
+  event.dataTransfer?.setData("text/plain", String(id));
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
 }
 </script>
 
@@ -120,7 +249,6 @@ function parentName(parentId: number | null) {
   >
     <header class="browser-header">
       <div v-if="!collapsed">
-        <span class="browser-eyebrow">BROWSER</span>
         <strong>REQUESTS</strong>
       </div>
       <button
@@ -147,6 +275,16 @@ function parentName(parentId: number | null) {
         @click="startCreating(null)"
       >
         <Plus :size="14" aria-hidden="true" />
+      </button>
+      <button
+        v-if="!collapsed && selectedIds?.length"
+        type="button"
+        class="browser-action"
+        aria-label="Group selected requests"
+        title="Group selected requests"
+        @click="startCreating(null, selectedIds)"
+      >
+        <FolderPlus :size="14" aria-hidden="true" />
       </button>
     </header>
 
@@ -177,15 +315,19 @@ function parentName(parentId: number | null) {
     </form>
 
     <div v-if="!collapsed" class="browser-tree">
-      <div class="browser-root-row">
+      <div
+        class="browser-root-row"
+        @dragover="allowDrop"
+        @drop="dropOnUngrouped"
+      >
         <span class="browser-root-label">UNGROUPED</span>
         <button
           type="button"
           class="browser-action move-action"
-          aria-label="Move active request to Ungrouped"
-          title="Move active request here"
-          :disabled="active?.groupId === null"
-          @click="moveActive(null)"
+          :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to Ungrouped`"
+          :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} here`"
+          :disabled="selectionAlreadyIn(null)"
+          @click="moveSelection(null)"
         >
           <MoveRight :size="13" aria-hidden="true" />
         </button>
@@ -205,10 +347,19 @@ function parentName(parentId: number | null) {
           class="browser-request"
           :class="[
             levelClass(row.level),
-            { selected: activeId === row.session.id },
+            {
+              active: activeId === row.session.id,
+              selected: selected.has(row.session.id),
+            },
           ]"
+          :aria-selected="selected.has(row.session.id)"
+          :data-request-id="row.session.id"
+          draggable="true"
           :title="sessionLabel(row.session)"
-          @click="emit('select', row.session.id)"
+          @click="selectRequest(row.session.id, $event)"
+          @dragstart="startRequestDrag(row.session.id, $event)"
+          @dragover="allowDrop"
+          @drop="dropOnRequest($event, row.session)"
         >
           <span :data-method="row.session.draft.method">{{
             row.session.draft.method
@@ -217,7 +368,15 @@ function parentName(parentId: number | null) {
         </button>
 
         <template v-else>
-          <div class="browser-group-row" :class="levelClass(row.level)">
+          <div
+            class="browser-group-row"
+            :class="levelClass(row.level)"
+            :data-group-id="row.group.id"
+            draggable="true"
+            @dragstart="startGroupDrag(row.group.id, $event)"
+            @dragover="allowDrop"
+            @drop="dropOnGroup($event, row.group)"
+          >
             <button
               type="button"
               class="tree-toggle"
@@ -273,10 +432,10 @@ function parentName(parentId: number | null) {
               <button
                 type="button"
                 class="browser-action move-action"
-                :aria-label="`Move active request to ${row.group.name}`"
-                :title="`Move active request to ${row.group.name}`"
-                :disabled="active?.groupId === row.group.id"
-                @click="moveActive(row.group.id)"
+                :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
+                :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
+                :disabled="selectionAlreadyIn(row.group.id)"
+                @click="moveSelection(row.group.id)"
               >
                 <MoveRight :size="13" aria-hidden="true" />
               </button>
@@ -387,7 +546,6 @@ function parentName(parentId: number | null) {
   align-items: baseline;
   gap: 7px;
 }
-.browser-eyebrow,
 .browser-root-label {
   color: var(--muted-foreground);
   font: 0.5625rem var(--font-mono);
@@ -422,6 +580,8 @@ function parentName(parentId: number | null) {
   min-height: 28px;
   padding-right: 7px;
   color: var(--muted-foreground);
+  cursor: grab;
+  -webkit-user-drag: element;
 }
 .group-name {
   min-width: 0;
@@ -475,9 +635,11 @@ function parentName(parentId: number | null) {
   text-align: left;
   color: var(--muted-foreground);
   font: 0.625rem var(--font-mono);
+  cursor: grab;
+  -webkit-user-drag: element;
 }
 .browser-request:hover,
-.browser-request.selected {
+.browser-request.active {
   background: var(--accent);
   color: var(--foreground);
 }

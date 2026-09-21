@@ -52,7 +52,11 @@ test("parallel sends stay in their own tabs and duplicates are independent", asy
     .fill('{\n  "target": "local",\n  "depth": 2,\n  "verbose": true\n}');
   await pane.getByRole("button", { name: /Send/ }).click();
   await expect(pane.locator("[data-response-status]")).toContainText("201");
+  await expect(pane.locator("[data-response-search]")).toHaveCount(0);
+  await page.keyboard.press("Control+f");
+  await expect(pane.locator("[data-response-search]")).toBeVisible();
   await pane.getByRole("button", { name: "Wrap lines" }).click();
+  await expect(pane.locator("[data-json-tree]")).toHaveClass(/wrapped/);
   await page.getByRole("button", { name: "Duplicate request" }).click();
   await expect(tabs).toHaveCount(3);
   await expect(pane.locator("[data-response-body]")).toHaveCount(0);
