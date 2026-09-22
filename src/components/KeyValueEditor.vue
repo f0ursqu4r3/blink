@@ -1,21 +1,21 @@
 <script setup lang="ts">
-import { Plus, X } from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
+import { Plus, X } from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from "@/components/ui/context-menu";
-import { pair, type Pair } from "@/lib/request";
+} from '@/components/ui/context-menu';
+import { pair, type Pair } from '@/lib/request';
 const rows = defineModel<Pair[]>({ required: true });
 defineProps<{ label: string; disabled?: boolean }>();
-function update(id: number, field: "key" | "value", event: Event) {
+function update(id: number, field: 'key' | 'value', event: Event) {
   rows.value = rows.value.map((row) =>
     row.id === id
       ? { ...row, [field]: (event.target as HTMLInputElement).value }
-      : row,
+      : row
   );
 }
 function duplicateRow(id: number) {
@@ -33,7 +33,7 @@ function removeRow(id: number) {
 }
 function toggleRow(id: number) {
   rows.value = rows.value.map((r) =>
-    r.id === id ? { ...r, enabled: !r.enabled } : r,
+    r.id === id ? { ...r, enabled: !r.enabled } : r
   );
 }
 function enableAll() {
@@ -75,7 +75,7 @@ function addRow() {
                       :disabled="disabled"
                       @change="
                         rows = rows.map((r) =>
-                          r.id === row.id ? { ...r, enabled: !r.enabled } : r,
+                          r.id === row.id ? { ...r, enabled: !r.enabled } : r
                         )
                       "
                     />
@@ -118,35 +118,38 @@ function addRow() {
                 <ContextMenuItem
                   data-testid="kv-row-ctx-toggle"
                   @select="toggleRow(row.id)"
-                  >{{ row.enabled ? "Disable" : "Enable" }}</ContextMenuItem
                 >
+                  {{ row.enabled ? 'Disable' : 'Enable' }}
+                </ContextMenuItem>
                 <ContextMenuItem
                   data-testid="kv-row-ctx-duplicate"
                   @select="duplicateRow(row.id)"
-                  >Duplicate</ContextMenuItem
                 >
+                  Duplicate
+                </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   data-testid="kv-row-ctx-remove"
                   @select="removeRow(row.id)"
-                  >Remove</ContextMenuItem
                 >
+                  Remove
+                </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
           </tbody>
         </table>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem data-testid="kv-ctx-add-row" @select="addRow"
-          >Add row</ContextMenuItem
-        >
+        <ContextMenuItem data-testid="kv-ctx-add-row" @select="addRow">
+          Add row
+        </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem data-testid="kv-ctx-enable-all" @select="enableAll"
-          >Enable all</ContextMenuItem
-        >
-        <ContextMenuItem data-testid="kv-ctx-disable-all" @select="disableAll"
-          >Disable all</ContextMenuItem
-        >
+        <ContextMenuItem data-testid="kv-ctx-enable-all" @select="enableAll">
+          Enable all
+        </ContextMenuItem>
+        <ContextMenuItem data-testid="kv-ctx-disable-all" @select="disableAll">
+          Disable all
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
     <Button
@@ -154,8 +157,9 @@ function addRow() {
       class="m-2"
       :disabled="disabled"
       @click="rows = [...rows, pair()]"
-      ><Plus :size="13" aria-hidden="true" />Add row</Button
     >
+      <Plus :size="13" aria-hidden="true" />Add row
+    </Button>
   </div>
 </template>
 
@@ -189,7 +193,7 @@ td {
   width: 34px;
   padding: 0;
 }
-td input:not([type="checkbox"]) {
+td input:not([type='checkbox']) {
   width: 100%;
   height: 33px;
   background: transparent;
@@ -202,20 +206,20 @@ td input:not([type="checkbox"]) {
 td + td {
   border-left: 1px solid var(--border);
 }
-input[type="checkbox"] {
+input[type='checkbox'] {
   accent-color: var(--primary);
   width: 12px;
   height: 12px;
 }
-.muted input:not([type="checkbox"]) {
+.muted input:not([type='checkbox']) {
   color: var(--muted-foreground);
 }
 @media (pointer: coarse) {
   td,
-  td input:not([type="checkbox"]) {
+  td input:not([type='checkbox']) {
     height: 44px;
   }
-  td input:not([type="checkbox"]) {
+  td input:not([type='checkbox']) {
     font-size: 1rem;
   }
 }

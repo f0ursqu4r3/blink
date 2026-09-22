@@ -3,10 +3,7 @@ export { default as ContextMenuTrigger } from "./ContextMenuTrigger.vue";
 export { default as ContextMenuContent } from "./ContextMenuContent.vue";
 export { default as ContextMenuItem } from "./ContextMenuItem.vue";
 export { default as ContextMenuSeparator } from "./ContextMenuSeparator.vue";
+export { default as ContextMenuSubContent } from "./ContextMenuSubContent.vue";
 
 // Re-export reka-ui sub-menu primitives for advanced callers
-export {
-  ContextMenuSub,
-  ContextMenuSubTrigger,
-  ContextMenuSubContent,
-} from "reka-ui";
+export { ContextMenuSub, ContextMenuSubTrigger } from "reka-ui";

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from "vue";
-import { Button } from "@/components/ui/button";
+import { ref } from 'vue';
+import { Button } from '@/components/ui/button';
 defineProps<{ error: string; ready: boolean; exitBlocked: boolean }>();
 const emit = defineEmits<{ retry: []; reset: []; quit: [] }>();
 const confirmReset = ref(false);
@@ -11,9 +11,9 @@ const confirmReset = ref(false);
     <p>{{ error }} <span v-if="ready">Changes are not saved.</span></p>
     <Button variant="secondary" @click="emit('retry')">Retry</Button>
     <template v-if="!ready">
-      <Button v-if="!confirmReset" variant="ghost" @click="confirmReset = true"
-        >Start fresh</Button
-      >
+      <Button v-if="!confirmReset" variant="ghost" @click="confirmReset = true">
+        Start fresh
+      </Button>
       <template v-else>
         <span>Replace the existing saved workspace?</span>
         <Button
@@ -22,14 +22,15 @@ const confirmReset = ref(false);
             emit('reset');
             confirmReset = false;
           "
-          >Replace saved workspace</Button
         >
+          Replace saved workspace
+        </Button>
         <Button variant="ghost" @click="confirmReset = false">Cancel</Button>
       </template>
     </template>
-    <Button v-if="exitBlocked" variant="ghost" @click="emit('quit')"
-      >Quit without saving</Button
-    >
+    <Button v-if="exitBlocked" variant="ghost" @click="emit('quit')">
+      Quit without saving
+    </Button>
   </div>
 </template>
 

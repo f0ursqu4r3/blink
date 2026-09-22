@@ -1,25 +1,25 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { ArrowUpRight, Check, ChevronDown, Terminal } from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { ArrowUpRight, Check, ChevronDown, Terminal } from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from "@/components/ui/context-menu";
-import RequestEditor from "./RequestEditor.vue";
-import ResponsePanel from "./ResponsePanel.vue";
-import { methods } from "@/lib/request";
-import type { RequestSession } from "@/lib/session";
-import type { RequestGroup } from "@/lib/groups";
+} from '@/components/ui/context-menu';
+import RequestEditor from './RequestEditor.vue';
+import ResponsePanel from './ResponsePanel.vue';
+import { methods } from '@/lib/request';
+import type { RequestSession } from '@/lib/session';
+import type { RequestGroup } from '@/lib/groups';
 import {
   buildResolvedRequestContext,
   resolveAuthorization,
-} from "@/lib/authorization";
-import { useRequestRunner } from "@/composables/useRequestRunner";
-import { useClipboard } from "@/composables/useClipboard";
+} from '@/lib/authorization';
+import { useRequestRunner } from '@/composables/useRequestRunner';
+import { useClipboard } from '@/composables/useClipboard';
 const props = defineProps<{
   session: RequestSession;
   active: boolean;
@@ -32,16 +32,16 @@ const resolvedCtx = computed(() =>
     props.session.draft,
     props.session.groupId ?? null,
     props.groups ?? [],
-    props.globalDefinitions ?? {},
-  ),
+    props.globalDefinitions ?? {}
+  )
 );
 
 const effectiveAuth = computed(() =>
   resolveAuthorization(
     props.session.draft.localAuth,
     props.session.groupId ?? null,
-    props.groups ?? [],
-  ),
+    props.groups ?? []
+  )
 );
 
 const inheritedSource = computed(() => {
@@ -57,11 +57,11 @@ const inheritedSource = computed(() => {
     if (!g) break;
     if (g.localAuth !== undefined) {
       const authLabel =
-        g.localAuth.type === "bearer"
-          ? "Bearer"
-          : g.localAuth.type === "basic"
-            ? "Basic"
-            : "None";
+        g.localAuth.type === 'bearer'
+          ? 'Bearer'
+          : g.localAuth.type === 'basic'
+            ? 'Basic'
+            : 'None';
       return `${g.name} · ${authLabel}`;
     }
     cursor = g.parentId;
@@ -71,7 +71,7 @@ const inheritedSource = computed(() => {
 
 const { prepared, curl, stale, send } = useRequestRunner(
   props.session,
-  resolvedCtx,
+  resolvedCtx
 );
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
@@ -80,7 +80,7 @@ const workspace = ref<HTMLElement>();
 const requestPanelWidth = ref(420);
 const resizing = ref(false);
 const prefix = `request-${props.session.id}`;
-const shortcut = /Mac/i.test(navigator.platform) ? "⌘" : "Ctrl";
+const shortcut = /Mac/i.test(navigator.platform) ? '⌘' : 'Ctrl';
 const minimumPanelWidth = 280;
 const minimumResponseWidth = 340;
 const resizeHandleWidth = 8;
@@ -89,19 +89,19 @@ const maximumPanelWidth = computed(() =>
     minimumPanelWidth,
     (workspace.value?.clientWidth ?? 900) -
       minimumResponseWidth -
-      resizeHandleWidth,
-  ),
+      resizeHandleWidth
+  )
 );
 const panelWidth = computed(() =>
   Math.round(
     Math.min(
       maximumPanelWidth.value,
-      Math.max(minimumPanelWidth, requestPanelWidth.value),
-    ),
-  ),
+      Math.max(minimumPanelWidth, requestPanelWidth.value)
+    )
+  )
 );
 const panelStyle = computed(() => ({
-  "--request-panel-width": `${panelWidth.value}px`,
+  '--request-panel-width': `${panelWidth.value}px`,
 }));
 async function focusUrl() {
   await nextTick();
@@ -117,55 +117,55 @@ function onKey(event: KeyboardEvent) {
     event.altKey
   )
     return;
-  if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
+  if (event.key === 'Enter' && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
     void send();
   }
-  if (event.key.toLowerCase() === "l" && (event.metaKey || event.ctrlKey)) {
+  if (event.key.toLowerCase() === 'l' && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
     void focusUrl();
   }
-  if (event.key === "Escape") showCurl.value = false;
+  if (event.key === 'Escape') showCurl.value = false;
 }
 
 onMounted(() => {
-  window.addEventListener("keydown", onKey);
+  window.addEventListener('keydown', onKey);
   if (props.active) void focusUrl();
 });
 onUnmounted(() => {
-  window.removeEventListener("keydown", onKey);
+  window.removeEventListener('keydown', onKey);
   stopResize();
 });
 
 function setPanelWidth(width: number) {
   requestPanelWidth.value = Math.min(
     maximumPanelWidth.value,
-    Math.max(minimumPanelWidth, width),
+    Math.max(minimumPanelWidth, width)
   );
 }
 function resizePointer(event: PointerEvent) {
   setPanelWidth(
-    event.clientX - (workspace.value?.getBoundingClientRect().left ?? 0),
+    event.clientX - (workspace.value?.getBoundingClientRect().left ?? 0)
   );
 }
 function stopResize() {
   resizing.value = false;
-  window.removeEventListener("pointermove", resizePointer);
-  window.removeEventListener("pointerup", stopResize);
+  window.removeEventListener('pointermove', resizePointer);
+  window.removeEventListener('pointerup', stopResize);
 }
 function startResize(event: PointerEvent) {
   if (event.button !== 0) return;
   event.preventDefault();
   resizing.value = true;
-  window.addEventListener("pointermove", resizePointer);
-  window.addEventListener("pointerup", stopResize, { once: true });
+  window.addEventListener('pointermove', resizePointer);
+  window.addEventListener('pointerup', stopResize, { once: true });
 }
 function resizeWithKeyboard(event: KeyboardEvent) {
   const step = event.shiftKey ? 48 : 16;
-  if (event.key === "ArrowLeft") setPanelWidth(panelWidth.value - step);
-  else if (event.key === "ArrowRight") setPanelWidth(panelWidth.value + step);
-  else if (event.key === "Home") setPanelWidth(minimumPanelWidth);
-  else if (event.key === "End") setPanelWidth(maximumPanelWidth.value);
+  if (event.key === 'ArrowLeft') setPanelWidth(panelWidth.value - step);
+  else if (event.key === 'ArrowRight') setPanelWidth(panelWidth.value + step);
+  else if (event.key === 'Home') setPanelWidth(minimumPanelWidth);
+  else if (event.key === 'End') setPanelWidth(maximumPanelWidth.value);
   else return;
   event.preventDefault();
 }
@@ -187,9 +187,9 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         <form class="request-bar" @submit.prevent="send">
           <div class="endpoint">
             <div class="method-select" :data-http-method="session.draft.method">
-              <label :for="`${prefix}-method`" class="sr-only"
-                >HTTP method</label
-              >
+              <label :for="`${prefix}-method`" class="sr-only">
+                HTTP method
+              </label>
               <select
                 :id="`${prefix}-method`"
                 data-method
@@ -198,8 +198,9 @@ function resizeWithKeyboard(event: KeyboardEvent) {
               >
                 <option v-for="method in methods" :key="method">
                   {{ method }}
-                </option></select
-              ><ChevronDown :size="12" aria-hidden="true" />
+                </option>
+              </select>
+              <ChevronDown :size="12" aria-hidden="true" />
             </div>
             <label :for="`${prefix}-url`" class="sr-only">Request URL</label>
             <input
@@ -238,10 +239,9 @@ function resizeWithKeyboard(event: KeyboardEvent) {
             class="send-button"
             :disabled="!prepared.request || session.busy"
           >
-            <ArrowUpRight :size="15" aria-hidden="true" /><span>{{
-              session.busy ? "Sending" : "Send"
-            }}</span
-            ><kbd>{{ shortcut }} ↵</kbd>
+            <ArrowUpRight :size="15" aria-hidden="true" />
+            <span>{{ session.busy ? 'Sending' : 'Send' }}</span>
+            <kbd>{{ shortcut }} ↵</kbd>
           </Button>
         </form>
       </ContextMenuTrigger>
@@ -250,11 +250,12 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           data-testid="ctx-send"
           :disabled="session.busy || !prepared.request"
           @select="send()"
-          >Send</ContextMenuItem
         >
-        <ContextMenuItem data-testid="ctx-focus-url" @select="focusUrl()"
-          >Focus URL</ContextMenuItem
-        >
+          Send
+        </ContextMenuItem>
+        <ContextMenuItem data-testid="ctx-focus-url" @select="focusUrl()">
+          Focus URL
+        </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
           data-testid="ctx-show-curl"
@@ -285,7 +286,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
             <span>POSIX SHELL · INCLUDES CREDENTIALS</span
             ><Button variant="ghost" @click="copy(curl)"
               ><Check v-if="copied" :size="13" aria-hidden="true" />{{
-                copied ? "Copied" : "Copy cURL"
+                copied ? 'Copied' : 'Copy cURL'
               }}</Button
             >
           </div>
@@ -294,13 +295,16 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         </section>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem data-testid="ctx-copy-curl" @select="copy(curl)"
-          >Copy cURL</ContextMenuItem
-        >
+        <ContextMenuItem data-testid="ctx-copy-curl" @select="copy(curl)">
+          Copy cURL
+        </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem data-testid="ctx-close-curl" @select="showCurl = false"
-          >Close</ContextMenuItem
+        <ContextMenuItem
+          data-testid="ctx-close-curl"
+          @select="showCurl = false"
         >
+          Close
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
     <div class="panels" :class="{ resizing }" :style="panelStyle">
@@ -345,7 +349,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
   min-height: 0;
   min-width: 0;
 }
-.request-workspace[data-active="false"] {
+.request-workspace[data-active='false'] {
   position: absolute;
   inset: 0;
   visibility: hidden;
@@ -378,10 +382,10 @@ function resizeWithKeyboard(event: KeyboardEvent) {
   flex-shrink: 0;
   color: var(--primary);
 }
-.method-select[data-http-method="GET"] {
+.method-select[data-http-method='GET'] {
   color: var(--success);
 }
-.method-select[data-http-method="DELETE"] {
+.method-select[data-http-method='DELETE'] {
   color: var(--destructive);
 }
 .method-select select {
@@ -478,7 +482,7 @@ kbd {
   left: 3px;
   width: 1px;
   background: var(--border);
-  content: "";
+  content: '';
 }
 .panel-resize:hover::after,
 .panel-resize:focus-visible::after,

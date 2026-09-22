@@ -70,11 +70,18 @@ function save() {
   >
     <form class="dialog-content" @submit.prevent="save">
       <header>
-        <h2>Application Settings</h2>
-        <p>
-          Workspace-global tokens are available as
-          <code v-text="'{{_.name}}'" />.
-        </p>
+        <div class="heading-row">
+          <h2>Application Settings</h2>
+          <button
+            class="token-help"
+            data-token-help="global"
+            type="button"
+            aria-label="Token syntax help"
+            title="Workspace-global tokens are available as {{_.name}}. Use <<NAME>> in a token value to read NAME from Blink's process environment when a request is sent."
+          >
+            ?
+          </button>
+        </div>
       </header>
       <label for="global-token-json">Global tokens</label>
       <textarea
@@ -84,10 +91,6 @@ function save() {
         spellcheck="false"
         autocomplete="off"
       />
-      <p class="help-text">
-        Use <code>&lt;&lt;NAME&gt;&gt;</code> in a token value to read NAME from
-        Blink's process environment when a request is sent.
-      </p>
       <p v-if="error" data-token-json-error role="alert">{{ error }}</p>
       <footer>
         <button type="button" @click="emit('update:open', false)">
@@ -122,6 +125,31 @@ h2 {
   font-weight: 700;
   letter-spacing: 0.08em;
 }
+
+.heading-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.token-help {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--input);
+  border-radius: 50%;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  font: 600 0.625rem/1 var(--font-mono);
+}
+
+.token-help:hover,
+.token-help:focus-visible {
+  color: var(--foreground);
+  background: var(--accent);
+}
 p,
 label,
 textarea,
@@ -140,9 +168,6 @@ textarea {
   color: var(--foreground);
   background: var(--background);
   line-height: 1.5;
-}
-.help-text {
-  font-size: 0.6875rem;
 }
 [role="alert"] {
   color: var(--destructive);

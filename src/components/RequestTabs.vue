@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
-import { Plus, X } from "lucide-vue-next";
+import { nextTick, ref, watch } from 'vue';
+import { Plus, X } from 'lucide-vue-next';
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+} from '@/components/ui/context-menu';
 import {
   sessionLabel,
   sessionHost,
   sessionStatus,
   type RequestSession,
-} from "@/lib/session";
+} from '@/lib/session';
 const props = defineProps<{ sessions: RequestSession[]; activeId: number }>();
 const emit = defineEmits<{
   select: [id: number];
@@ -26,26 +26,26 @@ async function reveal() {
   await nextTick();
   strip.value
     ?.querySelector('[aria-selected="true"]')
-    ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+    ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
 }
 watch(() => props.activeId, reveal);
 function navigate(event: KeyboardEvent, index: number) {
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   let next = index;
-  if (event.key === "ArrowRight") next = (index + 1) % props.sessions.length;
-  else if (event.key === "ArrowLeft")
+  if (event.key === 'ArrowRight') next = (index + 1) % props.sessions.length;
+  else if (event.key === 'ArrowLeft')
     next = (index + props.sessions.length - 1) % props.sessions.length;
-  else if (event.key === "Home") next = 0;
-  else if (event.key === "End") next = props.sessions.length - 1;
-  else if (event.key === "Delete") {
+  else if (event.key === 'Home') next = 0;
+  else if (event.key === 'End') next = props.sessions.length - 1;
+  else if (event.key === 'Delete') {
     event.preventDefault();
-    emit("close", props.sessions[index].id);
+    emit('close', props.sessions[index].id);
     return;
   } else return;
   event.preventDefault();
-  emit("select", props.sessions[next].id);
+  emit('select', props.sessions[next].id);
   void nextTick(() =>
-    document.getElementById(`request-tab-${props.sessions[next].id}`)?.focus(),
+    document.getElementById(`request-tab-${props.sessions[next].id}`)?.focus()
   );
 }
 </script>
@@ -81,40 +81,42 @@ function navigate(event: KeyboardEvent, index: number) {
                   @click="emit('select', session.id)"
                   @keydown="navigate($event, index)"
                 >
-                  <span
-                    class="tab-method"
-                    :data-method="session.draft.method"
-                    >{{ session.draft.method }}</span
-                  >
-                  <span class="tab-label"
-                    ><span class="tab-path">{{ sessionLabel(session) }}</span
-                    ><span
+                  <span class="tab-method" :data-method="session.draft.method">
+                    {{ session.draft.method }}
+                  </span>
+                  <span class="tab-label">
+                    <span class="tab-path">{{ sessionLabel(session) }}</span>
+                    <span
                       v-if="
                         sessionHost(session) &&
                         sessionHost(session) !== sessionLabel(session)
                       "
                       class="tab-host"
-                      >{{ sessionHost(session) }}</span
-                    ></span
-                  >
+                    >
+                      {{ sessionHost(session) }}
+                    </span>
+                  </span>
                   <span
                     v-if="session.busy"
                     class="tab-state sending"
                     aria-label="Sending"
-                    >↗</span
                   >
+                    ↗
+                  </span>
                   <span
                     v-else-if="session.error"
                     class="tab-state failed"
                     aria-label="Request failed"
-                    >!</span
                   >
+                    !
+                  </span>
                   <span
                     v-else-if="session.response"
                     class="tab-state"
                     :class="{ failed: session.response.status >= 400 }"
-                    >{{ sessionStatus(session) }}</span
                   >
+                    {{ sessionStatus(session) }}
+                  </span>
                 </button>
                 <button
                   type="button"
@@ -137,8 +139,9 @@ function navigate(event: KeyboardEvent, index: number) {
               <ContextMenuItem
                 :data-testid="`tab-ctx-select-${session.id}`"
                 @select="emit('select', session.id)"
-                >Select</ContextMenuItem
               >
+                Select
+              </ContextMenuItem>
               <ContextMenuItem
                 :data-testid="`tab-ctx-duplicate-${session.id}`"
                 @select="
@@ -147,15 +150,17 @@ function navigate(event: KeyboardEvent, index: number) {
                     emit('duplicate');
                   }
                 "
-                >Duplicate</ContextMenuItem
               >
+                Duplicate
+              </ContextMenuItem>
               <ContextMenuSeparator />
               <ContextMenuItem
                 :data-testid="`tab-ctx-close-${session.id}`"
                 :disabled="session.busy"
                 @select="emit('close', session.id)"
-                >Close</ContextMenuItem
               >
+                Close
+              </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
         </div>
@@ -172,14 +177,15 @@ function navigate(event: KeyboardEvent, index: number) {
       </div>
     </ContextMenuTrigger>
     <ContextMenuContent>
-      <ContextMenuItem data-testid="tab-strip-ctx-new" @select="emit('create')"
-        >New request</ContextMenuItem
-      >
+      <ContextMenuItem data-testid="tab-strip-ctx-new" @select="emit('create')">
+        New request
+      </ContextMenuItem>
       <ContextMenuItem
         data-testid="tab-strip-ctx-duplicate"
         @select="emit('duplicate')"
-        >Duplicate active</ContextMenuItem
       >
+        Duplicate active
+      </ContextMenuItem>
     </ContextMenuContent>
   </ContextMenu>
 </template>
@@ -214,7 +220,7 @@ function navigate(event: KeyboardEvent, index: number) {
 }
 .tab-cell.selected::before {
   position: absolute;
-  content: "";
+  content: '';
   inset: 0 0 auto;
   height: 2px;
   background: var(--primary);
@@ -222,7 +228,7 @@ function navigate(event: KeyboardEvent, index: number) {
 .tab-cell:not(.selected):hover {
   background: var(--accent);
 }
-[role="tab"] {
+[role='tab'] {
   display: flex;
   align-items: center;
   gap: 9px;
@@ -239,10 +245,10 @@ function navigate(event: KeyboardEvent, index: number) {
   letter-spacing: 0.04em;
   color: var(--primary);
 }
-.tab-method[data-method="GET"] {
+.tab-method[data-method='GET'] {
   color: var(--success);
 }
-.tab-method[data-method="DELETE"] {
+.tab-method[data-method='DELETE'] {
   color: var(--destructive);
 }
 .tab-label {

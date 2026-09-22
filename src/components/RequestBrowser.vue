@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref } from 'vue';
 import {
   ChevronDown,
   ChevronRight,
@@ -13,13 +13,13 @@ import {
   Plus,
   Settings,
   Trash2,
-} from "lucide-vue-next";
-import type { RequestGroup } from "@/lib/groups";
-import { sessionLabel, type RequestSession } from "@/lib/session";
+} from 'lucide-vue-next';
+import type { RequestGroup } from '@/lib/groups';
+import { sessionLabel, type RequestSession } from '@/lib/session';
 import {
   resolveAuthorization,
   type AuthorizationConfig,
-} from "@/lib/authorization";
+} from '@/lib/authorization';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -29,7 +29,7 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
-} from "@/components/ui/context-menu/index";
+} from '@/components/ui/context-menu/index';
 
 const props = defineProps<{
   sessions: RequestSession[];
@@ -65,21 +65,21 @@ const emit = defineEmits<{
 }>();
 
 type BrowserRow =
-  | { type: "group"; group: RequestGroup; level: number }
-  | { type: "request"; session: RequestSession; level: number };
+  | { type: 'group'; group: RequestGroup; level: number }
+  | { type: 'request'; session: RequestSession; level: number };
 const creatingParent = ref<number | null | undefined>(undefined);
 const editingId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
-const draftName = ref("");
+const draftName = ref('');
 const groupingSelection = ref<number[] | null>(null);
-const requestMime = "application/x-blink-request-ids";
-const groupMime = "application/x-blink-group-id";
+const requestMime = 'application/x-blink-request-ids';
+const groupMime = 'application/x-blink-group-id';
 
 const groupById = computed(
-  () => new Map(props.groups.map((group) => [group.id, group])),
+  () => new Map(props.groups.map((group) => [group.id, group]))
 );
 const active = computed(() =>
-  props.sessions.find((session) => session.id === props.activeId),
+  props.sessions.find((session) => session.id === props.activeId)
 );
 const rows = computed<BrowserRow[]>(() => {
   const children = new Map<number | null, RequestGroup[]>();
@@ -90,15 +90,15 @@ const rows = computed<BrowserRow[]>(() => {
   }
   const items: BrowserRow[] = props.sessions
     .filter((session) => session.groupId === null)
-    .map((session) => ({ type: "request", session, level: 0 }));
+    .map((session) => ({ type: 'request', session, level: 0 }));
   const append = (parentId: number | null, level: number) => {
     for (const group of children.get(parentId) ?? []) {
-      items.push({ type: "group", group, level });
+      items.push({ type: 'group', group, level });
       if (group.collapsed) continue;
       for (const session of props.sessions.filter(
-        (candidate) => candidate.groupId === group.id,
+        (candidate) => candidate.groupId === group.id
       ))
-        items.push({ type: "request", session, level: level + 1 });
+        items.push({ type: 'request', session, level: level + 1 });
       append(group.id, level + 1);
     }
   };
@@ -107,25 +107,25 @@ const rows = computed<BrowserRow[]>(() => {
 });
 const selected = computed(() => new Set(props.selectedIds ?? []));
 const visibleRequestIds = computed(() =>
-  rows.value.flatMap((row) => (row.type === "request" ? [row.session.id] : [])),
+  rows.value.flatMap((row) => (row.type === 'request' ? [row.session.id] : []))
 );
 
 function startCreating(parentId: number | null, sessionIds?: number[]) {
   creatingParent.value = parentId;
   editingId.value = null;
   deletingId.value = null;
-  draftName.value = "";
+  draftName.value = '';
   groupingSelection.value = sessionIds?.length ? sessionIds : null;
 }
 function submitCreate() {
   const name = draftName.value.trim();
   if (!name || creatingParent.value === undefined) return;
   if (groupingSelection.value)
-    emit("createGroup", name, creatingParent.value, groupingSelection.value);
-  else emit("createGroup", name, creatingParent.value);
+    emit('createGroup', name, creatingParent.value, groupingSelection.value);
+  else emit('createGroup', name, creatingParent.value);
   groupingSelection.value = null;
   creatingParent.value = undefined;
-  draftName.value = "";
+  draftName.value = '';
 }
 function startRename(group: RequestGroup) {
   editingId.value = group.id;
@@ -136,9 +136,9 @@ function startRename(group: RequestGroup) {
 function submitRename(group: RequestGroup) {
   const name = draftName.value.trim();
   if (!name) return;
-  emit("renameGroup", group.id, name);
+  emit('renameGroup', group.id, name);
   editingId.value = null;
-  draftName.value = "";
+  draftName.value = '';
 }
 function moveSelection(groupId: number | null) {
   const ids = props.selectedIds?.length
@@ -146,8 +146,8 @@ function moveSelection(groupId: number | null) {
     : active.value
       ? [active.value.id]
       : [];
-  if (ids.length > 1) emit("moveRequests", ids, groupId, null);
-  else if (ids[0] !== undefined) emit("moveRequest", ids[0], groupId);
+  if (ids.length > 1) emit('moveRequests', ids, groupId, null);
+  else if (ids[0] !== undefined) emit('moveRequest', ids[0], groupId);
 }
 function selectionAlreadyIn(groupId: number | null) {
   const ids = props.selectedIds?.length
@@ -159,8 +159,7 @@ function selectionAlreadyIn(groupId: number | null) {
     ids.length > 0 &&
     ids.every(
       (id) =>
-        props.sessions.find((session) => session.id === id)?.groupId ===
-        groupId,
+        props.sessions.find((session) => session.id === id)?.groupId === groupId
     )
   );
 }
@@ -169,8 +168,8 @@ function levelClass(level: number) {
 }
 function parentName(parentId: number | null) {
   return parentId === null
-    ? "Browser"
-    : (groupById.value.get(parentId)?.name ?? "Browser");
+    ? 'Browser'
+    : (groupById.value.get(parentId)?.name ?? 'Browser');
 }
 
 function selectRequest(id: number, event: MouseEvent) {
@@ -188,7 +187,7 @@ function selectRequest(id: number, event: MouseEvent) {
         ? [id]
         : visibleRequestIds.value.slice(
             Math.min(start, end),
-            Math.max(start, end) + 1,
+            Math.max(start, end) + 1
           );
     anchorId = props.selectionAnchorId;
   } else if (event.metaKey || event.ctrlKey) {
@@ -198,8 +197,8 @@ function selectRequest(id: number, event: MouseEvent) {
   } else {
     ids = [id];
   }
-  emit("select", id);
-  emit("updateSelection", ids, anchorId);
+  emit('select', id);
+  emit('updateSelection', ids, anchorId);
 }
 
 /** Called when a context menu is opened on a request row. */
@@ -207,8 +206,8 @@ function handleRequestContextMenu(sessionId: number) {
   // If the right-clicked request is already in the multi-selection, keep it.
   if (selected.value.has(sessionId)) return;
   // Otherwise select only this request.
-  emit("select", sessionId);
-  emit("updateSelection", [sessionId], sessionId);
+  emit('select', sessionId);
+  emit('updateSelection', [sessionId], sessionId);
 }
 
 function requestIdsFrom(event: DragEvent) {
@@ -227,10 +226,10 @@ function hasType(event: DragEvent, type: string) {
 
 function startRequestDrag(id: number, event: DragEvent) {
   const ids = selected.value.has(id) ? (props.selectedIds ?? []) : [id];
-  if (!selected.value.has(id)) emit("updateSelection", ids, id);
+  if (!selected.value.has(id)) emit('updateSelection', ids, id);
   event.dataTransfer?.setData(requestMime, JSON.stringify(ids));
-  event.dataTransfer?.setData("text/plain", ids.join(","));
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer?.setData('text/plain', ids.join(','));
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 }
 
 function allowDrop(event: DragEvent) {
@@ -242,20 +241,20 @@ function dropOnRequest(event: DragEvent, session: RequestSession) {
   const ids = requestIdsFrom(event);
   if (!ids.length) return;
   event.preventDefault();
-  emit("moveRequests", ids, session.groupId, session.id);
+  emit('moveRequests', ids, session.groupId, session.id);
 }
 
 function dropOnGroup(event: DragEvent, group: RequestGroup) {
   const ids = requestIdsFrom(event);
   if (ids.length) {
     event.preventDefault();
-    emit("moveRequests", ids, group.id, null);
+    emit('moveRequests', ids, group.id, null);
     return;
   }
   const source = Number(event.dataTransfer?.getData(groupMime));
   if (Number.isSafeInteger(source)) {
     event.preventDefault();
-    emit("reorderGroup", source, group.id);
+    emit('reorderGroup', source, group.id);
   }
 }
 
@@ -263,13 +262,13 @@ function dropOnUngrouped(event: DragEvent) {
   const ids = requestIdsFrom(event);
   if (!ids.length) return;
   event.preventDefault();
-  emit("moveRequests", ids, null, null);
+  emit('moveRequests', ids, null, null);
 }
 
 function startGroupDrag(id: number, event: DragEvent) {
   event.dataTransfer?.setData(groupMime, String(id));
-  event.dataTransfer?.setData("text/plain", String(id));
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  event.dataTransfer?.setData('text/plain', String(id));
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
 }
 
 /** Effective auth for a session (used for lock indicator). */
@@ -277,7 +276,7 @@ function effectiveSessionAuth(session: RequestSession): AuthorizationConfig {
   return resolveAuthorization(
     (session.draft as { localAuth?: AuthorizationConfig }).localAuth,
     session.groupId,
-    props.groups,
+    props.groups
   );
 }
 
@@ -340,9 +339,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
       class="browser-form top-level-form"
       @submit.prevent="submitCreate"
     >
-      <label class="sr-only" for="top-level-group-name"
-        >Top-level group name</label
-      >
+      <label class="sr-only" for="top-level-group-name">
+        Top-level group name
+      </label>
       <input
         id="top-level-group-name"
         v-model="draftName"
@@ -386,12 +385,12 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent>
-              <ContextMenuItem @select="moveSelection(null)"
-                >Move selection here</ContextMenuItem
-              >
-              <ContextMenuItem @select="emit('createRequest')"
-                >New request in ungrouped</ContextMenuItem
-              >
+              <ContextMenuItem @select="moveSelection(null)">
+                Move selection here
+              </ContextMenuItem>
+              <ContextMenuItem @select="emit('createRequest')">
+                New request in ungrouped
+              </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
 
@@ -430,9 +429,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     @dragover="allowDrop"
                     @drop="dropOnRequest($event, row.session)"
                   >
-                    <span :data-method="row.session.draft.method">{{
-                      row.session.draft.method
-                    }}</span>
+                    <span :data-method="row.session.draft.method">
+                      {{ row.session.draft.method }}
+                    </span>
                     <strong>{{ sessionLabel(row.session) }}</strong>
                     <Lock
                       v-if="effectiveSessionAuth(row.session).type !== 'none'"
@@ -444,17 +443,19 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                   </button>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
-                  <ContextMenuItem @select="emit('select', row.session.id)"
-                    >Select</ContextMenuItem
-                  >
+                  <ContextMenuItem @select="emit('select', row.session.id)">
+                    Select
+                  </ContextMenuItem>
                   <ContextMenuItem
                     @select="emit('duplicateRequest', row.session.id)"
-                    >Duplicate</ContextMenuItem
                   >
+                    Duplicate
+                  </ContextMenuItem>
                   <ContextMenuItem
                     @select="emit('closeRequest', row.session.id)"
-                    >Close</ContextMenuItem
                   >
+                    Close
+                  </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuSub>
                     <ContextMenuSubTrigger>Set auth</ContextMenuSubTrigger>
@@ -463,16 +464,18 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         @select="
                           emit('setRequestLocalAuth', row.session.id, undefined)
                         "
-                        >Inherit</ContextMenuItem
                       >
+                        Inherit
+                      </ContextMenuItem>
                       <ContextMenuItem
                         @select="
                           emit('setRequestLocalAuth', row.session.id, {
                             type: 'none',
                           })
                         "
-                        >No auth</ContextMenuItem
                       >
+                        No auth
+                      </ContextMenuItem>
                       <ContextMenuItem
                         @select="
                           emit('setRequestLocalAuth', row.session.id, {
@@ -480,8 +483,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                             token: '',
                           })
                         "
-                        >Bearer</ContextMenuItem
                       >
+                        Bearer
+                      </ContextMenuItem>
                       <ContextMenuItem
                         @select="
                           emit('setRequestLocalAuth', row.session.id, {
@@ -502,12 +506,14 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         v-for="group in groups"
                         :key="group.id"
                         @select="emit('moveRequest', row.session.id, group.id)"
-                        >{{ group.name }}</ContextMenuItem
                       >
+                        {{ group.name }}
+                      </ContextMenuItem>
                       <ContextMenuItem
                         @select="emit('moveRequest', row.session.id, null)"
-                        >Ungrouped</ContextMenuItem
                       >
+                        Ungrouped
+                      </ContextMenuItem>
                     </ContextMenuSubContent>
                   </ContextMenuSub>
                 </ContextMenuContent>
@@ -563,8 +569,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         <label
                           class="sr-only"
                           :for="`rename-group-${row.group.id}`"
-                          >Rename {{ row.group.name }}</label
                         >
+                          Rename {{ row.group.name }}
+                        </label>
                         <input
                           :id="`rename-group-${row.group.id}`"
                           v-model="draftName"
@@ -639,27 +646,27 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                   <ContextMenuContent>
                     <ContextMenuItem
                       @select="emit('openGroupSettings', row.group.id)"
-                      >Settings</ContextMenuItem
                     >
-                    <ContextMenuItem @select="startCreating(row.group.id)"
-                      >New child group</ContextMenuItem
-                    >
-                    <ContextMenuItem @select="startRename(row.group)"
-                      >Rename</ContextMenuItem
-                    >
+                      Settings
+                    </ContextMenuItem>
+                    <ContextMenuItem @select="startCreating(row.group.id)">
+                      New child group
+                    </ContextMenuItem>
+                    <ContextMenuItem @select="startRename(row.group)">
+                      Rename
+                    </ContextMenuItem>
                     <ContextMenuItem
                       @select="emit('toggleGroup', row.group.id)"
-                      >{{
-                        row.group.collapsed ? "Expand" : "Collapse"
-                      }}</ContextMenuItem
                     >
-                    <ContextMenuItem @select="moveSelection(row.group.id)"
-                      >Move selection here</ContextMenuItem
-                    >
+                      {{ row.group.collapsed ? 'Expand' : 'Collapse' }}
+                    </ContextMenuItem>
+                    <ContextMenuItem @select="moveSelection(row.group.id)">
+                      Move selection here
+                    </ContextMenuItem>
                     <ContextMenuSeparator />
-                    <ContextMenuItem @select="deletingId = row.group.id"
-                      >Delete</ContextMenuItem
-                    >
+                    <ContextMenuItem @select="deletingId = row.group.id">
+                      Delete
+                    </ContextMenuItem>
                   </ContextMenuContent>
                 </ContextMenu>
               </div>
@@ -670,9 +677,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 :class="levelClass(row.level + 1)"
                 @submit.prevent="submitCreate"
               >
-                <label class="sr-only" :for="`group-name-${row.group.id}`"
-                  >Group name in {{ row.group.name }}</label
-                >
+                <label class="sr-only" :for="`group-name-${row.group.id}`">
+                  Group name in {{ row.group.name }}
+                </label>
                 <input
                   :id="`group-name-${row.group.id}`"
                   v-model="draftName"
@@ -719,12 +726,12 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem @select="startCreating(null)"
-          >New group</ContextMenuItem
-        >
-        <ContextMenuItem @select="emit('createRequest')"
-          >New request</ContextMenuItem
-        >
+        <ContextMenuItem @select="startCreating(null)">
+          New group
+        </ContextMenuItem>
+        <ContextMenuItem @select="emit('createRequest')">
+          New request
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
   </aside>
@@ -740,7 +747,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
   background: var(--muted);
   overflow: hidden;
 }
-.request-browser[data-collapsed="true"] {
+.request-browser[data-collapsed='true'] {
   width: 42px;
   min-width: 42px;
 }
@@ -752,7 +759,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
   padding: 0 10px 0 12px;
   border-bottom: 1px solid var(--border);
 }
-.request-browser[data-collapsed="true"] .browser-header {
+.request-browser[data-collapsed='true'] .browser-header {
   justify-content: center;
   padding: 0;
 }
@@ -823,7 +830,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 .sidebar-toggle {
   margin-left: auto;
 }
-.request-browser[data-collapsed="true"] .sidebar-toggle {
+.request-browser[data-collapsed='true'] .sidebar-toggle {
   margin-left: 0;
 }
 .tree-toggle:hover,
@@ -871,10 +878,10 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
   font-size: 0.5rem;
   font-weight: 700;
 }
-.browser-request span[data-method="GET"] {
+.browser-request span[data-method='GET'] {
   color: var(--success);
 }
-.browser-request span[data-method="DELETE"] {
+.browser-request span[data-method='DELETE'] {
   color: var(--destructive);
 }
 .browser-request strong {

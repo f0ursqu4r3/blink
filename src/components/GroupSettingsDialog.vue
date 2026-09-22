@@ -360,13 +360,18 @@ function handleCancel() {
 
       <!-- Tokens Section -->
       <section>
-        <h3>Tokens</h3>
-        <p class="help-text">
-          Local tokens inherit through parent groups. Use
-          <code v-text="'{{name}}'" /> to interpolate them. Token values can use
-          other tokens or <code>&lt;&lt;NAME&gt;&gt;</code> to read NAME from
-          Blink's process environment when a request is sent.
-        </p>
+        <div class="section-heading">
+          <h3>Tokens</h3>
+          <button
+            class="token-help"
+            data-token-help="local"
+            type="button"
+            aria-label="Token syntax help"
+            title="Local tokens inherit through parent groups. Use {{name}} to interpolate them. Token values can use other tokens or <<NAME>> to read NAME from Blink's process environment when a request is sent."
+          >
+            ?
+          </button>
+        </div>
         <label class="sr-only" for="local-token-json">Local tokens JSON</label>
         <textarea
           id="local-token-json"
@@ -430,8 +435,33 @@ h3 {
   font-weight: 600;
   letter-spacing: 0.07em;
   color: var(--muted-foreground);
-  margin-bottom: 8px;
   text-transform: uppercase;
+}
+
+.section-heading {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.token-help {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 1px solid var(--input);
+  border-radius: 50%;
+  color: var(--muted-foreground);
+  background: var(--muted);
+  font: 600 0.625rem/1 var(--font-mono);
+}
+
+.token-help:hover,
+.token-help:focus-visible {
+  color: var(--foreground);
+  background: var(--accent);
 }
 
 h4 {
@@ -536,18 +566,6 @@ section {
 
 .add-btn:hover {
   color: var(--primary);
-}
-
-.help-text {
-  font-size: 0.625rem;
-  color: var(--muted-foreground);
-  line-height: 1.5;
-}
-
-.help-text code {
-  font-family: var(--font-mono);
-  background: var(--muted);
-  padding: 0 3px;
 }
 
 [data-local-token-json] {

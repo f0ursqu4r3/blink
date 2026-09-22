@@ -1,16 +1,16 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { CopyPlus, HardDrive, ScanLine, Settings } from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
-import RequestTabs from "@/components/RequestTabs.vue";
-import RequestBrowser from "@/components/RequestBrowser.vue";
-import RequestWorkspace from "@/components/RequestWorkspace.vue";
-import GroupSettingsDialog from "@/components/GroupSettingsDialog.vue";
-import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vue";
-import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
-import { useWorkspaceState } from "@/composables/useWorkspaceState";
-import { createSession, hasDraft, sessionLabel } from "@/lib/session";
-import type { AuthorizationConfig } from "@/lib/authorization";
+import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue';
+import { CopyPlus, HardDrive, ScanLine, Settings } from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
+import RequestTabs from '@/components/RequestTabs.vue';
+import RequestBrowser from '@/components/RequestBrowser.vue';
+import RequestWorkspace from '@/components/RequestWorkspace.vue';
+import GroupSettingsDialog from '@/components/GroupSettingsDialog.vue';
+import ApplicationSettingsDialog from '@/components/ApplicationSettingsDialog.vue';
+import WorkspaceStorageNotice from '@/components/WorkspaceStorageNotice.vue';
+import { useWorkspaceState } from '@/composables/useWorkspaceState';
+import { createSession, hasDraft, sessionLabel } from '@/lib/session';
+import type { AuthorizationConfig } from '@/lib/authorization';
 
 const {
   sessions,
@@ -41,17 +41,17 @@ const {
 } = useWorkspaceState();
 
 const active = computed(() =>
-  sessions.value.find((session) => session.id === activeId.value)!,
+  sessions.value.find((session) => session.id === activeId.value)!
 );
 const pendingClose = ref<number | null>(null);
 const sidebarCollapsed = ref(false);
 const selectedRequestIds = ref<number[]>([]);
 const selectionAnchorId = ref<number | null>(null);
 const closeTarget = computed(() =>
-  sessions.value.find((session) => session.id === pendingClose.value),
+  sessions.value.find((session) => session.id === pendingClose.value)
 );
 const sending = computed(
-  () => sessions.value.filter((session) => session.busy).length,
+  () => sessions.value.filter((session) => session.busy).length
 );
 
 // Group settings dialog state
@@ -59,7 +59,7 @@ const groupSettingsOpen = ref(false);
 const groupSettingsId = ref<number | null>(null);
 const applicationSettingsOpen = ref(false);
 const groupSettingsGroup = computed(
-  () => groups.value.find((g) => g.id === groupSettingsId.value) ?? null,
+  () => groups.value.find((g) => g.id === groupSettingsId.value) ?? null
 );
 
 function openGroupSettings(groupId: number) {
@@ -73,10 +73,10 @@ function handleSaveGroupSettings(
     name?: string;
     localAuth?: AuthorizationConfig | undefined;
     localDefinitions?: Record<string, string>;
-  },
+  }
 ) {
   if (changes.name !== undefined) setGroupName(groupId, changes.name);
-  if (Object.prototype.hasOwnProperty.call(changes, "localAuth"))
+  if (Object.prototype.hasOwnProperty.call(changes, 'localAuth'))
     setGroupLocalAuth(groupId, changes.localAuth);
   if (changes.localDefinitions !== undefined)
     setGroupLocalDefinitions(groupId, changes.localDefinitions);
@@ -95,7 +95,7 @@ function updateSelection(ids: number[], anchorId: number | null) {
 function createGroup(
   name: string,
   parentId: number | null,
-  sessionIds?: number[],
+  sessionIds?: number[]
 ) {
   const group = addGroup(name, parentId);
   if (sessionIds?.length) moveRequests(sessionIds, group.id, null);
@@ -139,7 +139,7 @@ async function close(id: number, confirmed = false) {
   sessions.value.splice(index, 1);
   updateSelection(
     selectedRequestIds.value.filter((selectedId) => selectedId !== id),
-    selectionAnchorId.value === id ? null : selectionAnchorId.value,
+    selectionAnchorId.value === id ? null : selectionAnchorId.value
   );
   if (!sessions.value.length) create();
   else if (activeId.value === id)
@@ -157,50 +157,50 @@ function onKey(event: KeyboardEvent) {
     event.altKey
   )
     return;
-  if (event.key === "Escape" && pendingClose.value !== null) {
+  if (event.key === 'Escape' && pendingClose.value !== null) {
     cancelClose();
   }
-  if (event.ctrlKey && event.key === "Tab") {
+  if (event.ctrlKey && event.key === 'Tab') {
     event.preventDefault();
     const index = sessions.value.findIndex(
-      (session) => session.id === activeId.value,
+      (session) => session.id === activeId.value
     );
     select(
       sessions.value[
         (index + (event.shiftKey ? -1 : 1) + sessions.value.length) %
           sessions.value.length
-      ].id,
+      ].id
     );
     void nextTick(() =>
-      document.getElementById(`request-tab-${activeId.value}`)?.focus(),
+      document.getElementById(`request-tab-${activeId.value}`)?.focus()
     );
   } else if (event.metaKey || event.ctrlKey) {
     const key = event.key.toLowerCase();
-    if (key === "t" && !event.shiftKey) {
+    if (key === 't' && !event.shiftKey) {
       event.preventDefault();
       create();
     }
-    if (key === "w" && !event.shiftKey) {
+    if (key === 'w' && !event.shiftKey) {
       event.preventDefault();
       void close(activeId.value);
     }
-    if (key === "d" && event.shiftKey) {
+    if (key === 'd' && event.shiftKey) {
       event.preventDefault();
       duplicate();
     }
   }
 }
-onMounted(() => window.addEventListener("keydown", onKey));
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
   <main class="console-shell" :inert="closing || undefined">
     <header class="console-header">
       <div class="brand">
-        <span class="brand-mark"
-          ><ScanLine :size="19" aria-hidden="true"
-        /></span>
+        <span class="brand-mark">
+          <ScanLine :size="19" aria-hidden="true" />
+        </span>
         <h1>BLINK</h1>
       </div>
       <div class="header-actions">
@@ -209,8 +209,9 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           aria-label="Application settings"
           title="Application settings"
           @click="applicationSettingsOpen = true"
-          ><Settings :size="14" aria-hidden="true"
-        /></Button>
+        >
+          <Settings :size="14" aria-hidden="true" />
+        </Button>
         <Button
           variant="ghost"
           data-duplicate-request
@@ -218,11 +219,10 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           aria-label="Duplicate request"
           title="Duplicate request · Cmd/Ctrl+Shift+D"
           @click="duplicate()"
-          ><CopyPlus :size="14" aria-hidden="true" /><span
-            class="duplicate-label"
-            >Duplicate</span
-          ></Button
         >
+          <CopyPlus :size="14" aria-hidden="true" />
+          <span class="duplicate-label">Duplicate</span>
+        </Button>
       </div>
     </header>
     <WorkspaceStorageNotice
@@ -273,12 +273,13 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           aria-label="Confirm close request"
         >
           <p>
-            Discard <strong>{{ sessionLabel(closeTarget) }}</strong
-            >?
+            Discard
+            <strong>{{ sessionLabel(closeTarget) }}</strong>
+            ?
           </p>
-          <Button variant="ghost" data-cancel-close @click="cancelClose"
-            >Keep open</Button
-          >
+          <Button variant="ghost" data-cancel-close @click="cancelClose">
+            Keep open
+          </Button>
           <Button
             variant="secondary"
             data-confirm-close
@@ -302,15 +303,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         class="privacy-label"
         role="status"
         title="Saved on this device, including credentials and response content. Not encrypted."
-        ><HardDrive :size="11" aria-hidden="true" />{{ storageStatus }}</span
       >
-      <span
-        >{{ sessions.length }}
-        {{ sessions.length === 1 ? "REQUEST" : "REQUESTS" }}</span
-      >
-      <span v-if="sending" class="sending-count" role="status"
-        >{{ sending }} SENDING</span
-      >
+        <HardDrive :size="11" aria-hidden="true" />{{ storageStatus }}
+      </span>
+      <span>
+        {{ sessions.length }}
+        {{ sessions.length === 1 ? 'REQUEST' : 'REQUESTS' }}
+      </span>
+      <span v-if="sending" class="sending-count" role="status">
+        {{ sending }} SENDING
+      </span>
       <span v-else class="limit-note">30 s TIMEOUT · 4 MiB LIMIT</span>
     </footer>
     <GroupSettingsDialog

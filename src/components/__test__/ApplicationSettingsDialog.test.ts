@@ -3,6 +3,18 @@ import { mount } from "@vue/test-utils";
 import ApplicationSettingsDialog from "../ApplicationSettingsDialog.vue";
 
 describe("ApplicationSettingsDialog", () => {
+  it("moves token syntax help into a labeled tooltip trigger", () => {
+    const wrapper = mount(ApplicationSettingsDialog, {
+      props: { definitions: {}, open: true },
+      attachTo: document.body,
+    });
+
+    const help = wrapper.get('[data-token-help="global"]');
+    expect(help.attributes("aria-label")).toBe("Token syntax help");
+    expect(help.attributes("title")).toContain("{{_.name}}");
+    expect(wrapper.find(".help-text").exists()).toBe(false);
+  });
+
   it("edits workspace-global definitions as a JSON object", async () => {
     const wrapper = mount(ApplicationSettingsDialog, {
       props: {

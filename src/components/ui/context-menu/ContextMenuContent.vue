@@ -8,7 +8,10 @@ defineProps<{
 
 <template>
   <ContextMenuPortal>
-    <ContextMenuContent :class="['blink-ctx-content', $props.class]">
+    <ContextMenuContent
+      :class="['blink-ctx-content', $props.class]"
+      data-surface="context-menu"
+    >
       <slot />
     </ContextMenuContent>
   </ContextMenuPortal>
@@ -20,7 +23,7 @@ defineProps<{
   overflow: hidden;
   border-radius: 4px;
   border: 1px solid var(--border);
-  background: var(--secondary);
+  background-color: var(--secondary);
   color: var(--foreground);
   padding: 0.25rem;
   box-shadow:

@@ -1,19 +1,19 @@
 <script setup lang="ts">
-import { computed, ref, useId } from "vue";
-import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
-import { Braces, KeyRound } from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
+import { computed, ref, useId } from 'vue';
+import { TabsRoot, TabsList, TabsTrigger, TabsContent } from 'reka-ui';
+import { Braces, KeyRound } from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import KeyValueEditor from "./KeyValueEditor.vue";
-import { activePairs, supportsBody, type Draft } from "@/lib/request";
-import type { AuthorizationConfig } from "@/lib/authorization";
-import { formatJson } from "@/lib/json";
+} from '@/components/ui/context-menu';
+import KeyValueEditor from './KeyValueEditor.vue';
+import { activePairs, supportsBody, type Draft } from '@/lib/request';
+import type { AuthorizationConfig } from '@/lib/authorization';
+import { formatJson } from '@/lib/json';
 const draft = defineModel<Draft>({ required: true });
 const props = defineProps<{
   busy: boolean;
@@ -21,40 +21,40 @@ const props = defineProps<{
   inheritedSource?: string;
 }>();
 const id = useId();
-const tab = defineModel<string>("tab", { default: "query" });
-const formatError = ref("");
+const tab = defineModel<string>('tab', { default: 'query' });
+const formatError = ref('');
 const bodyPlaceholder = computed(() =>
-  draft.value.bodyMode === "json" ? '{\n  "key": "value"\n}' : "Request body",
+  draft.value.bodyMode === 'json' ? '{\n  "key": "value"\n}' : 'Request body'
 );
 const bodyAllowed = computed(() => supportsBody(draft.value.method));
 
 /** Resolved "what is selected in the auth dropdown" */
 const authSelectValue = computed(() => {
-  if (draft.value.localAuth === undefined) return "inherit";
-  return draft.value.localAuth.type === "bearer"
-    ? "bearer"
-    : draft.value.localAuth.type === "basic"
-      ? "basic"
-      : "none";
+  if (draft.value.localAuth === undefined) return 'inherit';
+  return draft.value.localAuth.type === 'bearer'
+    ? 'bearer'
+    : draft.value.localAuth.type === 'basic'
+      ? 'basic'
+      : 'none';
 });
 
 function setAuthType(value: string) {
-  if (value === "inherit") {
+  if (value === 'inherit') {
     draft.value = { ...draft.value, localAuth: undefined };
-  } else if (value === "none") {
-    draft.value = { ...draft.value, localAuth: { type: "none" } };
-  } else if (value === "bearer") {
+  } else if (value === 'none') {
+    draft.value = { ...draft.value, localAuth: { type: 'none' } };
+  } else if (value === 'bearer') {
     draft.value = {
       ...draft.value,
-      localAuth: { type: "bearer", token: draft.value.token ?? "" },
+      localAuth: { type: 'bearer', token: draft.value.token ?? '' },
     };
-  } else if (value === "basic") {
+  } else if (value === 'basic') {
     draft.value = {
       ...draft.value,
       localAuth: {
-        type: "basic",
-        username: draft.value.username ?? "",
-        password: draft.value.password ?? "",
+        type: 'basic',
+        username: draft.value.username ?? '',
+        password: draft.value.password ?? '',
       },
     };
   }
@@ -63,34 +63,34 @@ function setAuthType(value: string) {
 const authBadgeCount = computed(() => {
   // Show badge if effective auth (inherited or local) is not none
   const effective = draft.value.localAuth ?? props.effectiveAuth;
-  return effective && effective.type !== "none" ? 1 : 0;
+  return effective && effective.type !== 'none' ? 1 : 0;
 });
 
 const tabs = computed(() => [
-  { id: "query", label: "Query", count: activePairs(draft.value.query).length },
+  { id: 'query', label: 'Query', count: activePairs(draft.value.query).length },
   {
-    id: "headers",
-    label: "Headers",
+    id: 'headers',
+    label: 'Headers',
     count: activePairs(draft.value.headers).length,
   },
   {
-    id: "body",
-    label: "Body",
-    count: bodyAllowed.value && draft.value.bodyMode !== "none" ? 1 : 0,
+    id: 'body',
+    label: 'Body',
+    count: bodyAllowed.value && draft.value.bodyMode !== 'none' ? 1 : 0,
   },
-  { id: "auth", label: "Auth", count: authBadgeCount.value },
+  { id: 'auth', label: 'Auth', count: authBadgeCount.value },
 ]);
 function formatBody() {
   try {
     draft.value.body = formatJson(draft.value.body);
-    formatError.value = "";
+    formatError.value = '';
   } catch {
-    formatError.value = "Invalid JSON. The body was not changed.";
+    formatError.value = 'Invalid JSON. The body was not changed.';
   }
 }
 function clearBody() {
-  draft.value.body = "";
-  formatError.value = "";
+  draft.value.body = '';
+  formatError.value = '';
 }
 </script>
 
@@ -99,7 +99,7 @@ function clearBody() {
     <header class="panel-heading">
       <h2 :id="`${id}-heading`"><span>01</span> Request</h2>
       <span class="text-muted-foreground">{{
-        busy ? "SENDING" : "COMPOSE"
+        busy ? 'SENDING' : 'COMPOSE'
       }}</span>
     </header>
     <TabsRoot v-model="tab" class="editor-tabs">
@@ -110,8 +110,8 @@ function clearBody() {
           :value="item.id"
           class="tab-trigger"
         >
-          {{ item.label
-          }}<span v-if="item.count" class="tab-count">{{ item.count }}</span>
+          {{ item.label }}
+          <span v-if="item.count" class="tab-count">{{ item.count }}</span>
         </TabsTrigger>
       </TabsList>
       <TabsContent value="query" class="tab-content">
@@ -152,8 +152,9 @@ function clearBody() {
                 class="ml-auto"
                 :disabled="busy || !draft.body"
                 @click="formatBody"
-                ><Braces :size="13" aria-hidden="true" />Format</Button
               >
+                <Braces :size="13" aria-hidden="true" />Format
+              </Button>
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
@@ -230,18 +231,19 @@ function clearBody() {
                 <span
                   class="auth-inherited-value"
                   data-testid="effective-auth-note"
-                  >Effective: {{ effectiveAuth.type }}</span
                 >
+                  Effective: {{ effectiveAuth.type }}
+                </span>
                 <template v-if="inheritedSource">
                   <span class="auth-inherited-label">Source</span>
-                  <span class="auth-inherited-value">{{
-                    inheritedSource
-                  }}</span>
+                  <span class="auth-inherited-value">
+                    {{ inheritedSource }}
+                  </span>
                 </template>
               </template>
               <template v-if="draft.localAuth?.type === 'bearer'">
-                <label :for="`${id}-auth-token`">Token</label
-                ><input
+                <label :for="`${id}-auth-token`">Token</label>
+                <input
                   :id="`${id}-auth-token`"
                   v-model="
                     (draft.localAuth as { type: 'bearer'; token: string }).token
@@ -255,8 +257,8 @@ function clearBody() {
                 />
               </template>
               <template v-if="draft.localAuth?.type === 'basic'">
-                <label :for="`${id}-auth-user`">Username</label
-                ><input
+                <label :for="`${id}-auth-user`">Username</label>
+                <input
                   :id="`${id}-auth-user`"
                   v-model="
                     (
@@ -272,8 +274,8 @@ function clearBody() {
                   spellcheck="false"
                   @contextmenu.stop
                 />
-                <label :for="`${id}-auth-password`">Password</label
-                ><input
+                <label :for="`${id}-auth-password`">Password</label>
+                <input
                   :id="`${id}-auth-password`"
                   v-model="
                     (
@@ -331,9 +333,10 @@ function clearBody() {
     </TabsRoot>
     <footer class="panel-footer">
       {{ activePairs(draft.query).length }} QUERY ·
-      {{ activePairs(draft.headers).length }} HEADERS<span
-        >AUTH / {{ (draft.localAuth?.type ?? draft.auth).toUpperCase() }}</span
-      >
+      {{ activePairs(draft.headers).length }} HEADERS
+      <span>
+        AUTH / {{ (draft.localAuth?.type ?? draft.auth).toUpperCase() }}
+      </span>
     </footer>
   </section>
 </template>
@@ -392,7 +395,7 @@ h2 span {
   color: var(--foreground);
   background: var(--muted);
 }
-.tab-trigger[data-state="active"] {
+.tab-trigger[data-state='active'] {
   color: var(--primary);
   border-bottom-color: var(--primary);
 }
@@ -406,7 +409,7 @@ h2 span {
   overflow: auto;
   outline-offset: -2px;
 }
-.body-content[data-state="active"] {
+.body-content[data-state='active'] {
   display: flex;
   flex-direction: column;
 }

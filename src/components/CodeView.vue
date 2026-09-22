@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import { useVirtualizer } from "@tanstack/vue-virtual";
+import { computed, ref, watch } from 'vue';
+import { useVirtualizer } from '@tanstack/vue-virtual';
 import {
   highlightResponseLine,
   type ResponseLanguage,
-} from "@/lib/response-content";
+} from '@/lib/response-content';
 
 const props = withDefaults(
   defineProps<{
@@ -14,13 +14,13 @@ const props = withDefaults(
     wrap?: boolean;
     active?: boolean;
   }>(),
-  { language: "plaintext" },
+  { language: 'plaintext' }
 );
-const scroll = defineModel<number>("scroll", { default: 0 });
+const scroll = defineModel<number>('scroll', { default: 0 });
 const element = ref<HTMLElement>();
-const filter = computed(() => props.filter?.trim().toLocaleLowerCase() ?? "");
+const filter = computed(() => props.filter?.trim().toLocaleLowerCase() ?? '');
 const lines = computed(() =>
-  props.text.split("\n").flatMap((text, index) =>
+  props.text.split('\n').flatMap((text, index) =>
     !filter.value || text.toLocaleLowerCase().includes(filter.value)
       ? [
           {
@@ -28,8 +28,8 @@ const lines = computed(() =>
             number: index + 1,
           },
         ]
-      : [],
-  ),
+      : []
+  )
 );
 const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
   computed(() => ({
@@ -45,13 +45,13 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
           height: target?.clientHeight || 800,
         });
       report();
-      if (!target || typeof ResizeObserver === "undefined") return;
+      if (!target || typeof ResizeObserver === 'undefined') return;
       const observer = new ResizeObserver(report);
       observer.observe(target);
       return () => observer.disconnect();
     },
     overscan: 12,
-  })),
+  }))
 );
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
 

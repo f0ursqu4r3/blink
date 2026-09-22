@@ -313,6 +313,15 @@ describe("GroupSettingsDialog", () => {
   });
 
   describe("Tokens section", () => {
+    it("moves token syntax help into a labeled tooltip trigger", () => {
+      const w = mountDialog();
+
+      const help = w.get('[data-token-help="local"]');
+      expect(help.attributes("aria-label")).toBe("Token syntax help");
+      expect(help.attributes("title")).toContain("{{name}}");
+      expect(w.find(".help-text").exists()).toBe(false);
+    });
+
     it("shows local token definitions as JSON", () => {
       const group = mkGroup({
         localDefinitions: { mytoken: "abc", other: "xyz" },

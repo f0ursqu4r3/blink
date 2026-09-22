@@ -7,9 +7,9 @@ import {
   ref,
   useId,
   watch,
-} from "vue";
-import { createView, type RequestView } from "@/lib/session";
-import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
+} from 'vue';
+import { createView, type RequestView } from '@/lib/session';
+import { TabsRoot, TabsList, TabsTrigger, TabsContent } from 'reka-ui';
 import {
   Check,
   Copy,
@@ -17,22 +17,22 @@ import {
   Search,
   WrapText,
   X,
-} from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
+} from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from "@/components/ui/context-menu";
-import { formatBytes, type ApiResponse, type Header } from "@/lib/request";
-import { useClipboard } from "@/composables/useClipboard";
-import { formatJson } from "@/lib/json";
-import { runJq } from "@/lib/jq";
-import { responseLanguage } from "@/lib/response-content";
-import CodeView from "./CodeView.vue";
-import JsonTreeView from "./JsonTreeView.vue";
+} from '@/components/ui/context-menu';
+import { formatBytes, type ApiResponse, type Header } from '@/lib/request';
+import { useClipboard } from '@/composables/useClipboard';
+import { formatJson } from '@/lib/json';
+import { runJq } from '@/lib/jq';
+import { responseLanguage } from '@/lib/response-content';
+import CodeView from './CodeView.vue';
+import JsonTreeView from './JsonTreeView.vue';
 const props = defineProps<{
   response: ApiResponse | null;
   busy: boolean;
@@ -42,7 +42,7 @@ const props = defineProps<{
   active?: boolean;
 }>();
 const headingId = useId();
-const view = defineModel<RequestView>("view", { default: createView });
+const view = defineModel<RequestView>('view', { default: createView });
 const tab = computed({
   get: () => view.value.responseTab,
   set: (responseTab) => {
@@ -62,12 +62,12 @@ const wrap = computed({
   },
 });
 const { copied, copyError, copy } = useClipboard();
-const search = ref("");
+const search = ref('');
 const inspectorVisible = ref(false);
 const searchInput = ref<HTMLInputElement | null>(null);
-const jqQuery = ref("");
+const jqQuery = ref('');
 const jqOutput = ref<string | null>(null);
-const jqError = ref("");
+const jqError = ref('');
 const sourceParsed = computed(() => {
   if (!props.response) return null;
   try {
@@ -88,69 +88,69 @@ const parsed = computed(() => {
 const text = computed(() =>
   pretty.value && parsed.value
     ? parsed.value.text
-    : (jqOutput.value ?? props.response?.body ?? ""),
+    : (jqOutput.value ?? props.response?.body ?? '')
 );
 const contentType = computed(
   () =>
     props.response?.headers
-      .find((header) => header.key.toLowerCase() === "content-type")
-      ?.value.split(";")[0] ?? "No Content-Type",
+      .find((header) => header.key.toLowerCase() === 'content-type')
+      ?.value.split(';')[0] ?? 'No Content-Type'
 );
 const language = computed(() =>
-  parsed.value ? "json" : responseLanguage(contentType.value),
+  parsed.value ? 'json' : responseLanguage(contentType.value)
 );
 const showJsonTree = computed(() => pretty.value && Boolean(parsed.value));
 const filteredHeaders = computed(() => {
   const query = search.value.trim().toLocaleLowerCase();
   if (!query) return props.response?.headers ?? [];
   return (props.response?.headers ?? []).filter(({ key, value }) =>
-    `${key}: ${value}`.toLocaleLowerCase().includes(query),
+    `${key}: ${value}`.toLocaleLowerCase().includes(query)
   );
 });
 const tone = computed(() =>
   !props.response
-    ? ""
+    ? ''
     : props.response.status >= 400
-      ? "error"
+      ? 'error'
       : props.response.status >= 300
-        ? "redirect"
-        : "success",
+        ? 'redirect'
+        : 'success'
 );
 watch(
   () => props.response,
   () => {
-    tab.value = "body";
+    tab.value = 'body';
     view.value.responseScroll = 0;
-    search.value = "";
+    search.value = '';
     inspectorVisible.value = false;
-    jqQuery.value = "";
+    jqQuery.value = '';
     jqOutput.value = null;
-    jqError.value = "";
-  },
+    jqError.value = '';
+  }
 );
 function copyResult() {
   void copy(
-    tab.value === "headers"
+    tab.value === 'headers'
       ? (props.response?.headers
           .map(({ key, value }) => `${key}: ${value}`)
-          .join("\n") ?? "")
-      : text.value,
+          .join('\n') ?? '')
+      : text.value
   );
 }
 async function executeJq() {
   if (!props.response || !jqQuery.value.trim()) return;
-  jqError.value = "";
+  jqError.value = '';
   try {
     jqOutput.value = await runJq(props.response.body, jqQuery.value);
     view.value.responseScroll = 0;
   } catch (error) {
-    jqError.value = error instanceof Error ? error.message : "jq query failed.";
+    jqError.value = error instanceof Error ? error.message : 'jq query failed.';
   }
 }
 function toggleInspector() {
   inspectorVisible.value = !inspectorVisible.value;
   if (inspectorVisible.value) void nextTick(() => searchInput.value?.focus());
-  else search.value = "";
+  else search.value = '';
 }
 function onKey(event: KeyboardEvent) {
   if (props.active === false || event.defaultPrevented || event.isComposing)
@@ -159,19 +159,19 @@ function onKey(event: KeyboardEvent) {
     (event.metaKey || event.ctrlKey) &&
     !event.shiftKey &&
     !event.altKey &&
-    event.key.toLowerCase() === "f" &&
-    tab.value === "body"
+    event.key.toLowerCase() === 'f' &&
+    tab.value === 'body'
   ) {
     event.preventDefault();
     if (!inspectorVisible.value) toggleInspector();
     else void nextTick(() => searchInput.value?.focus());
-  } else if (event.key === "Escape" && inspectorVisible.value) {
+  } else if (event.key === 'Escape' && inspectorVisible.value) {
     event.preventDefault();
     toggleInspector();
   }
 }
-onMounted(() => window.addEventListener("keydown", onKey));
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 
 // ── Header row context menu ────────────────────────────────────────────────
 const contextHeader = ref<Header | null>(null);
@@ -206,12 +206,12 @@ function copyHeaderPair() {
       <h2 :id="headingId">Response</h2>
       <span class="state-label" role="status">{{
         busy
-          ? "RECEIVING"
+          ? 'RECEIVING'
           : error
-            ? "FAILED"
+            ? 'FAILED'
             : response
-              ? "RECEIVED"
-              : "STANDBY"
+              ? 'RECEIVED'
+              : 'STANDBY'
       }}</span>
     </header>
     <template v-if="response && !busy && !error">
@@ -219,11 +219,11 @@ function copyHeaderPair() {
         Previous response · request edited since send
       </p>
       <div class="response-metrics">
-        <span data-response-status :data-tone="tone" class="status"
-          ><span class="status-dot" />{{ response.status }}
-          {{ response.statusText }}</span
-        >
-        <span>{{ response.durationMs }}<small> ms</small></span>
+        <span data-response-status :data-tone="tone" class="status">
+          <span class="status-dot" />{{ response.status }}
+          {{ response.statusText }}
+        </span>
+        <span> {{ response.durationMs }}<small> ms</small> </span>
         <span>{{ formatBytes(response.sizeBytes) }}</span>
       </div>
       <TabsRoot v-model="tab" class="response-tabs">
@@ -236,9 +236,10 @@ function copyHeaderPair() {
                   value="headers"
                   class="tab-trigger"
                   data-response-headers
-                  >Headers
-                  <span>{{ response.headers.length }}</span></TabsTrigger
                 >
+                  Headers
+                  <span>{{ response.headers.length }}</span>
+                </TabsTrigger>
               </TabsList>
               <div class="response-actions">
                 <Button
@@ -246,8 +247,9 @@ function copyHeaderPair() {
                   variant="ghost"
                   :aria-pressed="pretty"
                   @click="pretty = !pretty"
-                  >{{ pretty ? "Pretty" : "Raw" }}</Button
                 >
+                  {{ pretty ? 'Pretty' : 'Raw' }}
+                </Button>
                 <Button
                   v-if="tab === 'body'"
                   variant="ghost"
@@ -256,8 +258,9 @@ function copyHeaderPair() {
                   aria-label="Wrap lines"
                   title="Wrap lines"
                   @click="wrap = !wrap"
-                  ><WrapText :size="14" aria-hidden="true"
-                /></Button>
+                >
+                  <WrapText :size="14" aria-hidden="true" />
+                </Button>
                 <Button
                   v-if="tab === 'body'"
                   variant="ghost"
@@ -266,19 +269,19 @@ function copyHeaderPair() {
                   aria-label="Find response"
                   title="Find and filter response · Cmd/Ctrl+F"
                   @click="toggleInspector"
-                  ><Search :size="14" aria-hidden="true"
-                /></Button>
+                >
+                  <Search :size="14" aria-hidden="true" />
+                </Button>
                 <Button
                   variant="ghost"
                   class="size-7 shrink-0 p-0"
                   :aria-label="copied ? 'Copied response' : 'Copy response'"
                   title="Copy response"
                   @click="copyResult"
-                  ><Check v-if="copied" :size="14" aria-hidden="true" /><Copy
-                    v-else
-                    :size="14"
-                    aria-hidden="true"
-                /></Button>
+                >
+                  <Check v-if="copied" :size="14" aria-hidden="true" />
+                  <Copy v-else :size="14" aria-hidden="true" />
+                </Button>
               </div>
             </div>
           </ContextMenuTrigger>
@@ -286,26 +289,30 @@ function copyHeaderPair() {
             <ContextMenuItem
               data-testid="ctx-copy-response"
               @select="copyResult"
-              >Copy response</ContextMenuItem
             >
+              Copy response
+            </ContextMenuItem>
             <template v-if="tab === 'body'">
               <ContextMenuSeparator />
               <ContextMenuItem
                 v-if="parsed"
                 data-testid="ctx-toolbar-pretty"
                 @select="pretty = !pretty"
-                >{{ pretty ? "Pretty" : "Raw" }}</ContextMenuItem
               >
+                {{ pretty ? 'Pretty' : 'Raw' }}
+              </ContextMenuItem>
               <ContextMenuItem
                 data-testid="ctx-toolbar-wrap"
                 @select="wrap = !wrap"
-                >Wrap</ContextMenuItem
               >
+                Wrap
+              </ContextMenuItem>
               <ContextMenuItem
                 data-testid="ctx-toolbar-find"
                 @select="toggleInspector"
-                >Find</ContextMenuItem
               >
+                Find
+              </ContextMenuItem>
             </template>
           </ContextMenuContent>
         </ContextMenu>
@@ -343,8 +350,9 @@ function copyHeaderPair() {
               variant="ghost"
               data-run-jq
               :disabled="!jqQuery.trim()"
-              >Run jq</Button
             >
+              Run jq
+            </Button>
             <Button
               v-if="jqOutput !== null"
               type="button"
@@ -353,8 +361,9 @@ function copyHeaderPair() {
               aria-label="Clear jq result"
               title="Clear jq result"
               @click="jqOutput = null"
-              ><X :size="14" aria-hidden="true"
-            /></Button>
+            >
+              <X :size="14" aria-hidden="true" />
+            </Button>
           </form>
         </div>
         <p v-if="copyError" role="alert" class="copy-error">{{ copyError }}</p>
@@ -405,18 +414,21 @@ function copyHeaderPair() {
               <ContextMenuItem
                 data-testid="ctx-header-copy-name"
                 @select="copyHeaderName"
-                >Copy name</ContextMenuItem
               >
+                Copy name
+              </ContextMenuItem>
               <ContextMenuItem
                 data-testid="ctx-header-copy-value"
                 @select="copyHeaderValue"
-                >Copy value</ContextMenuItem
               >
+                Copy value
+              </ContextMenuItem>
               <ContextMenuItem
                 data-testid="ctx-header-copy-pair"
                 @select="copyHeaderPair"
-                >Copy name: value</ContextMenuItem
               >
+                Copy name: value
+              </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
           <p v-if="!filteredHeaders.length" class="empty-body">
@@ -435,7 +447,11 @@ function copyHeaderPair() {
     </div>
     <div v-else-if="busy" class="waiting-state">
       <div class="receiving-bars" aria-hidden="true">
-        <i /><i /><i /><i /><i />
+        <i />
+        <i />
+        <i />
+        <i />
+        <i />
       </div>
       <h3>AWAITING RESPONSE</h3>
       <p>{{ (elapsed / 1000).toFixed(1) }} s elapsed · 30 s timeout</p>
@@ -510,13 +526,13 @@ h2 {
   width: 5px;
   background: currentColor;
 }
-[data-tone="success"] {
+[data-tone='success'] {
   color: var(--success);
 }
-[data-tone="redirect"] {
+[data-tone='redirect'] {
   color: var(--primary);
 }
-[data-tone="error"] {
+[data-tone='error'] {
   color: var(--destructive);
 }
 .response-tabs {
@@ -595,7 +611,7 @@ h2 {
   margin-left: 4px;
   font: 0.625rem var(--font-mono);
 }
-.tab-trigger[data-state="active"] {
+.tab-trigger[data-state='active'] {
   color: var(--primary);
   border-bottom-color: var(--primary);
 }
@@ -603,7 +619,7 @@ h2 {
   background: var(--muted);
   color: var(--foreground);
 }
-.body-content[data-state="active"] {
+.body-content[data-state='active'] {
   display: flex;
   flex-direction: column;
 }
