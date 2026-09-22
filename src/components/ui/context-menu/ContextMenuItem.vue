@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ContextMenuItem } from "reka-ui";
+import { ContextMenuItem } from 'reka-ui';
 
 defineProps<{
   class?: string;
@@ -13,42 +13,16 @@ const emit = defineEmits<{
 
 <template>
   <ContextMenuItem
-    :class="['blink-ctx-item', $props.class]"
+    :class="[
+      'flex items-center gap-2 rounded-sm px-2 py-1 cursor-default outline-none select-none text-foreground font-mono text-xs',
+      'data-highlighted:bg-accent data-highlighted:text-foreground',
+      'focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2',
+      'data-disabled:opacity-40 data-disabled:pointer-events-none',
+      $props.class,
+    ]"
     :disabled="disabled"
     @select="(e: Event) => emit('select', e)"
   >
     <slot />
   </ContextMenuItem>
 </template>
-
-<style scoped>
-.blink-ctx-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  border-radius: 2px;
-  padding: 0.25rem 0.5rem;
-  cursor: default;
-  outline: none;
-  user-select: none;
-  color: var(--foreground);
-  font-family: var(--font-mono, monospace);
-  font-size: 0.75rem;
-}
-
-.blink-ctx-item[data-highlighted] {
-  background: var(--accent);
-  color: var(--foreground);
-}
-
-.blink-ctx-item:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: -2px;
-}
-
-.blink-ctx-item[data-disabled] {
-  opacity: 0.4;
-  pointer-events: none;
-  cursor: default;
-}
-</style>

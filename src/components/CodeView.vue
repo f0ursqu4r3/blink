@@ -75,15 +75,18 @@ function measureRow(node: unknown) {
 <template>
   <div
     ref="element"
-    class="code-view"
+    class="min-h-0 flex-1 overflow-auto py-4 scrollbar-gutter-stable"
     data-virtual-scroller
     :class="{ wrapped: wrap }"
     tabindex="0"
     aria-label="Response body"
     @scroll.passive="saveScroll"
   >
-    <pre class="source" :data-language="language"><code
-      class="virtual-canvas"
+    <pre
+      class="m-0 min-w-max font-mono text-[0.8125rem] leading-[1.75] tab-2 in-[.wrapped]:w-full in-[.wrapped]:min-w-0"
+      :data-language="language"
+    ><code
+      class="relative block"
       data-response-body
       :data-language="language"
       :style="{ height: `${virtualizer.getTotalSize()}px` }"
@@ -91,48 +94,24 @@ function measureRow(node: unknown) {
         v-for="virtualRow in virtualRows"
         :key="String(virtualRow.key)"
         :ref="measureRow"
-        class="code-line"
+        class="code-line absolute flex w-max min-w-full h-5.75 whitespace-pre in-[.wrapped]:w-full in-[.wrapped]:min-w-0 in-[.wrapped]:h-auto in-[.wrapped]:min-h-5.75 in-[.wrapped]:whitespace-pre-wrap"
         :data-index="virtualRow.index"
         :data-line="lines[virtualRow.index].number"
         :style="{ transform: `translateY(${virtualRow.start}px)` }"
         ><span
-          class="line-source"
+          class="line-source px-4 in-[.wrapped]:wrap-anywhere"
           v-html="lines[virtualRow.index].html"
         /></span></code
     ></pre>
-    <p v-if="!lines.length" class="empty-code">
+    <p v-if="!lines.length" class="px-4 text-muted-foreground text-xs">
       No response lines match this filter.
     </p>
   </div>
 </template>
 
 <style scoped>
-.code-view {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: 16px 0;
-  scrollbar-gutter: stable;
-}
-.source {
-  margin: 0;
-  min-width: max-content;
-  font: 0.8125rem/1.75 var(--font-mono);
-  tab-size: 2;
-}
-.virtual-canvas {
-  position: relative;
-  display: block;
-}
-.code-line {
-  position: absolute;
-  display: flex;
-  width: max-content;
-  min-width: 100%;
-  height: 23px;
-  white-space: pre;
-}
-.code-view:not(.wrapped) .code-line::before {
+/* Line numbers via pseudo-element — requires content: attr() and cannot be expressed as Tailwind utilities */
+.code-line:not(.wrapped *):before {
   width: 54px;
   flex: none;
   padding-right: 12px;
@@ -143,22 +122,8 @@ function measureRow(node: unknown) {
   user-select: none;
   content: attr(data-line);
 }
-.line-source {
-  padding: 0 16px;
-}
-.wrapped .source,
-.wrapped .code-line {
-  width: 100%;
-  min-width: 0;
-}
-.wrapped .code-line {
-  height: auto;
-  min-height: 23px;
-  white-space: pre-wrap;
-}
-.wrapped .line-source {
-  overflow-wrap: anywhere;
-}
+
+/* v-html syntax highlighting — :deep() selectors cannot be expressed as Tailwind utilities */
 :deep(.hljs-attr),
 :deep(.hljs-attribute),
 :deep(.hljs-property) {
@@ -182,10 +147,5 @@ function measureRow(node: unknown) {
 :deep(.hljs-comment),
 :deep(.hljs-meta) {
   color: var(--muted-foreground);
-}
-.empty-code {
-  padding: 0 16px;
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
 }
 </style>

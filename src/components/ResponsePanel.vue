@@ -198,13 +198,17 @@ function copyHeaderPair() {
 
 <template>
   <section
-    class="response-panel"
+    class="min-w-0 min-h-0 flex flex-col bg-background"
     :aria-labelledby="headingId"
     :aria-busy="busy"
   >
-    <header class="panel-heading">
-      <h2 :id="headingId">Response</h2>
-      <span class="state-label" role="status">{{
+    <header
+      class="h-9 shrink-0 px-4 flex items-center justify-between border-b border-border bg-muted font-mono text-[0.625rem] tracking-[0.12em]"
+    >
+      <h2 :id="headingId" class="font-semibold text-[0.6875rem] uppercase">
+        Response
+      </h2>
+      <span class="text-muted-foreground" role="status">{{
         busy
           ? 'RECEIVING'
           : error
@@ -215,33 +219,57 @@ function copyHeaderPair() {
       }}</span>
     </header>
     <template v-if="response && !busy && !error">
-      <p v-if="stale" class="stale-response" role="status">
+      <p
+        v-if="stale"
+        class="py-1.5 px-3.5 border-b border-border text-primary font-mono text-[0.625rem]"
+        role="status"
+      >
         Previous response · request edited since send
       </p>
-      <div class="response-metrics">
-        <span data-response-status :data-tone="tone" class="status">
-          <span class="status-dot" />{{ response.status }}
+      <div
+        class="flex items-center flex-wrap min-h-11 gap-4 px-4 py-2 border-b border-border font-mono text-[0.6875rem] tabular-nums"
+      >
+        <span
+          data-response-status
+          :data-tone="tone"
+          class="inline-flex items-center gap-2 data-[tone=success]:text-success data-[tone=redirect]:text-primary data-[tone=error]:text-destructive"
+        >
+          <span class="block h-1.25 w-1.25 bg-current" />{{ response.status }}
           {{ response.statusText }}
         </span>
-        <span> {{ response.durationMs }}<small> ms</small> </span>
-        <span>{{ formatBytes(response.sizeBytes) }}</span>
+        <span class="border-l border-border pl-4">
+          {{ response.durationMs }}
+          <small class="text-muted-foreground"> ms</small>
+        </span>
+        <span class="border-l border-border pl-4">
+          {{ formatBytes(response.sizeBytes) }}
+        </span>
       </div>
-      <TabsRoot v-model="tab" class="response-tabs">
+      <TabsRoot v-model="tab" class="flex-1 min-h-0 flex flex-col">
         <ContextMenu>
           <ContextMenuTrigger as-child>
-            <div class="response-toolbar">
-              <TabsList class="tab-list" aria-label="Response view">
-                <TabsTrigger value="body" class="tab-trigger">Body</TabsTrigger>
+            <div
+              class="response-toolbar flex justify-between items-center border-b border-border px-2 gap-1 shrink-0"
+            >
+              <TabsList class="flex items-center" aria-label="Response view">
+                <TabsTrigger
+                  value="body"
+                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-primary data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
+                >
+                  Body
+                </TabsTrigger>
                 <TabsTrigger
                   value="headers"
-                  class="tab-trigger"
+                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-primary data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
                   data-response-headers
                 >
                   Headers
-                  <span>{{ response.headers.length }}</span>
+                  <span class="ml-1 font-mono text-[0.625rem]">
+                    {{ response.headers.length }}
+                  </span>
                 </TabsTrigger>
               </TabsList>
-              <div class="response-actions">
+              <div class="flex items-center">
                 <Button
                   v-if="tab === 'body' && parsed"
                   variant="ghost"
@@ -318,9 +346,11 @@ function copyHeaderPair() {
         </ContextMenu>
         <div
           v-if="tab === 'body' && inspectorVisible"
-          class="response-inspector"
+          class="flex min-h-9.5 gap-2 px-2 py-1.25 border-b border-border bg-muted max-[680px]:flex-col"
         >
-          <label class="response-search">
+          <label
+            class="flex flex-[1_1_180px] min-w-0 items-center gap-1.5 border border-input bg-background pl-2 text-muted-foreground focus-within:border-primary max-[680px]:basis-8.5"
+          >
             <Search :size="13" aria-hidden="true" />
             <span class="sr-only">Filter response</span>
             <input
@@ -330,11 +360,12 @@ function copyHeaderPair() {
               type="search"
               placeholder="Filter response"
               autocomplete="off"
+              class="w-full min-w-0 h-6.5 border-0 rounded-none px-1.75 bg-transparent font-mono text-[0.6875rem]"
             />
           </label>
           <form
             v-if="sourceParsed"
-            class="jq-query"
+            class="flex flex-[1_1_260px] min-w-0 items-center gap-1.5 border border-input bg-background focus-within:border-primary max-[680px]:basis-8.5"
             aria-label="jq query"
             @submit.prevent="executeJq"
           >
@@ -344,11 +375,13 @@ function copyHeaderPair() {
               placeholder="jq query, e.g. .items[]"
               spellcheck="false"
               autocomplete="off"
+              class="w-full min-w-0 h-6.5 border-0 rounded-none px-1.75 bg-transparent font-mono text-[0.6875rem]"
             />
             <Button
               type="submit"
               variant="ghost"
               data-run-jq
+              class="flex-none whitespace-nowrap"
               :disabled="!jqQuery.trim()"
             >
               Run jq
@@ -366,9 +399,16 @@ function copyHeaderPair() {
             </Button>
           </form>
         </div>
-        <p v-if="copyError" role="alert" class="copy-error">{{ copyError }}</p>
-        <p v-if="jqError" role="alert" class="copy-error">{{ jqError }}</p>
-        <TabsContent value="body" class="body-content">
+        <p v-if="copyError" role="alert" class="p-4 text-destructive text-xs">
+          {{ copyError }}
+        </p>
+        <p v-if="jqError" role="alert" class="p-4 text-destructive text-xs">
+          {{ jqError }}
+        </p>
+        <TabsContent
+          value="body"
+          class="flex-1 min-h-0 overflow-auto data-[state=active]:flex data-[state=active]:flex-col"
+        >
           <JsonTreeView
             v-model:scroll="view.responseScroll"
             :active="active !== false && tab === 'body'"
@@ -386,16 +426,31 @@ function copyHeaderPair() {
             :filter="search"
             :wrap="wrap"
           />
-          <p v-else class="empty-body">Empty response body.</p>
+          <p v-else class="p-4 text-muted-foreground text-xs">
+            Empty response body.
+          </p>
         </TabsContent>
-        <TabsContent value="headers" class="headers-content">
+        <TabsContent value="headers" class="flex-1 min-h-0 overflow-auto">
           <ContextMenu>
             <ContextMenuTrigger as-child>
-              <table aria-label="Response headers">
+              <table
+                aria-label="Response headers"
+                class="w-full border-collapse font-mono text-[0.6875rem] leading-[1.7] table-fixed"
+              >
                 <thead>
                   <tr>
-                    <th scope="col">Name</th>
-                    <th scope="col">Value</th>
+                    <th
+                      scope="col"
+                      class="text-left px-4 py-2 border-b border-border wrap-anywhere align-top text-muted-foreground text-[0.625rem] uppercase font-normal w-[38%]"
+                    >
+                      Name
+                    </th>
+                    <th
+                      scope="col"
+                      class="text-left px-4 py-2 border-b border-border wrap-anywhere align-top text-muted-foreground text-[0.625rem] uppercase font-normal"
+                    >
+                      Value
+                    </th>
                   </tr>
                 </thead>
                 <tbody>
@@ -404,8 +459,16 @@ function copyHeaderPair() {
                     :key="index"
                     @contextmenu="openHeaderCtx(header)"
                   >
-                    <td>{{ header.key }}</td>
-                    <td>{{ header.value }}</td>
+                    <td
+                      class="text-left px-4 py-2 border-b border-border wrap-anywhere align-top text-primary"
+                    >
+                      {{ header.key }}
+                    </td>
+                    <td
+                      class="text-left px-4 py-2 border-b border-border wrap-anywhere align-top"
+                    >
+                      {{ header.value }}
+                    </td>
                   </tr>
                 </tbody>
               </table>
@@ -431,303 +494,74 @@ function copyHeaderPair() {
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
-          <p v-if="!filteredHeaders.length" class="empty-body">
+          <p
+            v-if="!filteredHeaders.length"
+            class="p-4 text-muted-foreground text-xs"
+          >
             No response headers match this filter.
           </p>
         </TabsContent>
       </TabsRoot>
-      <footer class="panel-footer">
+      <footer
+        class="min-h-7 px-4 border-t border-border flex items-center justify-between gap-3 font-mono text-[0.5625rem] text-muted-foreground"
+      >
         <span class="truncate">{{ contentType }}</span>
       </footer>
     </template>
-    <div v-else-if="error" class="error-state" role="alert">
+    <div
+      v-else-if="error"
+      class="flex-1 flex flex-col items-start justify-start p-8 min-h-55 text-destructive text-left gap-4"
+      role="alert"
+    >
       <AlertTriangle :size="22" aria-hidden="true" />
-      <h3>REQUEST FAILED</h3>
-      <p>{{ error }}</p>
+      <h3 class="font-mono text-[0.6875rem] tracking-[0.14em] text-foreground">
+        REQUEST FAILED
+      </h3>
+      <p class="font-mono text-xs leading-[1.8] wrap-anywhere">
+        {{ error }}
+      </p>
     </div>
-    <div v-else-if="busy" class="waiting-state">
-      <div class="receiving-bars" aria-hidden="true">
-        <i />
-        <i />
-        <i />
-        <i />
-        <i />
+    <div
+      v-else-if="busy"
+      class="flex-1 flex flex-col items-center justify-center p-8 min-h-55 text-muted-foreground text-center"
+    >
+      <div class="flex gap-1 mb-6" aria-hidden="true">
+        <i
+          class="w-1.25 h-3.5 bg-primary animate-[receive_1s_ease-in-out_infinite_alternate]"
+        />
+        <i
+          class="w-1.25 h-3.5 bg-primary animate-[receive_1s_ease-in-out_infinite_alternate]"
+        />
+        <i
+          class="w-1.25 h-3.5 bg-primary animate-[receive_1s_ease-in-out_infinite_alternate]"
+        />
+        <i
+          class="w-1.25 h-3.5 bg-primary animate-[receive_1s_ease-in-out_infinite_alternate]"
+        />
+        <i
+          class="w-1.25 h-3.5 bg-primary animate-[receive_1s_ease-in-out_infinite_alternate]"
+        />
       </div>
-      <h3>AWAITING RESPONSE</h3>
-      <p>{{ (elapsed / 1000).toFixed(1) }} s elapsed · 30 s timeout</p>
+      <h3 class="font-mono text-[0.6875rem] tracking-[0.14em] text-foreground">
+        AWAITING RESPONSE
+      </h3>
+      <p class="mt-2.5 text-xs">
+        {{ (elapsed / 1000).toFixed(1) }} s elapsed · 30 s timeout
+      </p>
     </div>
-    <div v-else class="waiting-state">
-      <h3>AWAITING REQUEST</h3>
+    <div
+      v-else
+      class="flex-1 flex flex-col items-center justify-center p-8 min-h-55 text-muted-foreground text-center"
+    >
+      <h3 class="font-mono text-[0.6875rem] tracking-[0.14em] text-foreground">
+        AWAITING REQUEST
+      </h3>
     </div>
   </section>
 </template>
 
 <style scoped>
-.response-panel {
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  background: var(--background);
-}
-.stale-response {
-  padding: 6px 14px;
-  border-bottom: 1px solid var(--border);
-  color: var(--primary);
-  font: 0.625rem var(--font-mono);
-}
-.panel-heading {
-  height: 36px;
-  flex-shrink: 0;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  background: var(--muted);
-  font: 0.625rem var(--font-mono);
-  letter-spacing: 0.12em;
-}
-h2 {
-  font-weight: 600;
-  font-size: 0.6875rem;
-  text-transform: uppercase;
-}
-
-.state-label {
-  color: var(--muted-foreground);
-}
-.response-metrics {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  min-height: 44px;
-  gap: 16px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  font: 0.6875rem var(--font-mono);
-  font-variant-numeric: tabular-nums;
-}
-.response-metrics > span + span {
-  border-left: 1px solid var(--border);
-  padding-left: 16px;
-}
-.response-metrics small {
-  color: var(--muted-foreground);
-  font-size: inherit;
-}
-.status {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-}
-.status-dot {
-  height: 5px;
-  width: 5px;
-  background: currentColor;
-}
-[data-tone='success'] {
-  color: var(--success);
-}
-[data-tone='redirect'] {
-  color: var(--primary);
-}
-[data-tone='error'] {
-  color: var(--destructive);
-}
-.response-tabs {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.response-toolbar {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid var(--border);
-  padding: 0 8px;
-  gap: 4px;
-  flex-shrink: 0;
-}
-.tab-list,
-.response-actions {
-  display: flex;
-  align-items: center;
-}
-.response-inspector {
-  display: flex;
-  min-height: 38px;
-  gap: 8px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--muted);
-}
-.response-search,
-.jq-query {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-  border: 1px solid var(--input);
-  background: var(--background);
-}
-.response-search {
-  flex: 1 1 180px;
-  padding-left: 8px;
-  color: var(--muted-foreground);
-}
-.response-search:focus-within,
-.jq-query:focus-within {
-  border-color: var(--primary);
-}
-.response-search input,
-.jq-query input {
-  width: 100%;
-  min-width: 0;
-  height: 26px;
-  border: 0;
-  border-radius: 0;
-  padding: 0 7px;
-  background: transparent;
-  font: 0.6875rem var(--font-mono);
-}
-.jq-query {
-  flex: 1 1 260px;
-}
-.jq-query > button {
-  flex: none;
-  white-space: nowrap;
-}
-.tab-trigger {
-  height: 38px;
-  padding: 0 10px;
-  border-bottom: 1px solid transparent;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  white-space: nowrap;
-}
-.tab-trigger span {
-  margin-left: 4px;
-  font: 0.625rem var(--font-mono);
-}
-.tab-trigger[data-state='active'] {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
-}
-.tab-trigger:hover {
-  background: var(--muted);
-  color: var(--foreground);
-}
-.body-content[data-state='active'] {
-  display: flex;
-  flex-direction: column;
-}
-.body-content,
-.headers-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-}
-.headers-content table {
-  width: 100%;
-  border-collapse: collapse;
-  font: 0.6875rem/1.7 var(--font-mono);
-  table-layout: fixed;
-}
-th,
-td {
-  text-align: left;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  overflow-wrap: anywhere;
-  vertical-align: top;
-}
-th {
-  color: var(--muted-foreground);
-  font-size: 0.625rem;
-  text-transform: uppercase;
-  font-weight: 400;
-}
-th:first-child {
-  width: 38%;
-}
-td:first-child {
-  color: var(--primary);
-}
-.panel-footer {
-  min-height: 28px;
-  padding: 0 16px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  font: 0.5625rem var(--font-mono);
-  color: var(--muted-foreground);
-}
-
-.waiting-state,
-.error-state {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 32px;
-  min-height: 220px;
-  color: var(--muted-foreground);
-  text-align: center;
-}
-
-h3 {
-  font: 0.6875rem var(--font-mono);
-  letter-spacing: 0.14em;
-  color: var(--foreground);
-}
-.waiting-state p {
-  margin-top: 10px;
-  font-size: 0.75rem;
-}
-
-.error-state {
-  align-items: flex-start;
-  justify-content: flex-start;
-  text-align: left;
-  color: var(--destructive);
-  gap: 16px;
-}
-.error-state p {
-  font: 0.75rem/1.8 var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-.empty-body,
-.copy-error {
-  padding: 16px;
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-}
-.copy-error {
-  color: var(--destructive);
-}
-.receiving-bars {
-  display: flex;
-  gap: 4px;
-  margin-bottom: 24px;
-}
-.receiving-bars i {
-  width: 5px;
-  height: 14px;
-  background: var(--primary);
-  animation: receive 1s ease-in-out infinite alternate;
-}
-.receiving-bars i:nth-child(2n) {
-  animation-delay: 0.2s;
-}
-.receiving-bars i:nth-child(3n) {
-  animation-delay: 0.4s;
-}
+/* Animation for receiving-bars */
 @keyframes receive {
   from {
     opacity: 0.2;
@@ -736,18 +570,11 @@ h3 {
     opacity: 1;
   }
 }
-@media (pointer: coarse) {
-  .tab-trigger {
-    min-height: 44px;
-  }
+/* nth-child delays cannot be expressed as Tailwind utilities */
+i:nth-child(2n) {
+  animation-delay: 0.2s;
 }
-@media (max-width: 680px) {
-  .response-inspector {
-    flex-direction: column;
-  }
-  .response-search,
-  .jq-query {
-    flex-basis: 34px;
-  }
+i:nth-child(3n) {
+  animation-delay: 0.4s;
 }
 </style>

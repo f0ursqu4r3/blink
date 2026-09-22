@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch } from 'vue';
 
 const props = defineProps<{
   definitions: Record<string, string>;
@@ -7,12 +7,12 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (event: "update:open", value: boolean): void;
-  (event: "save", definitions: Record<string, string>): void;
+  (event: 'update:open', value: boolean): void;
+  (event: 'save', definitions: Record<string, string>): void;
 }>();
 
-const source = ref("{}");
-const error = ref("");
+const source = ref('{}');
+const error = ref('');
 
 function formatDefinitions(definitions: Record<string, string>) {
   return JSON.stringify(definitions, null, 2);
@@ -23,9 +23,9 @@ watch(
   ([open]) => {
     if (!open) return;
     source.value = formatDefinitions(props.definitions);
-    error.value = "";
+    error.value = '';
   },
-  { immediate: true },
+  { immediate: true }
 );
 
 function parseDefinitions(): Record<string, string> | null {
@@ -33,20 +33,20 @@ function parseDefinitions(): Record<string, string> | null {
   try {
     parsed = JSON.parse(source.value);
   } catch {
-    error.value = "Enter a valid JSON object.";
+    error.value = 'Enter a valid JSON object.';
     return null;
   }
   if (
     !parsed ||
     Array.isArray(parsed) ||
-    typeof parsed !== "object" ||
-    Object.values(parsed).some((value) => typeof value !== "string")
+    typeof parsed !== 'object' ||
+    Object.values(parsed).some((value) => typeof value !== 'string')
   ) {
-    error.value = "Token definitions must be a JSON object with string values.";
+    error.value = 'Token definitions must be a JSON object with string values.';
     return null;
   }
-  if (Object.keys(parsed).some((name) => name.startsWith("_"))) {
-    error.value = "Token names must not start with _.";
+  if (Object.keys(parsed).some((name) => name.startsWith('_'))) {
+    error.value = 'Token names must not start with _.';
     return null;
   }
   return parsed as Record<string, string>;
@@ -55,25 +55,30 @@ function parseDefinitions(): Record<string, string> | null {
 function save() {
   const definitions = parseDefinitions();
   if (!definitions) return;
-  emit("save", definitions);
+  emit('save', definitions);
 }
 </script>
 
 <template>
   <div
     v-if="open"
-    class="dialog-backdrop"
+    class="fixed inset-0 z-50 grid place-items-center bg-black/50"
     role="dialog"
     aria-modal="true"
     aria-label="Application settings"
     @keydown.esc="emit('update:open', false)"
   >
-    <form class="dialog-content" @submit.prevent="save">
+    <form
+      class="grid gap-3 w-[min(640px,calc(100vw-32px))] p-5 border border-border rounded bg-background"
+      @submit.prevent="save"
+    >
       <header>
-        <div class="heading-row">
-          <h2>Application Settings</h2>
+        <div class="flex items-center gap-1.5">
+          <h2 class="text-sm font-bold tracking-[0.08em]">
+            Application Settings
+          </h2>
           <button
-            class="token-help"
+            class="grid place-items-center w-4 h-4 p-0 border border-input rounded-full text-muted-foreground bg-muted font-mono text-[10px] font-semibold leading-none hover:text-foreground hover:bg-accent focus-visible:text-foreground focus-visible:bg-accent"
             data-token-help="global"
             type="button"
             aria-label="Token syntax help"
@@ -83,110 +88,41 @@ function save() {
           </button>
         </div>
       </header>
-      <label for="global-token-json">Global tokens</label>
+      <label class="font-mono text-xs" for="global-token-json">
+        Global tokens
+      </label>
       <textarea
         id="global-token-json"
         v-model="source"
+        class="min-h-70 resize-y p-2.5 border border-input rounded-sm text-foreground bg-background font-mono text-xs leading-relaxed"
         data-global-token-json
         spellcheck="false"
         autocomplete="off"
       />
-      <p v-if="error" data-token-json-error role="alert">{{ error }}</p>
-      <footer>
-        <button type="button" @click="emit('update:open', false)">
+      <p
+        v-if="error"
+        class="text-destructive font-mono text-xs"
+        data-token-json-error
+        role="alert"
+      >
+        {{ error }}
+      </p>
+      <footer class="flex justify-end gap-2">
+        <button
+          class="h-7.5 px-3.5 border border-border rounded-sm bg-background font-mono text-xs"
+          type="button"
+          @click="emit('update:open', false)"
+        >
           Cancel
         </button>
-        <button data-save-application-settings type="submit">Save</button>
+        <button
+          class="h-7.5 px-3.5 border border-primary rounded-sm bg-primary text-primary-foreground font-mono text-xs"
+          data-save-application-settings
+          type="submit"
+        >
+          Save
+        </button>
       </footer>
     </form>
   </div>
 </template>
-
-<style scoped>
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: grid;
-  place-items: center;
-  background: rgb(0 0 0 / 0.5);
-}
-.dialog-content {
-  display: grid;
-  gap: 12px;
-  width: min(640px, calc(100vw - 32px));
-  padding: 20px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--background);
-}
-h2 {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.heading-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.token-help {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid var(--input);
-  border-radius: 50%;
-  color: var(--muted-foreground);
-  background: var(--muted);
-  font: 600 0.625rem/1 var(--font-mono);
-}
-
-.token-help:hover,
-.token-help:focus-visible {
-  color: var(--foreground);
-  background: var(--accent);
-}
-p,
-label,
-textarea,
-button {
-  font: 0.75rem var(--font-mono);
-}
-p {
-  color: var(--muted-foreground);
-}
-textarea {
-  min-height: 280px;
-  resize: vertical;
-  padding: 10px;
-  border: 1px solid var(--input);
-  border-radius: 2px;
-  color: var(--foreground);
-  background: var(--background);
-  line-height: 1.5;
-}
-[role="alert"] {
-  color: var(--destructive);
-}
-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-}
-button {
-  height: 30px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  background: var(--background);
-}
-button:last-child {
-  border-color: var(--primary);
-  color: var(--primary-foreground);
-  background: var(--primary);
-}
-</style>

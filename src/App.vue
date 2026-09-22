@@ -195,15 +195,22 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
 </script>
 
 <template>
-  <main class="console-shell" :inert="closing || undefined">
-    <header class="console-header">
-      <div class="brand">
-        <span class="brand-mark">
+  <main
+    class="flex flex-col h-dvh min-h-100 border-t-2 border-primary max-[760px]:h-auto max-[760px]:min-h-dvh"
+    :inert="closing || undefined"
+  >
+    <header
+      class="h-10.5 shrink-0 px-3.5 flex items-center justify-between gap-3 border-b border-border bg-muted"
+    >
+      <div class="flex items-center gap-2.25 whitespace-nowrap">
+        <span
+          class="flex items-center justify-center h-6 w-6.5 text-primary-foreground bg-primary"
+        >
           <ScanLine :size="19" aria-hidden="true" />
         </span>
-        <h1>BLINK</h1>
+        <h1 class="text-[0.9375rem] font-extrabold tracking-[0.17em]">BLINK</h1>
       </div>
-      <div class="header-actions">
+      <div class="flex items-center gap-4">
         <Button
           variant="ghost"
           aria-label="Application settings"
@@ -221,7 +228,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
           @click="duplicate()"
         >
           <CopyPlus :size="14" aria-hidden="true" />
-          <span class="duplicate-label">Duplicate</span>
+          <span>Duplicate</span>
         </Button>
       </div>
     </header>
@@ -233,7 +240,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
       @reset="reset"
       @quit="quitWithoutSaving"
     />
-    <div v-if="ready" class="console-content">
+    <div v-if="ready" class="flex min-w-0 min-h-0 flex-1">
       <RequestBrowser
         :sessions="sessions"
         :active-id="activeId"
@@ -257,7 +264,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         @close-request="(id) => close(id)"
         @set-request-local-auth="(id, auth) => setRequestLocalAuth(id, auth)"
       />
-      <div class="workspace-content">
+      <div class="relative flex flex-col min-w-0 min-h-0 flex-1">
         <RequestTabs
           :sessions="sessions"
           :active-id="activeId"
@@ -268,13 +275,17 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         />
         <div
           v-if="closeTarget"
-          class="close-confirmation"
+          class="flex items-center gap-2 px-3.5 py-1.5 bg-secondary border-b border-primary"
           role="group"
           aria-label="Confirm close request"
         >
-          <p>
+          <p class="flex gap-1.25 min-w-0 mr-auto text-xs">
             Discard
-            <strong>{{ sessionLabel(closeTarget) }}</strong>
+            <strong
+              class="overflow-hidden text-ellipsis whitespace-nowrap text-primary font-medium"
+            >
+              {{ sessionLabel(closeTarget) }}
+            </strong>
             ?
           </p>
           <Button variant="ghost" data-cancel-close @click="cancelClose">
@@ -285,8 +296,9 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
             data-confirm-close
             :disabled="closeTarget.busy"
             @click="close(closeTarget.id, true)"
-            >Discard tab</Button
           >
+            Discard tab
+          </Button>
         </div>
         <RequestWorkspace
           v-for="session in sessions"
@@ -298,9 +310,11 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         />
       </div>
     </div>
-    <footer class="console-footer">
+    <footer
+      class="flex items-center gap-4.5 min-h-6.5 shrink-0 border-t border-border px-3.5 font-mono text-[0.5625rem] tracking-[0.07em] text-muted-foreground bg-muted max-[760px]:gap-3 max-[760px]:flex-wrap max-[760px]:px-3 max-[760px]:py-2"
+    >
       <span
-        class="privacy-label"
+        class="flex items-center gap-1.5"
         role="status"
         title="Saved on this device, including credentials and response content. Not encrypted."
       >
@@ -310,10 +324,10 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
         {{ sessions.length }}
         {{ sessions.length === 1 ? 'REQUEST' : 'REQUESTS' }}
       </span>
-      <span v-if="sending" class="sending-count" role="status">
+      <span v-if="sending" class="text-primary" role="status">
         {{ sending }} SENDING
       </span>
-      <span v-else class="limit-note">30 s TIMEOUT · 4 MiB LIMIT</span>
+      <span v-else class="max-[760px]:hidden">30 s TIMEOUT · 4 MiB LIMIT</span>
     </footer>
     <GroupSettingsDialog
       :group="groupSettingsGroup"
@@ -331,118 +345,3 @@ onUnmounted(() => window.removeEventListener('keydown', onKey));
     />
   </main>
 </template>
-
-<style scoped>
-.console-shell {
-  height: 100dvh;
-  min-height: 400px;
-  display: flex;
-  flex-direction: column;
-  border-top: 2px solid var(--primary);
-}
-.console-content,
-.workspace-content {
-  display: flex;
-  min-width: 0;
-  min-height: 0;
-  flex: 1;
-}
-.workspace-content {
-  position: relative;
-  flex-direction: column;
-}
-.console-header {
-  height: 42px;
-  flex-shrink: 0;
-  padding: 0 14px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: 1px solid var(--border);
-  background: var(--muted);
-}
-.brand {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  white-space: nowrap;
-}
-.brand-mark {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 24px;
-  width: 26px;
-  color: var(--primary-foreground);
-  background: var(--primary);
-}
-h1 {
-  font-size: 0.9375rem;
-  font-weight: 800;
-  letter-spacing: 0.17em;
-}
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-}
-
-.close-confirmation {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 14px;
-  background: var(--secondary);
-  border-bottom: 1px solid var(--primary);
-}
-.close-confirmation p {
-  display: flex;
-  gap: 5px;
-  min-width: 0;
-  margin-right: auto;
-  font-size: 0.75rem;
-}
-.close-confirmation strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--primary);
-  font-weight: 500;
-}
-.console-footer {
-  display: flex;
-  align-items: center;
-  gap: 18px;
-  min-height: 26px;
-  flex-shrink: 0;
-  border-top: 1px solid var(--border);
-  padding: 0 14px;
-  font: 0.5625rem var(--font-mono);
-  letter-spacing: 0.07em;
-  color: var(--muted-foreground);
-  background: var(--muted);
-}
-.privacy-label {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.sending-count {
-  color: var(--primary);
-}
-@media (max-width: 760px) {
-  .console-shell {
-    height: auto;
-    min-height: 100dvh;
-  }
-  .limit-note {
-    display: none;
-  }
-  .console-footer {
-    gap: 12px;
-    flex-wrap: wrap;
-    padding: 8px 12px;
-  }
-}
-</style>

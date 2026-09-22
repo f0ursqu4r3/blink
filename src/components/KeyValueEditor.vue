@@ -51,13 +51,31 @@ function addRow() {
   <div>
     <ContextMenu>
       <ContextMenuTrigger as-child data-testid="kv-table-ctx-trigger">
-        <table class="pair-table" :aria-label="label">
+        <table class="w-full table-fixed border-collapse" :aria-label="label">
           <thead>
             <tr>
-              <th class="check-cell"><span class="sr-only">Enabled</span></th>
-              <th scope="col">Name</th>
-              <th scope="col">Value</th>
-              <th class="action-cell"><span class="sr-only">Remove</span></th>
+              <th
+                class="w-8.5 text-center p-0 text-muted-foreground text-[0.625rem] uppercase tracking-widest font-medium h-8 bg-muted"
+              >
+                <span class="sr-only">Enabled</span>
+              </th>
+              <th
+                scope="col"
+                class="text-muted-foreground text-left text-[0.625rem] uppercase tracking-widest font-medium h-8 px-2.5 bg-muted border-l border-border"
+              >
+                Name
+              </th>
+              <th
+                scope="col"
+                class="text-muted-foreground text-left text-[0.625rem] uppercase tracking-widest font-medium h-8 px-2.5 bg-muted border-l border-border"
+              >
+                Value
+              </th>
+              <th
+                class="w-8.5 p-0 text-muted-foreground text-left text-[0.625rem] uppercase tracking-widest font-medium h-8 bg-muted border-l border-border"
+              >
+                <span class="sr-only">Remove</span>
+              </th>
             </tr>
           </thead>
           <tbody>
@@ -66,10 +84,13 @@ function addRow() {
                 as-child
                 :data-testid="`kv-row-ctx-trigger-${row.id}`"
               >
-                <tr :class="{ muted: !row.enabled }">
-                  <td class="check-cell">
+                <tr>
+                  <td
+                    class="w-8.5 text-center p-0 h-8.5 border-b border-border pointer-coarse:h-11"
+                  >
                     <input
                       type="checkbox"
+                      class="accent-primary w-3 h-3"
                       :aria-label="`Enable ${label} row ${index + 1}`"
                       :checked="row.enabled"
                       :disabled="disabled"
@@ -80,7 +101,9 @@ function addRow() {
                       "
                     />
                   </td>
-                  <td>
+                  <td
+                    class="h-8.5 border-b border-border border-l pointer-coarse:h-11"
+                  >
                     <input
                       :aria-label="`${label} name ${index + 1}`"
                       :value="row.key"
@@ -88,10 +111,14 @@ function addRow() {
                       :disabled="disabled"
                       spellcheck="false"
                       autocomplete="off"
+                      class="w-full h-8.25 bg-transparent border-0 px-2.5 font-mono text-xs rounded-none pointer-coarse:h-11 pointer-coarse:text-base"
+                      :class="{ 'text-muted-foreground': !row.enabled }"
                       @input="update(row.id, 'key', $event)"
                     />
                   </td>
-                  <td>
+                  <td
+                    class="h-8.5 border-b border-l border-border pointer-coarse:h-11"
+                  >
                     <input
                       :aria-label="`${label} value ${index + 1}`"
                       :value="row.value"
@@ -99,18 +126,23 @@ function addRow() {
                       :disabled="disabled"
                       spellcheck="false"
                       autocomplete="off"
+                      class="w-full h-8.25 bg-transparent border-0 px-2.5 font-mono text-xs rounded-none pointer-coarse:h-11 pointer-coarse:text-base"
+                      :class="{ 'text-muted-foreground': !row.enabled }"
                       @input="update(row.id, 'value', $event)"
                     />
                   </td>
-                  <td class="action-cell">
+                  <td
+                    class="w-8.5 p-0 h-8.5 border-b border-border border-l pointer-coarse:h-11"
+                  >
                     <Button
                       variant="ghost"
                       class="size-7 shrink-0 p-0"
                       :aria-label="`Remove ${label} row ${index + 1}`"
                       :disabled="disabled"
                       @click="rows = rows.filter((r) => r.id !== row.id)"
-                      ><X :size="13" aria-hidden="true"
-                    /></Button>
+                    >
+                      <X :size="13" aria-hidden="true" />
+                    </Button>
                   </td>
                 </tr>
               </ContextMenuTrigger>
@@ -162,65 +194,3 @@ function addRow() {
     </Button>
   </div>
 </template>
-
-<style scoped>
-.pair-table {
-  width: 100%;
-  table-layout: fixed;
-  border-collapse: collapse;
-}
-th {
-  color: var(--muted-foreground);
-  text-align: left;
-  font-size: 0.625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  font-weight: 500;
-  height: 32px;
-  padding: 0 10px;
-  background: var(--muted);
-}
-td {
-  height: 34px;
-  border-bottom: 1px solid var(--border);
-}
-.check-cell {
-  width: 34px;
-  text-align: center;
-  padding: 0;
-}
-.action-cell {
-  width: 34px;
-  padding: 0;
-}
-td input:not([type='checkbox']) {
-  width: 100%;
-  height: 33px;
-  background: transparent;
-  border: 0;
-  padding: 0 10px;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  border-radius: 0;
-}
-td + td {
-  border-left: 1px solid var(--border);
-}
-input[type='checkbox'] {
-  accent-color: var(--primary);
-  width: 12px;
-  height: 12px;
-}
-.muted input:not([type='checkbox']) {
-  color: var(--muted-foreground);
-}
-@media (pointer: coarse) {
-  td,
-  td input:not([type='checkbox']) {
-    height: 44px;
-  }
-  td input:not([type='checkbox']) {
-    font-size: 1rem;
-  }
-}
-</style>

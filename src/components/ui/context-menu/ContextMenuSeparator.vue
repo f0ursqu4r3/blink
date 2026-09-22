@@ -3,13 +3,5 @@ import { ContextMenuSeparator } from "reka-ui";
 </script>
 
 <template>
-  <ContextMenuSeparator class="blink-ctx-separator" />
+  <ContextMenuSeparator class="h-px bg-border my-1" />
 </template>
-
-<style scoped>
-.blink-ctx-separator {
-  height: 1px;
-  background: var(--border);
-  margin: 0.25rem 0;
-}
-</style>

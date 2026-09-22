@@ -137,12 +137,12 @@ function toggle(row: JsonRow) {
 }
 
 function valueClass(value: unknown) {
-  if (value === null) return 'literal';
-  if (typeof value === 'string') return 'string';
-  if (typeof value === 'boolean') return 'literal';
+  if (value === null) return 'text-[oklch(0.8_0.07_240)]';
+  if (typeof value === 'string') return 'text-success';
+  if (typeof value === 'boolean') return 'text-[oklch(0.8_0.07_240)]';
   if (typeof value === 'object' && value && 'isLosslessNumber' in value)
-    return 'number';
-  return 'container';
+    return 'text-primary';
+  return 'text-muted-foreground';
 }
 function measureRow(node: unknown) {
   if (node instanceof HTMLElement) virtualizer.value.measureElement(node);
@@ -169,7 +169,7 @@ function copyValue() {
 <template>
   <div
     ref="element"
-    class="json-tree"
+    class="min-h-0 flex-1 overflow-auto font-mono text-[0.8125rem] leading-[1.75] scrollbar-gutter-stable"
     :class="{ wrapped: wrap }"
     data-json-tree
     data-response-body
@@ -182,14 +182,14 @@ function copyValue() {
     <ContextMenu>
       <ContextMenuTrigger as-child>
         <div
-          class="tree-canvas"
+          class="relative min-w-max in-[.wrapped]:min-w-0"
           :style="{ height: `${virtualizer.getTotalSize()}px` }"
         >
           <div
             v-for="virtualRow in virtualRows"
             :key="String(virtualRow.key)"
             :ref="measureRow"
-            class="tree-row"
+            class="tree-row absolute flex items-center w-max min-w-full min-h-6.25 gap-1.75 whitespace-pre in-[.wrapped]:items-start in-[.wrapped]:w-full in-[.wrapped]:h-auto in-[.wrapped]:whitespace-pre-wrap"
             :data-index="virtualRow.index"
             :style="{
               transform: `translateY(${virtualRow.start}px)`,
@@ -203,18 +203,30 @@ function copyValue() {
               <button
                 v-if="rows[virtualRow.index].container"
                 type="button"
-                class="tree-toggle"
+                class="inline-flex w-3.5 h-5 flex-none items-center justify-center text-muted-foreground hover:text-primary hover:bg-accent"
                 :aria-label="`${collapsed.has(rows[virtualRow.index].id) ? 'Expand' : 'Collapse'} ${rows[virtualRow.index].key ?? 'root'}`"
                 :aria-expanded="!collapsed.has(rows[virtualRow.index].id)"
                 @click="toggle(rows[virtualRow.index])"
               >
                 {{ collapsed.has(rows[virtualRow.index].id) ? '›' : '⌄' }}
               </button>
-              <span v-else class="tree-spacer" aria-hidden="true" />
-              <span v-if="rows[virtualRow.index].key !== null" class="key">
+              <span
+                v-else
+                class="inline-flex w-3.5 h-5 flex-none items-center justify-center text-muted-foreground"
+                aria-hidden="true"
+              />
+              <span
+                v-if="rows[virtualRow.index].key !== null"
+                class="text-foreground in-[.wrapped]:wrap-anywhere"
+              >
                 "{{ rows[virtualRow.index].key }}":
               </span>
-              <span :class="valueClass(rows[virtualRow.index].value)">
+              <span
+                :class="[
+                  valueClass(rows[virtualRow.index].value),
+                  'in-[.wrapped]:wrap-anywhere',
+                ]"
+              >
                 {{ valueLabel(rows[virtualRow.index].value) }}
               </span>
             </template>
@@ -241,82 +253,8 @@ function copyValue() {
         </template>
       </ContextMenuContent>
     </ContextMenu>
-    <p v-if="!rows.length" class="empty-tree">
+    <p v-if="!rows.length" class="p-4 text-muted-foreground font-sans text-xs">
       No JSON values match this filter.
     </p>
   </div>
 </template>
-
-<style scoped>
-.json-tree {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  font: 0.8125rem/1.75 var(--font-mono);
-  scrollbar-gutter: stable;
-}
-.tree-canvas {
-  position: relative;
-  min-width: max-content;
-}
-.tree-row {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  width: max-content;
-  min-width: 100%;
-  min-height: 25px;
-  gap: 7px;
-  white-space: pre;
-}
-.tree-toggle,
-.tree-spacer {
-  display: inline-flex;
-  width: 14px;
-  height: 20px;
-  flex: none;
-  align-items: center;
-  justify-content: center;
-  color: var(--muted-foreground);
-}
-.tree-toggle:hover {
-  color: var(--primary);
-  background: var(--accent);
-}
-.key {
-  color: var(--foreground);
-}
-.string {
-  color: var(--success);
-}
-.number {
-  color: var(--primary);
-}
-.literal {
-  color: oklch(0.8 0.07 240);
-}
-.container {
-  color: var(--muted-foreground);
-}
-.json-tree.wrapped .tree-canvas {
-  min-width: 0;
-}
-.json-tree.wrapped .tree-row {
-  align-items: flex-start;
-  width: 100%;
-  height: auto;
-  white-space: pre-wrap;
-}
-.json-tree.wrapped .key,
-.json-tree.wrapped .string,
-.json-tree.wrapped .number,
-.json-tree.wrapped .literal,
-.json-tree.wrapped .container {
-  overflow-wrap: anywhere;
-}
-.empty-tree {
-  padding: 16px;
-  color: var(--muted-foreground);
-  font: 0.75rem var(--font-sans);
-}
-</style>

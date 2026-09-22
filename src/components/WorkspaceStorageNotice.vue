@@ -7,8 +7,14 @@ const confirmReset = ref(false);
 </script>
 
 <template>
-  <div v-if="error" class="storage-notice" role="alert">
-    <p>{{ error }} <span v-if="ready">Changes are not saved.</span></p>
+  <div
+    v-if="error"
+    class="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-border text-destructive text-[12px]"
+    role="alert"
+  >
+    <p class="flex-1 m-0 min-w-45">
+      {{ error }} <span v-if="ready">Changes are not saved.</span>
+    </p>
     <Button variant="secondary" @click="emit('retry')">Retry</Button>
     <template v-if="!ready">
       <Button v-if="!confirmReset" variant="ghost" @click="confirmReset = true">
@@ -33,21 +39,3 @@ const confirmReset = ref(false);
     </Button>
   </div>
 </template>
-
-<style scoped>
-.storage-notice {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border);
-  color: var(--destructive);
-  font-size: 12px;
-}
-p {
-  flex: 1;
-  margin: 0;
-  min-width: 180px;
-}
-</style>

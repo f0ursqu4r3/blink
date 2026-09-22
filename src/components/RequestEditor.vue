@@ -95,51 +95,82 @@ function clearBody() {
 </script>
 
 <template>
-  <section class="request-panel" :aria-labelledby="`${id}-heading`">
-    <header class="panel-heading">
-      <h2 :id="`${id}-heading`"><span>01</span> Request</h2>
-      <span class="text-muted-foreground">{{
-        busy ? 'SENDING' : 'COMPOSE'
-      }}</span>
+  <section
+    class="flex flex-col min-w-0 min-h-0"
+    :aria-labelledby="`${id}-heading`"
+  >
+    <header
+      class="h-9 shrink-0 px-4 flex items-center justify-between border-b border-border bg-muted font-mono text-[0.625rem] tracking-[0.12em]"
+    >
+      <h2 class="font-semibold uppercase text-[0.6875rem]">
+        <span class="text-primary mr-2.5">01</span> Request
+      </h2>
+      <span class="text-muted-foreground">
+        {{ busy ? 'SENDING' : 'COMPOSE' }}
+      </span>
     </header>
-    <TabsRoot v-model="tab" class="editor-tabs">
-      <TabsList class="tab-list" aria-label="Request options">
+    <TabsRoot v-model="tab" class="flex-1 min-h-0 flex flex-col">
+      <TabsList
+        class="flex shrink-0 border-b border-border px-2"
+        aria-label="Request options"
+      >
         <TabsTrigger
           v-for="item in tabs"
           :key="item.id"
           :value="item.id"
-          class="tab-trigger"
+          class="tab-trigger h-9.5 px-3 border-b border-transparent text-xs text-muted-foreground flex gap-1.75 items-center hover:text-foreground hover:bg-muted data-[state=active]:text-primary data-[state=active]:border-b-primary pointer-coarse:min-h-11"
         >
           {{ item.label }}
-          <span v-if="item.count" class="tab-count">{{ item.count }}</span>
+          <span
+            v-if="item.count"
+            class="tab-count font-mono text-[0.625rem] text-muted-foreground"
+          >
+            {{ item.count }}
+          </span>
         </TabsTrigger>
       </TabsList>
-      <TabsContent value="query" class="tab-content">
+      <TabsContent
+        value="query"
+        class="flex-1 min-h-0 overflow-auto -outline-offset-2"
+      >
         <KeyValueEditor v-model="draft.query" label="Query" :disabled="busy" />
-        <p class="editor-note">
+        <p
+          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-muted-foreground"
+        >
           Enabled rows are appended to the URL. Duplicate keys are preserved.
         </p>
       </TabsContent>
-      <TabsContent value="headers" class="tab-content">
+      <TabsContent
+        value="headers"
+        class="flex-1 min-h-0 overflow-auto -outline-offset-2"
+      >
         <KeyValueEditor
           v-model="draft.headers"
           label="Header"
           :disabled="busy"
         />
-        <p class="editor-note">
+        <p
+          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-muted-foreground"
+        >
           Body mode sets Content-Type unless overridden here.
         </p>
       </TabsContent>
-      <TabsContent value="body" class="tab-content body-content">
+      <TabsContent
+        value="body"
+        class="flex-1 min-h-0 overflow-auto -outline-offset-2 data-[state=active]:flex data-[state=active]:flex-col"
+      >
         <ContextMenu>
           <ContextMenuTrigger as-child>
-            <div class="body-toolbar" data-body-actions>
+            <div
+              class="flex items-center px-3 py-2 gap-2.5 border-b border-border text-muted-foreground text-xs"
+              data-body-actions
+            >
               <label :for="`${id}-body-mode`">Body</label>
               <select
                 :id="`${id}-body-mode`"
                 v-model="draft.bodyMode"
                 :disabled="busy"
-                class="compact-select"
+                class="h-7 px-2 font-mono text-xs pointer-coarse:min-h-11 pointer-coarse:text-base"
                 @contextmenu.stop
               >
                 <option value="none">None</option>
@@ -184,7 +215,10 @@ function clearBody() {
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
-        <p v-if="!bodyAllowed" class="editor-note border-b">
+        <p
+          v-if="!bodyAllowed"
+          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-muted-foreground border-b border-border"
+        >
           {{ draft.method }} sends no body. Your draft is retained.
         </p>
         <template v-if="draft.bodyMode !== 'none'">
@@ -193,7 +227,7 @@ function clearBody() {
             :id="`${id}-body`"
             v-model="draft.body"
             :disabled="busy"
-            class="body-editor"
+            class="flex-1 min-h-45 w-full resize-none border-0 rounded-none p-4 font-mono text-[0.8125rem] leading-[1.75] bg-transparent tab-2 pointer-coarse:text-base"
             spellcheck="false"
             autocomplete="off"
             :placeholder="bodyPlaceholder"
@@ -201,20 +235,37 @@ function clearBody() {
             @contextmenu.stop
           />
         </template>
-        <p v-else class="editor-note">No request body.</p>
-        <p v-if="formatError" role="alert" class="editor-note text-destructive">
+        <p
+          v-else
+          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-muted-foreground"
+        >
+          No request body.
+        </p>
+        <p
+          v-if="formatError"
+          role="alert"
+          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-destructive"
+        >
           {{ formatError }}
         </p>
       </TabsContent>
-      <TabsContent value="auth" class="tab-content">
+      <TabsContent
+        value="auth"
+        class="flex-1 min-h-0 overflow-auto -outline-offset-2"
+      >
         <ContextMenu>
           <ContextMenuTrigger as-child>
-            <div class="auth-form" data-auth-actions>
-              <label :for="`${id}-auth-type`">Authorization</label>
+            <div
+              class="grid grid-cols-[100px_minmax(0,1fr)] gap-3 items-center p-4 text-xs"
+              data-auth-actions
+            >
+              <label :for="`${id}-auth-type`" class="text-muted-foreground">
+                Authorization
+              </label>
               <select
                 :id="`${id}-auth-type`"
                 :value="authSelectValue"
-                class="compact-select"
+                class="h-7 px-2 font-mono text-xs pointer-coarse:min-h-11 pointer-coarse:text-base"
                 :disabled="busy"
                 @change="
                   setAuthType(($event.target as HTMLSelectElement).value)
@@ -227,22 +278,30 @@ function clearBody() {
                 <option value="basic">Basic auth</option>
               </select>
               <template v-if="draft.localAuth === undefined && effectiveAuth">
-                <span class="auth-inherited-label">Effective</span>
+                <span class="text-muted-foreground text-[0.6875rem]">
+                  Effective
+                </span>
                 <span
-                  class="auth-inherited-value"
+                  class="text-muted-foreground text-[0.6875rem] font-mono"
                   data-testid="effective-auth-note"
                 >
                   Effective: {{ effectiveAuth.type }}
                 </span>
                 <template v-if="inheritedSource">
-                  <span class="auth-inherited-label">Source</span>
-                  <span class="auth-inherited-value">
+                  <span class="text-muted-foreground text-[0.6875rem]">
+                    Source
+                  </span>
+                  <span
+                    class="text-muted-foreground text-[0.6875rem] font-mono"
+                  >
                     {{ inheritedSource }}
                   </span>
                 </template>
               </template>
               <template v-if="draft.localAuth?.type === 'bearer'">
-                <label :for="`${id}-auth-token`">Token</label>
+                <label :for="`${id}-auth-token`" class="text-muted-foreground">
+                  Token
+                </label>
                 <input
                   :id="`${id}-auth-token`"
                   v-model="
@@ -253,11 +312,14 @@ function clearBody() {
                   autocomplete="off"
                   spellcheck="false"
                   placeholder="Bearer token"
+                  class="h-7.5 min-w-0 px-2 font-mono pointer-coarse:min-h-11 pointer-coarse:text-base"
                   @contextmenu.stop
                 />
               </template>
               <template v-if="draft.localAuth?.type === 'basic'">
-                <label :for="`${id}-auth-user`">Username</label>
+                <label :for="`${id}-auth-user`" class="text-muted-foreground">
+                  Username
+                </label>
                 <input
                   :id="`${id}-auth-user`"
                   v-model="
@@ -272,9 +334,15 @@ function clearBody() {
                   :disabled="busy"
                   autocomplete="off"
                   spellcheck="false"
+                  class="h-7.5 min-w-0 px-2 font-mono pointer-coarse:min-h-11 pointer-coarse:text-base"
                   @contextmenu.stop
                 />
-                <label :for="`${id}-auth-password`">Password</label>
+                <label
+                  :for="`${id}-auth-password`"
+                  class="text-muted-foreground"
+                >
+                  Password
+                </label>
                 <input
                   :id="`${id}-auth-password`"
                   v-model="
@@ -289,6 +357,7 @@ function clearBody() {
                   type="password"
                   :disabled="busy"
                   autocomplete="off"
+                  class="h-7.5 min-w-0 px-2 font-mono pointer-coarse:min-h-11 pointer-coarse:text-base"
                   @contextmenu.stop
                 />
               </template>
@@ -325,13 +394,17 @@ function clearBody() {
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
-        <p class="editor-note flex items-center gap-2">
+        <p
+          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-muted-foreground flex items-center gap-2"
+        >
           <KeyRound :size="13" aria-hidden="true" />Credentials are saved
           locally in plaintext. Copy cURL includes them.
         </p>
       </TabsContent>
     </TabsRoot>
-    <footer class="panel-footer">
+    <footer
+      class="h-7 px-4 border-t border-border flex items-center justify-between font-mono text-[0.5625rem] tracking-[0.12em] text-muted-foreground"
+    >
       {{ activePairs(draft.query).length }} QUERY ·
       {{ activePairs(draft.headers).length }} HEADERS
       <span>
@@ -340,162 +413,3 @@ function clearBody() {
     </footer>
   </section>
 </template>
-
-<style scoped>
-.request-panel {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-  min-height: 0;
-}
-.panel-heading {
-  height: 36px;
-  flex-shrink: 0;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 1px solid var(--border);
-  background: var(--muted);
-  font: 0.625rem var(--font-mono);
-  letter-spacing: 0.12em;
-}
-h2 {
-  font-weight: 600;
-  text-transform: uppercase;
-  font-size: 0.6875rem;
-}
-h2 span {
-  color: var(--primary);
-  margin-right: 10px;
-}
-.editor-tabs {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-}
-.tab-list {
-  display: flex;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--border);
-  padding: 0 8px;
-}
-.tab-trigger {
-  height: 38px;
-  padding: 0 12px;
-  border-bottom: 1px solid transparent;
-  font-size: 0.75rem;
-  color: var(--muted-foreground);
-  display: flex;
-  gap: 7px;
-  align-items: center;
-}
-.tab-trigger:hover {
-  color: var(--foreground);
-  background: var(--muted);
-}
-.tab-trigger[data-state='active'] {
-  color: var(--primary);
-  border-bottom-color: var(--primary);
-}
-.tab-count {
-  font: 0.625rem var(--font-mono);
-  color: var(--muted-foreground);
-}
-.tab-content {
-  flex: 1;
-  min-height: 0;
-  overflow: auto;
-  outline-offset: -2px;
-}
-.body-content[data-state='active'] {
-  display: flex;
-  flex-direction: column;
-}
-.body-toolbar {
-  display: flex;
-  align-items: center;
-  padding: 8px 12px;
-  gap: 10px;
-  border-bottom: 1px solid var(--border);
-  color: var(--muted-foreground);
-  font-size: 0.75rem;
-}
-.compact-select {
-  height: 28px;
-  padding: 0 8px;
-  font: 0.75rem var(--font-mono);
-}
-.editor-note {
-  padding: 12px 16px;
-  font-size: 0.6875rem;
-  line-height: 1.7;
-  color: var(--muted-foreground);
-}
-.editor-note.text-destructive {
-  color: var(--destructive);
-}
-.body-editor {
-  flex: 1;
-  min-height: 180px;
-  width: 100%;
-  resize: none;
-  border: 0;
-  border-radius: 0;
-  padding: 16px;
-  font: 0.8125rem/1.75 var(--font-mono);
-  background: transparent;
-  tab-size: 2;
-}
-.auth-form {
-  display: grid;
-  grid-template-columns: 100px minmax(0, 1fr);
-  gap: 12px;
-  align-items: center;
-  padding: 16px;
-  font-size: 0.75rem;
-}
-.auth-form label {
-  color: var(--muted-foreground);
-}
-.auth-form input {
-  height: 30px;
-  min-width: 0;
-  padding: 0 8px;
-  font-family: var(--font-mono);
-}
-.auth-inherited-label {
-  color: var(--muted-foreground);
-  font-size: 0.6875rem;
-}
-.auth-inherited-value {
-  color: var(--muted-foreground);
-  font-size: 0.6875rem;
-  font-family: var(--font-mono);
-}
-.panel-footer {
-  height: 28px;
-  padding: 0 16px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font: 0.5625rem var(--font-mono);
-  letter-spacing: 0.12em;
-  color: var(--muted-foreground);
-}
-@media (pointer: coarse) {
-  .tab-trigger {
-    min-height: 44px;
-  }
-  .compact-select,
-  .auth-form input {
-    min-height: 44px;
-    font-size: 1rem;
-  }
-  .body-editor {
-    font-size: 1rem;
-  }
-}
-</style>

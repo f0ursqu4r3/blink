@@ -163,8 +163,9 @@ function selectionAlreadyIn(groupId: number | null) {
     )
   );
 }
-function levelClass(level: number) {
-  return `level-${Math.min(level, 6)}`;
+function levelPadding(level: number): string {
+  const pxMap = [12, 28, 44, 60, 76, 92, 108];
+  return `padding-left: ${pxMap[Math.min(level, 6)]}px`;
 }
 function parentName(parentId: number | null) {
   return parentId === null
@@ -288,18 +289,24 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
 <template>
   <aside
-    class="request-browser"
+    class="flex flex-col border-r border-border bg-muted overflow-hidden w-61 min-w-47 data-[collapsed=true]:w-10.5 data-[collapsed=true]:min-w-10.5 max-[760px]:hidden"
     data-request-browser
     :data-collapsed="Boolean(collapsed)"
     :aria-label="collapsed ? 'Request browser collapsed' : 'Request browser'"
   >
-    <header class="browser-header">
-      <div v-if="!collapsed">
-        <strong>REQUESTS</strong>
+    <header
+      class="flex h-10.5 items-center justify-between border-b border-border px-2.5 pl-3 data-[collapsed=true]:justify-center data-[collapsed=true]:px-0"
+      :data-collapsed="Boolean(collapsed)"
+    >
+      <div v-if="!collapsed" class="flex items-baseline gap-1.75">
+        <strong class="font-mono text-[11px] font-bold tracking-[0.08em]"
+          >REQUESTS</strong
+        >
       </div>
       <button
         type="button"
-        class="browser-action sidebar-toggle"
+        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8 ml-auto data-[collapsed=true]:ml-0"
+        :data-collapsed="Boolean(collapsed)"
         :aria-label="
           collapsed ? 'Expand request browser' : 'Collapse request browser'
         "
@@ -315,7 +322,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
       <button
         v-if="!collapsed"
         type="button"
-        class="browser-action"
+        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
         aria-label="Add top-level group"
         title="Add group"
         @click="startCreating(null)"
@@ -325,7 +332,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
       <button
         v-if="!collapsed && selectedIds?.length"
         type="button"
-        class="browser-action"
+        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
         aria-label="Group selected requests"
         title="Group selected requests"
         @click="startCreating(null, selectedIds)"
@@ -336,7 +343,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
     <form
       v-if="!collapsed && creatingParent === null"
-      class="browser-form top-level-form"
+      class="top-level-form flex items-center gap-1.25 px-2 py-1.25 border-b border-border bg-secondary"
       @submit.prevent="submitCreate"
     >
       <label class="sr-only" for="top-level-group-name">
@@ -345,14 +352,22 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
       <input
         id="top-level-group-name"
         v-model="draftName"
+        class="min-w-0 h-6.25 flex-1 border border-input rounded-sm px-1.5 bg-background text-foreground font-mono text-[10px]"
         maxlength="80"
         placeholder="Group name"
         aria-label="Top-level group name"
         autofocus
       />
-      <button type="submit" aria-label="Create top-level group">Add</button>
+      <button
+        type="submit"
+        class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+        aria-label="Create top-level group"
+      >
+        Add
+      </button>
       <button
         type="button"
+        class="text-muted-foreground font-mono text-[9px] hover:text-primary"
         aria-label="Cancel group creation"
         @click="creatingParent = undefined"
       >
@@ -362,19 +377,23 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
     <ContextMenu>
       <ContextMenuTrigger as-child>
-        <div v-if="!collapsed" class="browser-tree">
+        <div v-if="!collapsed" class="min-h-0 flex-1 overflow-auto py-2">
           <!-- UNGROUPED row -->
           <ContextMenu>
             <ContextMenuTrigger as-child>
               <div
-                class="browser-root-row"
+                class="flex min-w-0 items-center gap-1.5 h-7 pl-3 pr-2.25"
                 @dragover="allowDrop"
                 @drop="dropOnUngrouped"
               >
-                <span class="browser-root-label">UNGROUPED</span>
+                <span
+                  class="flex-1 text-muted-foreground font-mono text-[9px] tracking-[0.12em]"
+                >
+                  UNGROUPED
+                </span>
                 <button
                   type="button"
-                  class="browser-action move-action"
+                  class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 pointer-coarse:w-8 pointer-coarse:h-8"
                   :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to Ungrouped`"
                   :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} here`"
                   :disabled="selectionAlreadyIn(null)"
@@ -411,14 +430,13 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 <ContextMenuTrigger as-child>
                   <button
                     type="button"
-                    class="browser-request"
-                    :class="[
-                      levelClass(row.level),
-                      {
-                        active: activeId === row.session.id,
-                        selected: selected.has(row.session.id),
-                      },
-                    ]"
+                    class="flex w-full min-w-0 items-center gap-1.5 min-h-6.75 pr-2.25 overflow-hidden text-left text-muted-foreground font-mono text-[10px] cursor-grab [-webkit-user-drag:element] hover:bg-accent hover:text-foreground pointer-coarse:min-h-9.5"
+                    :class="{
+                      'bg-accent text-foreground': activeId === row.session.id,
+                      'shadow-[inset_2px_0_0_var(--color-primary)]':
+                        selected.has(row.session.id),
+                    }"
+                    :style="levelPadding(row.level)"
                     :aria-selected="selected.has(row.session.id)"
                     :data-request-id="row.session.id"
                     draggable="true"
@@ -429,16 +447,28 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     @dragover="allowDrop"
                     @drop="dropOnRequest($event, row.session)"
                   >
-                    <span :data-method="row.session.draft.method">
+                    <span
+                      class="w-8.5 shrink-0 text-primary text-[8px] font-bold"
+                      :class="{
+                        'text-success': row.session.draft.method === 'GET',
+                        'text-destructive':
+                          row.session.draft.method === 'DELETE',
+                      }"
+                      :data-method="row.session.draft.method"
+                    >
                       {{ row.session.draft.method }}
                     </span>
-                    <strong>{{ sessionLabel(row.session) }}</strong>
+                    <strong
+                      class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium"
+                    >
+                      {{ sessionLabel(row.session) }}
+                    </strong>
                     <Lock
                       v-if="effectiveSessionAuth(row.session).type !== 'none'"
                       :size="10"
                       aria-hidden="true"
                       data-auth-indicator
-                      class="auth-indicator"
+                      class="shrink-0 text-primary opacity-70"
                     />
                   </button>
                 </ContextMenuTrigger>
@@ -526,8 +556,8 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 <ContextMenu>
                   <ContextMenuTrigger as-child>
                     <div
-                      class="browser-group-row"
-                      :class="levelClass(row.level)"
+                      class="group/row flex min-w-0 items-center gap-1.5 min-h-7 pr-1.75 text-muted-foreground cursor-grab [-webkit-user-drag:element] pointer-coarse:min-h-9.5"
+                      :style="levelPadding(row.level)"
                       :data-group-id="row.group.id"
                       draggable="true"
                       @dragstart="startGroupDrag(row.group.id, $event)"
@@ -536,7 +566,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     >
                       <button
                         type="button"
-                        class="tree-toggle"
+                        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                         :aria-label="`${row.group.collapsed ? 'Expand' : 'Collapse'} ${row.group.name}`"
                         @click="emit('toggleGroup', row.group.id)"
                       >
@@ -550,7 +580,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                       <Folder :size="13" aria-hidden="true" />
                       <span
                         v-if="editingId !== row.group.id"
-                        class="group-name"
+                        class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground font-mono text-[11px] flex items-center gap-1"
                       >
                         {{ row.group.name }}
                         <Lock
@@ -558,12 +588,12 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                           :size="10"
                           aria-hidden="true"
                           data-auth-indicator
-                          class="auth-indicator"
+                          class="shrink-0 text-primary opacity-70"
                         />
                       </span>
                       <form
                         v-else
-                        class="browser-form rename-form"
+                        class="flex min-w-0 flex-1 items-center gap-1.25"
                         @submit.prevent="submitRename(row.group)"
                       >
                         <label
@@ -575,17 +605,20 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         <input
                           :id="`rename-group-${row.group.id}`"
                           v-model="draftName"
+                          class="min-w-0 h-6.25 flex-1 border border-input rounded-sm px-1.5 bg-background text-foreground font-mono text-[10px]"
                           maxlength="80"
                           autofocus
                         />
                         <button
                           type="submit"
+                          class="text-muted-foreground font-mono text-[9px] hover:text-primary"
                           :aria-label="`Save ${row.group.name}`"
                         >
                           Save
                         </button>
                         <button
                           type="button"
+                          class="text-muted-foreground font-mono text-[9px] hover:text-primary"
                           :aria-label="`Cancel rename ${row.group.name}`"
                           @click="editingId = null"
                         >
@@ -594,11 +627,11 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                       </form>
                       <div
                         v-if="editingId !== row.group.id"
-                        class="group-actions"
+                        class="flex opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100"
                       >
                         <button
                           type="button"
-                          class="browser-action"
+                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                           :aria-label="`Group settings for ${row.group.name}`"
                           :title="`Group settings for ${row.group.name}`"
                           @click="emit('openGroupSettings', row.group.id)"
@@ -607,7 +640,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         </button>
                         <button
                           type="button"
-                          class="browser-action"
+                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                           :aria-label="`Add group inside ${row.group.name}`"
                           :title="`Add group inside ${row.group.name}`"
                           @click="startCreating(row.group.id)"
@@ -616,7 +649,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         </button>
                         <button
                           type="button"
-                          class="browser-action move-action"
+                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 pointer-coarse:w-8 pointer-coarse:h-8"
                           :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
                           :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
                           :disabled="selectionAlreadyIn(row.group.id)"
@@ -626,7 +659,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         </button>
                         <button
                           type="button"
-                          class="browser-action"
+                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                           :aria-label="`Rename ${row.group.name}`"
                           @click="startRename(row.group)"
                         >
@@ -634,7 +667,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         </button>
                         <button
                           type="button"
-                          class="browser-action destructive-action"
+                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-destructive hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                           :aria-label="`Delete ${row.group.name}`"
                           @click="deletingId = row.group.id"
                         >
@@ -673,8 +706,8 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
               <form
                 v-if="creatingParent === row.group.id"
-                class="browser-form child-form"
-                :class="levelClass(row.level + 1)"
+                class="child-form flex items-center gap-1.25 px-2 py-1.25 border-b border-border bg-secondary pr-2.25"
+                :style="levelPadding(row.level + 1)"
                 @submit.prevent="submitCreate"
               >
                 <label class="sr-only" :for="`group-name-${row.group.id}`">
@@ -683,18 +716,21 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 <input
                   :id="`group-name-${row.group.id}`"
                   v-model="draftName"
+                  class="min-w-0 h-6.25 flex-1 border border-input rounded-sm px-1.5 bg-background text-foreground font-mono text-[10px]"
                   maxlength="80"
                   :aria-label="`Group name in ${row.group.name}`"
                   autofocus
                 />
                 <button
                   type="submit"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
                   :aria-label="`Create group in ${row.group.name}`"
                 >
                   Add
                 </button>
                 <button
                   type="button"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
                   aria-label="Cancel group creation"
                   @click="creatingParent = undefined"
                 >
@@ -704,10 +740,10 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
               <div
                 v-if="deletingId === row.group.id"
-                class="delete-confirmation"
-                :class="levelClass(row.level + 1)"
+                class="flex flex-wrap items-start gap-1.25 px-2 py-1.25 pr-2.25 border-b border-border bg-secondary font-mono text-[9px] text-muted-foreground"
+                :style="levelPadding(row.level + 1)"
               >
-                <p>
+                <p class="w-full leading-[1.45]">
                   Delete {{ row.group.name }}? Requests move to
                   {{ parentName(row.group.parentId) }}. Child groups are
                   promoted.
@@ -715,11 +751,18 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 <!-- prettier-ignore -->
                 <button
                   type="button"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
                   @click="emit('deleteGroup', row.group.id); deletingId = null"
                 >
                   Delete
                 </button>
-                <button type="button" @click="deletingId = null">Cancel</button>
+                <button
+                  type="button"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+                  @click="deletingId = null"
+                >
+                  Cancel
+                </button>
               </div>
             </template>
           </template>
@@ -736,264 +779,3 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
     </ContextMenu>
   </aside>
 </template>
-
-<style scoped>
-.request-browser {
-  display: flex;
-  width: 244px;
-  min-width: 188px;
-  flex-direction: column;
-  border-right: 1px solid var(--border);
-  background: var(--muted);
-  overflow: hidden;
-}
-.request-browser[data-collapsed='true'] {
-  width: 42px;
-  min-width: 42px;
-}
-.browser-header {
-  display: flex;
-  height: 42px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 10px 0 12px;
-  border-bottom: 1px solid var(--border);
-}
-.request-browser[data-collapsed='true'] .browser-header {
-  justify-content: center;
-  padding: 0;
-}
-.browser-header > div {
-  display: flex;
-  align-items: baseline;
-  gap: 7px;
-}
-.browser-root-label {
-  color: var(--muted-foreground);
-  font: 0.5625rem var(--font-mono);
-  letter-spacing: 0.12em;
-}
-.browser-header strong {
-  font: 700 0.6875rem var(--font-mono);
-  letter-spacing: 0.08em;
-}
-.browser-tree {
-  min-height: 0;
-  flex: 1;
-  overflow: auto;
-  padding: 8px 0;
-}
-.browser-root-row,
-.browser-group-row,
-.browser-request {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 6px;
-}
-.browser-root-row {
-  height: 28px;
-  padding: 0 9px 0 13px;
-}
-.browser-root-label {
-  flex: 1;
-}
-.browser-group-row {
-  min-height: 28px;
-  padding-right: 7px;
-  color: var(--muted-foreground);
-  cursor: grab;
-  -webkit-user-drag: element;
-}
-.group-name {
-  min-width: 0;
-  flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--foreground);
-  font: 0.6875rem var(--font-mono);
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.tree-toggle,
-.browser-action {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 22px;
-  height: 22px;
-  flex: none;
-  color: var(--muted-foreground);
-}
-.sidebar-toggle {
-  margin-left: auto;
-}
-.request-browser[data-collapsed='true'] .sidebar-toggle {
-  margin-left: 0;
-}
-.tree-toggle:hover,
-.browser-action:hover:not(:disabled) {
-  color: var(--primary);
-  background: var(--accent);
-}
-.browser-action:disabled {
-  opacity: 0.3;
-}
-.group-actions {
-  display: flex;
-  opacity: 0;
-}
-.browser-group-row:hover .group-actions,
-.browser-group-row:focus-within .group-actions {
-  opacity: 1;
-}
-.destructive-action:hover:not(:disabled) {
-  color: var(--destructive);
-}
-.browser-request {
-  width: 100%;
-  min-height: 27px;
-  padding-right: 9px;
-  overflow: hidden;
-  text-align: left;
-  color: var(--muted-foreground);
-  font: 0.625rem var(--font-mono);
-  cursor: grab;
-  -webkit-user-drag: element;
-}
-.browser-request:hover,
-.browser-request.active {
-  background: var(--accent);
-  color: var(--foreground);
-}
-.browser-request.selected {
-  box-shadow: inset 2px 0 var(--primary);
-}
-.browser-request span {
-  width: 34px;
-  flex: none;
-  color: var(--primary);
-  font-size: 0.5rem;
-  font-weight: 700;
-}
-.browser-request span[data-method='GET'] {
-  color: var(--success);
-}
-.browser-request span[data-method='DELETE'] {
-  color: var(--destructive);
-}
-.browser-request strong {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-weight: 500;
-}
-.auth-indicator {
-  flex: none;
-  color: var(--primary);
-  opacity: 0.7;
-}
-.level-0 {
-  padding-left: 12px;
-}
-.level-1 {
-  padding-left: 28px;
-}
-.level-2 {
-  padding-left: 44px;
-}
-.level-3 {
-  padding-left: 60px;
-}
-.level-4 {
-  padding-left: 76px;
-}
-.level-5 {
-  padding-left: 92px;
-}
-.level-6 {
-  padding-left: 108px;
-}
-.browser-form,
-.delete-confirmation {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  padding: 5px 8px;
-  border-bottom: 1px solid var(--border);
-  background: var(--secondary);
-}
-.browser-form input {
-  min-width: 0;
-  height: 25px;
-  flex: 1;
-  border: 1px solid var(--input);
-  border-radius: 2px;
-  padding: 0 6px;
-  background: var(--background);
-  color: var(--foreground);
-  font: 0.625rem var(--font-mono);
-}
-.browser-form button,
-.delete-confirmation button {
-  color: var(--muted-foreground);
-  font: 0.5625rem var(--font-mono);
-}
-.browser-form button:hover,
-.delete-confirmation button:hover {
-  color: var(--primary);
-}
-.rename-form {
-  min-width: 0;
-  flex: 1;
-  padding: 0;
-  border: 0;
-  background: transparent;
-}
-.child-form,
-.delete-confirmation {
-  padding-right: 9px;
-}
-.delete-confirmation {
-  align-items: flex-start;
-  flex-wrap: wrap;
-  font: 0.5625rem var(--font-mono);
-  color: var(--muted-foreground);
-}
-.delete-confirmation p {
-  width: 100%;
-  line-height: 1.45;
-}
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
-}
-@media (pointer: coarse) {
-  .tree-toggle,
-  .browser-action {
-    width: 32px;
-    height: 32px;
-  }
-  .group-actions {
-    opacity: 1;
-  }
-  .browser-group-row,
-  .browser-request {
-    min-height: 38px;
-  }
-}
-@media (max-width: 760px) {
-  .request-browser {
-    display: none;
-  }
-}
-</style>

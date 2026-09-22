@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
-import type { RequestGroup } from "../lib/groups";
-import type { RequestSession } from "../lib/session";
-import type { AuthorizationConfig } from "../lib/authorization";
+import { computed, ref, watch } from 'vue';
+import type { RequestGroup } from '../lib/groups';
+import type { RequestSession } from '../lib/session';
+import type { AuthorizationConfig } from '../lib/authorization';
 
 const props = defineProps<{
   group: RequestGroup | null;
@@ -12,29 +12,29 @@ const props = defineProps<{
 }>();
 
 const emit = defineEmits<{
-  (e: "update:open", value: boolean): void;
+  (e: 'update:open', value: boolean): void;
   (
-    e: "save",
+    e: 'save',
     groupId: number,
     changes: {
       name?: string;
       localAuth?: AuthorizationConfig | undefined;
       localDefinitions?: Record<string, string>;
-    },
+    }
   ): void;
 }>();
 
 // ---------- local form state ----------
-type AuthMode = "inherit" | "none" | "bearer" | "basic";
+type AuthMode = 'inherit' | 'none' | 'bearer' | 'basic';
 
-const localName = ref("");
-const authMode = ref<AuthMode>("inherit");
-const bearerToken = ref("");
-const basicUsername = ref("");
-const basicPassword = ref("");
+const localName = ref('');
+const authMode = ref<AuthMode>('inherit');
+const bearerToken = ref('');
+const basicUsername = ref('');
+const basicPassword = ref('');
 
-const localTokenJson = ref("{}");
-const tokenError = ref("");
+const localTokenJson = ref('{}');
+const tokenError = ref('');
 
 function initFromProps() {
   if (!props.group) return;
@@ -42,23 +42,23 @@ function initFromProps() {
 
   const auth = props.group.localAuth;
   if (auth === undefined) {
-    authMode.value = "inherit";
-    bearerToken.value = "";
-    basicUsername.value = "";
-    basicPassword.value = "";
-  } else if (auth.type === "none") {
-    authMode.value = "none";
-    bearerToken.value = "";
-    basicUsername.value = "";
-    basicPassword.value = "";
-  } else if (auth.type === "bearer") {
-    authMode.value = "bearer";
+    authMode.value = 'inherit';
+    bearerToken.value = '';
+    basicUsername.value = '';
+    basicPassword.value = '';
+  } else if (auth.type === 'none') {
+    authMode.value = 'none';
+    bearerToken.value = '';
+    basicUsername.value = '';
+    basicPassword.value = '';
+  } else if (auth.type === 'bearer') {
+    authMode.value = 'bearer';
     bearerToken.value = auth.token;
-    basicUsername.value = "";
-    basicPassword.value = "";
-  } else if (auth.type === "basic") {
-    authMode.value = "basic";
-    bearerToken.value = "";
+    basicUsername.value = '';
+    basicPassword.value = '';
+  } else if (auth.type === 'basic') {
+    authMode.value = 'basic';
+    bearerToken.value = '';
     basicUsername.value = auth.username;
     basicPassword.value = auth.password;
   }
@@ -66,9 +66,9 @@ function initFromProps() {
   localTokenJson.value = JSON.stringify(
     props.group.localDefinitions ?? {},
     null,
-    2,
+    2
   );
-  tokenError.value = "";
+  tokenError.value = '';
 }
 
 watch(
@@ -76,14 +76,14 @@ watch(
   ([open]) => {
     if (open) initFromProps();
   },
-  { immediate: true },
+  { immediate: true }
 );
 
 // ---------- computed helpers ----------
 const parentBreadcrumb = computed(() => {
-  if (!props.group) return "";
+  if (!props.group) return '';
   const parentId = props.group.parentId;
-  if (parentId === null) return "(root)";
+  if (parentId === null) return '(root)';
   const byId = new Map(props.groups.map((g) => [g.id, g]));
   const chain: string[] = [];
   let cursor: number | null = parentId;
@@ -96,22 +96,22 @@ const parentBreadcrumb = computed(() => {
     chain.unshift(g.name);
     cursor = g.parentId;
   }
-  return chain.join(" > ");
+  return chain.join(' > ');
 });
 
 const effectiveAuth = computed(
-  (): { label: string; source: "local" | "inherited"; from?: string } => {
-    if (!props.group) return { label: "No auth", source: "local" };
+  (): { label: string; source: 'local' | 'inherited'; from?: string } => {
+    if (!props.group) return { label: 'No auth', source: 'local' };
 
     const local = props.group.localAuth;
     if (local !== undefined) {
       const typeLabel =
-        local.type === "none"
-          ? "No auth"
-          : local.type === "bearer"
-            ? "Bearer"
-            : "Basic";
-      return { label: `Local · ${typeLabel}`, source: "local" };
+        local.type === 'none'
+          ? 'No auth'
+          : local.type === 'bearer'
+            ? 'Bearer'
+            : 'Basic';
+      return { label: `Local · ${typeLabel}`, source: 'local' };
     }
 
     const byId = new Map(props.groups.map((g) => [g.id, g]));
@@ -124,26 +124,26 @@ const effectiveAuth = computed(
       if (!g) break;
       if (g.localAuth !== undefined) {
         const typeLabel =
-          g.localAuth.type === "none"
-            ? "No auth"
-            : g.localAuth.type === "bearer"
-              ? "Bearer"
-              : "Basic";
+          g.localAuth.type === 'none'
+            ? 'No auth'
+            : g.localAuth.type === 'bearer'
+              ? 'Bearer'
+              : 'Basic';
         return {
           label: `Inherited from ${g.name} · ${typeLabel}`,
-          source: "inherited",
+          source: 'inherited',
           from: g.name,
         };
       }
       cursor = g.parentId;
     }
-    return { label: "Local · No auth", source: "local" };
-  },
+    return { label: 'Local · No auth', source: 'local' };
+  }
 );
 
 function getDescendantGroupIds(
   groupId: number,
-  groups: RequestGroup[],
+  groups: RequestGroup[]
 ): number[] {
   const result: number[] = [];
   const queue = [groupId];
@@ -175,7 +175,7 @@ const descendantRequestCount = computed(() => {
     ...getDescendantGroupIds(props.group.id, props.groups),
   ]);
   return props.sessions.filter(
-    (s) => s.groupId !== null && descIds.has(s.groupId),
+    (s) => s.groupId !== null && descIds.has(s.groupId)
   ).length;
 });
 
@@ -185,33 +185,33 @@ function parseLocalDefinitions(): Record<string, string> | null {
   try {
     parsed = JSON.parse(localTokenJson.value);
   } catch {
-    tokenError.value = "Enter a valid JSON object.";
+    tokenError.value = 'Enter a valid JSON object.';
     return null;
   }
   if (
     !parsed ||
     Array.isArray(parsed) ||
-    typeof parsed !== "object" ||
-    Object.values(parsed).some((value) => typeof value !== "string")
+    typeof parsed !== 'object' ||
+    Object.values(parsed).some((value) => typeof value !== 'string')
   ) {
     tokenError.value =
-      "Token definitions must be a JSON object with string values.";
+      'Token definitions must be a JSON object with string values.';
     return null;
   }
-  if (Object.keys(parsed).some((name) => name.startsWith("_"))) {
-    tokenError.value = "Token names must not start with _.";
+  if (Object.keys(parsed).some((name) => name.startsWith('_'))) {
+    tokenError.value = 'Token names must not start with _.';
     return null;
   }
   return parsed as Record<string, string>;
 }
 
 function buildLocalAuth(): AuthorizationConfig | undefined {
-  if (authMode.value === "inherit") return undefined;
-  if (authMode.value === "none") return { type: "none" };
-  if (authMode.value === "bearer")
-    return { type: "bearer", token: bearerToken.value };
+  if (authMode.value === 'inherit') return undefined;
+  if (authMode.value === 'none') return { type: 'none' };
+  if (authMode.value === 'bearer')
+    return { type: 'bearer', token: bearerToken.value };
   return {
-    type: "basic",
+    type: 'basic',
     username: basicUsername.value,
     password: basicPassword.value,
   };
@@ -229,55 +229,77 @@ function handleSave() {
   changes.name = localName.value;
   changes.localAuth = buildLocalAuth();
   changes.localDefinitions = localDefinitions;
-  emit("save", props.group.id, changes);
+  emit('save', props.group.id, changes);
 }
 
 function handleCancel() {
-  emit("update:open", false);
+  emit('update:open', false);
 }
 </script>
 
 <template>
   <div
     v-if="open"
-    class="dialog-backdrop"
+    class="fixed inset-0 z-50 flex items-center justify-center bg-black/50"
     data-testid="group-settings-dialog"
     role="dialog"
     aria-modal="true"
     @keydown.esc="handleCancel"
   >
-    <div class="dialog-content">
-      <h2>Group Settings</h2>
+    <div
+      class="flex flex-col gap-4 min-w-105 max-w-150 max-h-[90dvh] overflow-y-auto p-6 border border-border rounded bg-background"
+    >
+      <h2 class="text-sm font-bold tracking-[0.08em] mb-1">Group Settings</h2>
 
       <!-- General Section -->
-      <section>
-        <h3>General</h3>
-        <div class="field-row">
-          <label for="group-name">Name</label>
+      <section class="flex flex-col gap-1.5 border-b border-border pb-4">
+        <h3
+          class="text-xs font-semibold tracking-[0.07em] text-muted-foreground uppercase"
+        >
+          General
+        </h3>
+        <div class="flex items-center gap-2.5 text-xs">
+          <label class="w-20 shrink-0 text-muted-foreground" for="group-name"
+            >Name</label
+          >
           <input
             id="group-name"
             v-model="localName"
+            class="flex-1 h-7 px-2 border border-input rounded-sm bg-background text-foreground font-mono text-xs"
             data-testid="group-name-input"
             type="text"
           />
         </div>
-        <div data-testid="parent-breadcrumb" class="info-row">
+        <div
+          class="text-[11px] text-muted-foreground font-mono"
+          data-testid="parent-breadcrumb"
+        >
           <span>{{ parentBreadcrumb }}</span>
         </div>
-        <div data-testid="effective-auth-label" class="info-row">
+        <div
+          class="text-[11px] text-muted-foreground font-mono"
+          data-testid="effective-auth-label"
+        >
           {{ effectiveAuth.label }}
         </div>
-        <div data-testid="descendant-counts" class="info-row">
-          {{ descendantRequestCount }} requests · {{ descendantGroupCount }}
-          groups
+        <div
+          class="text-[11px] text-muted-foreground font-mono"
+          data-testid="descendant-counts"
+        >
+          {{ descendantRequestCount }} requests ·
+          {{ descendantGroupCount }} groups
         </div>
       </section>
 
       <!-- Authorization Section -->
-      <section>
-        <h3>Authorization</h3>
-        <div class="radio-group">
-          <label>
+      <section class="flex flex-col gap-1.5 border-b border-border pb-4">
+        <h3
+          class="text-xs font-semibold tracking-[0.07em] text-muted-foreground uppercase"
+        >
+          Authorization
+        </h3>
+        <div class="flex gap-3.5 text-xs flex-wrap">
+          <label class="flex items-center gap-1.5 cursor-pointer">
             <input
               v-model="authMode"
               data-testid="auth-option-inherit"
@@ -287,7 +309,7 @@ function handleCancel() {
             />
             Inherit
           </label>
-          <label>
+          <label class="flex items-center gap-1.5 cursor-pointer">
             <input
               v-model="authMode"
               data-testid="auth-option-none"
@@ -297,7 +319,7 @@ function handleCancel() {
             />
             No auth
           </label>
-          <label>
+          <label class="flex items-center gap-1.5 cursor-pointer">
             <input
               v-model="authMode"
               data-testid="auth-option-bearer"
@@ -307,7 +329,7 @@ function handleCancel() {
             />
             Bearer
           </label>
-          <label>
+          <label class="flex items-center gap-1.5 cursor-pointer">
             <input
               v-model="authMode"
               data-testid="auth-option-basic"
@@ -319,30 +341,36 @@ function handleCancel() {
           </label>
         </div>
 
-        <div v-if="authMode === 'bearer'" class="field-row">
-          <label>Token</label>
+        <div
+          v-if="authMode === 'bearer'"
+          class="flex items-center gap-2.5 text-xs"
+        >
+          <label class="w-20 shrink-0 text-muted-foreground">Token</label>
           <input
             v-model="bearerToken"
+            class="flex-1 h-7 px-2 border border-input rounded-sm bg-background text-foreground font-mono text-xs"
             data-testid="bearer-token-input"
             type="password"
             autocomplete="off"
           />
         </div>
 
-        <div v-if="authMode === 'basic'" class="field-row-group">
-          <div class="field-row">
-            <label>Username</label>
+        <div v-if="authMode === 'basic'" class="flex flex-col gap-1.5">
+          <div class="flex items-center gap-2.5 text-xs">
+            <label class="w-20 shrink-0 text-muted-foreground">Username</label>
             <input
               v-model="basicUsername"
+              class="flex-1 h-7 px-2 border border-input rounded-sm bg-background text-foreground font-mono text-xs"
               data-testid="basic-username-input"
               type="text"
               autocomplete="off"
             />
           </div>
-          <div class="field-row">
-            <label>Password</label>
+          <div class="flex items-center gap-2.5 text-xs">
+            <label class="w-20 shrink-0 text-muted-foreground">Password</label>
             <input
               v-model="basicPassword"
+              class="flex-1 h-7 px-2 border border-input rounded-sm bg-background text-foreground font-mono text-xs"
               data-testid="basic-password-input"
               type="password"
               autocomplete="off"
@@ -352,18 +380,22 @@ function handleCancel() {
 
         <div
           v-if="authMode === 'inherit' && effectiveAuth.source === 'inherited'"
-          class="info-row"
+          class="text-[11px] text-muted-foreground font-mono"
         >
           <em>{{ effectiveAuth.label }}</em>
         </div>
       </section>
 
       <!-- Tokens Section -->
-      <section>
-        <div class="section-heading">
-          <h3>Tokens</h3>
+      <section class="flex flex-col gap-1.5 border-b border-border pb-4">
+        <div class="flex items-center gap-1.5 mb-2">
+          <h3
+            class="text-xs font-semibold tracking-[0.07em] text-muted-foreground uppercase"
+          >
+            Tokens
+          </h3>
           <button
-            class="token-help"
+            class="grid place-items-center w-4 h-4 p-0 border border-input rounded-full text-muted-foreground bg-muted font-mono text-[10px] font-semibold leading-none hover:text-foreground hover:bg-accent focus-visible:text-foreground focus-visible:bg-accent"
             data-token-help="local"
             type="button"
             aria-label="Token syntax help"
@@ -376,242 +408,40 @@ function handleCancel() {
         <textarea
           id="local-token-json"
           v-model="localTokenJson"
+          class="min-h-45 resize-y p-2 border border-input rounded-sm bg-background text-foreground font-mono text-xs leading-relaxed"
           data-local-token-json
           spellcheck="false"
           autocomplete="off"
         />
-        <p v-if="tokenError" data-token-json-error class="error" role="alert">
+        <p
+          v-if="tokenError"
+          class="text-[10px] text-destructive"
+          data-token-json-error
+          role="alert"
+        >
           {{ tokenError }}
         </p>
       </section>
 
       <!-- Actions -->
-      <div class="dialog-actions">
-        <button data-testid="cancel-button" type="button" @click="handleCancel">
+      <div class="flex justify-end gap-2.5 pt-1">
+        <button
+          class="h-7.5 px-3.5 border border-border rounded-sm font-mono text-xs text-foreground bg-background hover:bg-accent"
+          data-testid="cancel-button"
+          type="button"
+          @click="handleCancel"
+        >
           Cancel
         </button>
-        <button data-testid="save-button" type="button" @click="handleSave">
+        <button
+          class="h-7.5 px-3.5 border border-primary rounded-sm font-mono text-xs bg-primary text-primary-foreground hover:opacity-90"
+          data-testid="save-button"
+          type="button"
+          @click="handleSave"
+        >
           Save
         </button>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.dialog-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 50;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 0.5);
-}
-
-.dialog-content {
-  background: var(--background);
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  padding: 24px;
-  min-width: 420px;
-  max-width: 600px;
-  max-height: 90dvh;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-h2 {
-  font-size: 0.875rem;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  margin-bottom: 4px;
-}
-
-h3 {
-  font-size: 0.75rem;
-  font-weight: 600;
-  letter-spacing: 0.07em;
-  color: var(--muted-foreground);
-  text-transform: uppercase;
-}
-
-.section-heading {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.token-help {
-  display: grid;
-  place-items: center;
-  width: 16px;
-  height: 16px;
-  padding: 0;
-  border: 1px solid var(--input);
-  border-radius: 50%;
-  color: var(--muted-foreground);
-  background: var(--muted);
-  font: 600 0.625rem/1 var(--font-mono);
-}
-
-.token-help:hover,
-.token-help:focus-visible {
-  color: var(--foreground);
-  background: var(--accent);
-}
-
-h4 {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--muted-foreground);
-  margin: 10px 0 6px;
-}
-
-section {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 16px;
-}
-
-.field-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  font-size: 0.75rem;
-}
-
-.field-row label {
-  width: 80px;
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-}
-
-.field-row input {
-  flex: 1;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--input);
-  border-radius: 2px;
-  background: var(--background);
-  color: var(--foreground);
-  font: 0.75rem var(--font-mono);
-}
-
-.field-row-group {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.radio-group {
-  display: flex;
-  gap: 14px;
-  font-size: 0.75rem;
-  flex-wrap: wrap;
-}
-
-.radio-group label {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  cursor: pointer;
-}
-
-.info-row {
-  font-size: 0.6875rem;
-  color: var(--muted-foreground);
-  font-family: var(--font-mono);
-}
-
-.token-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 4px;
-}
-
-.token-row input {
-  height: 26px;
-  padding: 0 6px;
-  border: 1px solid var(--input);
-  border-radius: 2px;
-  background: var(--background);
-  color: var(--foreground);
-  font: 0.6875rem var(--font-mono);
-  min-width: 0;
-  flex: 1;
-}
-
-.token-row button {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  font: 0.5625rem var(--font-mono);
-}
-
-.token-row button:hover {
-  color: var(--destructive);
-}
-
-.add-btn {
-  font: 0.5625rem var(--font-mono);
-  color: var(--muted-foreground);
-  margin-top: 4px;
-}
-
-.add-btn:hover {
-  color: var(--primary);
-}
-
-[data-local-token-json] {
-  min-height: 180px;
-  resize: vertical;
-  padding: 8px;
-  border: 1px solid var(--input);
-  border-radius: 2px;
-  background: var(--background);
-  color: var(--foreground);
-  font: 0.75rem/1.5 var(--font-mono);
-}
-
-.error {
-  font-size: 0.625rem;
-  color: var(--destructive);
-}
-
-.dialog-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 10px;
-  padding-top: 4px;
-}
-
-.dialog-actions button {
-  height: 30px;
-  padding: 0 14px;
-  border: 1px solid var(--border);
-  border-radius: 2px;
-  font: 0.75rem var(--font-mono);
-  color: var(--foreground);
-  background: var(--background);
-}
-
-.dialog-actions button:hover {
-  background: var(--accent);
-}
-
-.dialog-actions button:last-child {
-  background: var(--primary);
-  color: var(--primary-foreground);
-  border-color: var(--primary);
-}
-
-.dialog-actions button:last-child:hover {
-  opacity: 0.9;
-}
-</style>

@@ -9,7 +9,12 @@ defineProps<{
 <template>
   <ContextMenuPortal>
     <ContextMenuContent
-      :class="['blink-ctx-content', $props.class]"
+      :class="[
+        'ctx-anim',
+        'min-w-40 overflow-hidden rounded border border-border bg-secondary text-foreground p-1 z-50 font-mono text-xs',
+        'shadow-[0_4px_6px_-1px_oklch(0_0_0/0.4),0_2px_4px_-2px_oklch(0_0_0/0.3)]',
+        $props.class,
+      ]"
       data-surface="context-menu"
     >
       <slot />
@@ -18,27 +23,12 @@ defineProps<{
 </template>
 
 <style scoped>
-.blink-ctx-content {
-  min-width: 10rem;
-  overflow: hidden;
-  border-radius: 4px;
-  border: 1px solid var(--border);
-  background-color: var(--secondary);
-  color: var(--foreground);
-  padding: 0.25rem;
-  box-shadow:
-    0 4px 6px -1px oklch(0 0 0 / 0.4),
-    0 2px 4px -2px oklch(0 0 0 / 0.3);
-  font-family: var(--font-mono, monospace);
-  font-size: 0.75rem;
-  z-index: 50;
-}
-
+/* Enter/exit keyframe animations cannot be expressed as Tailwind utilities */
 @media (prefers-reduced-motion: no-preference) {
-  .blink-ctx-content[data-state="open"] {
+  .ctx-anim[data-state="open"] {
     animation: ctx-in 120ms ease-out;
   }
-  .blink-ctx-content[data-state="closed"] {
+  .ctx-anim[data-state="closed"] {
     animation: ctx-out 100ms ease-in;
   }
 }

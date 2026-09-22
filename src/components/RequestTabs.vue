@@ -53,10 +53,12 @@ function navigate(event: KeyboardEvent, index: number) {
 <template>
   <ContextMenu>
     <ContextMenuTrigger as-child data-testid="tab-strip-ctx-trigger">
-      <div class="tab-strip">
+      <div
+        class="flex min-w-0 shrink-0 h-9 bg-muted border-b border-border pointer-coarse:h-11"
+      >
         <div
           ref="strip"
-          class="request-tabs"
+          class="flex min-w-0 overflow-x-auto scrollbar-thin"
           role="tablist"
           aria-label="Requests"
         >
@@ -66,7 +68,7 @@ function navigate(event: KeyboardEvent, index: number) {
               :data-testid="`tab-ctx-trigger-${session.id}`"
             >
               <div
-                class="tab-cell"
+                class="tab-cell relative flex items-stretch shrink-0 w-52.5 border-r border-border text-muted-foreground max-[760px]:w-46.25"
                 :class="{ selected: activeId === session.id }"
                 role="presentation"
               >
@@ -78,49 +80,59 @@ function navigate(event: KeyboardEvent, index: number) {
                   :aria-selected="activeId === session.id"
                   :tabindex="activeId === session.id ? 0 : -1"
                   :title="`${session.draft.method} ${sessionLabel(session)} · ${sessionHost(session)} · ${sessionStatus(session)}`"
+                  class="flex items-center gap-2.25 pl-3.5 pr-2 min-w-0 flex-1 text-left font-mono text-[0.6875rem] cursor-pointer"
                   @click="emit('select', session.id)"
                   @keydown="navigate($event, index)"
                 >
-                  <span class="tab-method" :data-method="session.draft.method">
+                  <span
+                    class="text-[0.5625rem] font-bold tracking-[0.04em] text-primary data-[method=GET]:text-success data-[method=DELETE]:text-destructive"
+                    :data-method="session.draft.method"
+                  >
                     {{ session.draft.method }}
                   </span>
-                  <span class="tab-label">
-                    <span class="tab-path">{{ sessionLabel(session) }}</span>
+                  <span
+                    class="flex flex-col justify-center min-w-0 flex-1 leading-[1.3]"
+                  >
+                    <span class="truncate">{{ sessionLabel(session) }}</span>
                     <span
                       v-if="
                         sessionHost(session) &&
                         sessionHost(session) !== sessionLabel(session)
                       "
-                      class="tab-host"
+                      class="truncate text-[0.5625rem] text-muted-foreground"
                     >
                       {{ sessionHost(session) }}
                     </span>
                   </span>
                   <span
                     v-if="session.busy"
-                    class="tab-state sending"
+                    class="text-[0.5625rem] text-primary sending"
                     aria-label="Sending"
                   >
                     ↗
                   </span>
                   <span
                     v-else-if="session.error"
-                    class="tab-state failed"
+                    class="text-[0.5625rem] text-destructive"
                     aria-label="Request failed"
                   >
                     !
                   </span>
                   <span
                     v-else-if="session.response"
-                    class="tab-state"
-                    :class="{ failed: session.response.status >= 400 }"
+                    class="text-[0.5625rem]"
+                    :class="
+                      session.response.status >= 400
+                        ? 'text-destructive'
+                        : 'text-success'
+                    "
                   >
                     {{ sessionStatus(session) }}
                   </span>
                 </button>
                 <button
                   type="button"
-                  class="tab-close"
+                  class="flex items-center justify-center w-6.5 shrink-0 text-muted-foreground cursor-pointer hover:not-disabled:text-foreground hover:not-disabled:bg-accent disabled:opacity-30 disabled:cursor-not-allowed pointer-coarse:w-11"
                   data-close-request
                   :disabled="session.busy"
                   :aria-label="`Close ${sessionLabel(session)}`"
@@ -166,7 +178,7 @@ function navigate(event: KeyboardEvent, index: number) {
         </div>
         <button
           type="button"
-          class="new-tab"
+          class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-primary pointer-coarse:w-11"
           data-new-request
           aria-label="New request"
           title="New request · Cmd/Ctrl+T"
@@ -191,29 +203,7 @@ function navigate(event: KeyboardEvent, index: number) {
 </template>
 
 <style scoped>
-.tab-strip {
-  display: flex;
-  min-width: 0;
-  flex-shrink: 0;
-  height: 36px;
-  background: var(--muted);
-  border-bottom: 1px solid var(--border);
-}
-.request-tabs {
-  display: flex;
-  min-width: 0;
-  overflow-x: auto;
-  scrollbar-width: thin;
-}
-.tab-cell {
-  display: flex;
-  align-items: stretch;
-  flex-shrink: 0;
-  width: 210px;
-  border-right: 1px solid var(--border);
-  position: relative;
-  color: var(--muted-foreground);
-}
+/* Selected tab top-border indicator — pseudo-element, cannot be a utility */
 .tab-cell.selected {
   background: var(--secondary);
   color: var(--foreground);
@@ -228,89 +218,7 @@ function navigate(event: KeyboardEvent, index: number) {
 .tab-cell:not(.selected):hover {
   background: var(--accent);
 }
-[role='tab'] {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  padding: 0 8px 0 14px;
-  min-width: 0;
-  flex: 1;
-  text-align: left;
-  font: 0.6875rem var(--font-mono);
-  cursor: pointer;
-}
-.tab-method {
-  font-size: 0.5625rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  color: var(--primary);
-}
-.tab-method[data-method='GET'] {
-  color: var(--success);
-}
-.tab-method[data-method='DELETE'] {
-  color: var(--destructive);
-}
-.tab-label {
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
-  min-width: 0;
-  flex: 1;
-  line-height: 1.3;
-}
-.tab-path,
-.tab-host {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.tab-host {
-  font-size: 0.5625rem;
-  color: var(--muted-foreground);
-}
-.tab-state {
-  font-size: 0.5625rem;
-  color: var(--success);
-}
-.tab-state.failed {
-  color: var(--destructive);
-}
-.sending {
-  color: var(--primary);
-  animation: activity 1s ease-in-out infinite alternate;
-}
-.tab-close {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 26px;
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-  cursor: pointer;
-}
-.tab-close:hover:not(:disabled) {
-  color: var(--foreground);
-  background: var(--accent);
-}
-.tab-close:disabled {
-  opacity: 0.3;
-  cursor: not-allowed;
-}
-.new-tab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  width: 38px;
-  color: var(--muted-foreground);
-  border-right: 1px solid var(--border);
-  cursor: pointer;
-}
-.new-tab:hover {
-  background: var(--accent);
-  color: var(--primary);
-}
+/* Sending animation */
 @keyframes activity {
   from {
     opacity: 0.4;
@@ -319,23 +227,12 @@ function navigate(event: KeyboardEvent, index: number) {
     opacity: 1;
   }
 }
+.sending {
+  animation: activity 1s ease-in-out infinite alternate;
+}
 @media (prefers-reduced-motion: reduce) {
   .sending {
     animation: none;
-  }
-}
-@media (max-width: 760px) {
-  .tab-cell {
-    width: 185px;
-  }
-}
-@media (pointer: coarse) {
-  .tab-strip {
-    height: 44px;
-  }
-  .tab-close,
-  .new-tab {
-    width: 44px;
   }
 }
 </style>
