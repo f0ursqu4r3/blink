@@ -5,15 +5,31 @@ import {
   ChevronRight,
   Folder,
   FolderPlus,
+  Lock,
   MoveRight,
   PanelLeftClose,
   PanelLeftOpen,
   Pencil,
   Plus,
+  Settings,
   Trash2,
 } from "lucide-vue-next";
 import type { RequestGroup } from "@/lib/groups";
 import { sessionLabel, type RequestSession } from "@/lib/session";
+import {
+  resolveAuthorization,
+  type AuthorizationConfig,
+} from "@/lib/authorization";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
+} from "@/components/ui/context-menu/index";
 
 const props = defineProps<{
   sessions: RequestSession[];
@@ -38,6 +54,14 @@ const emit = defineEmits<{
   reorderGroup: [groupId: number, beforeGroupId: number];
   deleteGroup: [id: number];
   toggleSidebar: [];
+  openGroupSettings: [groupId: number];
+  createRequest: [];
+  duplicateRequest: [sessionId: number];
+  closeRequest: [sessionId: number];
+  setRequestLocalAuth: [
+    sessionId: number,
+    auth: AuthorizationConfig | undefined,
+  ];
 }>();
 
 type BrowserRow =
@@ -178,6 +202,15 @@ function selectRequest(id: number, event: MouseEvent) {
   emit("updateSelection", ids, anchorId);
 }
 
+/** Called when a context menu is opened on a request row. */
+function handleRequestContextMenu(sessionId: number) {
+  // If the right-clicked request is already in the multi-selection, keep it.
+  if (selected.value.has(sessionId)) return;
+  // Otherwise select only this request.
+  emit("select", sessionId);
+  emit("updateSelection", [sessionId], sessionId);
+}
+
 function requestIdsFrom(event: DragEvent) {
   try {
     const value = event.dataTransfer?.getData(requestMime);
@@ -237,6 +270,20 @@ function startGroupDrag(id: number, event: DragEvent) {
   event.dataTransfer?.setData(groupMime, String(id));
   event.dataTransfer?.setData("text/plain", String(id));
   if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+}
+
+/** Effective auth for a session (used for lock indicator). */
+function effectiveSessionAuth(session: RequestSession): AuthorizationConfig {
+  return resolveAuthorization(
+    (session.draft as { localAuth?: AuthorizationConfig }).localAuth,
+    session.groupId,
+    props.groups,
+  );
+}
+
+/** Effective auth for a group (the group itself, not its children). */
+function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
+  return resolveAuthorization(group.localAuth, group.parentId, props.groups);
 }
 </script>
 
@@ -314,204 +361,372 @@ function startGroupDrag(id: number, event: DragEvent) {
       </button>
     </form>
 
-    <div v-if="!collapsed" class="browser-tree">
-      <div
-        class="browser-root-row"
-        @dragover="allowDrop"
-        @drop="dropOnUngrouped"
-      >
-        <span class="browser-root-label">UNGROUPED</span>
-        <button
-          type="button"
-          class="browser-action move-action"
-          :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to Ungrouped`"
-          :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} here`"
-          :disabled="selectionAlreadyIn(null)"
-          @click="moveSelection(null)"
-        >
-          <MoveRight :size="13" aria-hidden="true" />
-        </button>
-      </div>
+    <ContextMenu>
+      <ContextMenuTrigger as-child>
+        <div v-if="!collapsed" class="browser-tree">
+          <!-- UNGROUPED row -->
+          <ContextMenu>
+            <ContextMenuTrigger as-child>
+              <div
+                class="browser-root-row"
+                @dragover="allowDrop"
+                @drop="dropOnUngrouped"
+              >
+                <span class="browser-root-label">UNGROUPED</span>
+                <button
+                  type="button"
+                  class="browser-action move-action"
+                  :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to Ungrouped`"
+                  :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} here`"
+                  :disabled="selectionAlreadyIn(null)"
+                  @click="moveSelection(null)"
+                >
+                  <MoveRight :size="13" aria-hidden="true" />
+                </button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem @select="moveSelection(null)"
+                >Move selection here</ContextMenuItem
+              >
+              <ContextMenuItem @select="emit('createRequest')"
+                >New request in ungrouped</ContextMenuItem
+              >
+            </ContextMenuContent>
+          </ContextMenu>
 
-      <template
-        v-for="row in rows"
-        :key="
-          row.type === 'group'
-            ? `group-${row.group.id}`
-            : `request-${row.session.id}`
-        "
-      >
-        <button
-          v-if="row.type === 'request'"
-          type="button"
-          class="browser-request"
-          :class="[
-            levelClass(row.level),
-            {
-              active: activeId === row.session.id,
-              selected: selected.has(row.session.id),
-            },
-          ]"
-          :aria-selected="selected.has(row.session.id)"
-          :data-request-id="row.session.id"
-          draggable="true"
-          :title="sessionLabel(row.session)"
-          @click="selectRequest(row.session.id, $event)"
-          @dragstart="startRequestDrag(row.session.id, $event)"
-          @dragover="allowDrop"
-          @drop="dropOnRequest($event, row.session)"
-        >
-          <span :data-method="row.session.draft.method">{{
-            row.session.draft.method
-          }}</span>
-          <strong>{{ sessionLabel(row.session) }}</strong>
-        </button>
-
-        <template v-else>
-          <div
-            class="browser-group-row"
-            :class="levelClass(row.level)"
-            :data-group-id="row.group.id"
-            draggable="true"
-            @dragstart="startGroupDrag(row.group.id, $event)"
-            @dragover="allowDrop"
-            @drop="dropOnGroup($event, row.group)"
+          <template
+            v-for="row in rows"
+            :key="
+              row.type === 'group'
+                ? `group-${row.group.id}`
+                : `request-${row.session.id}`
+            "
           >
-            <button
-              type="button"
-              class="tree-toggle"
-              :aria-label="`${row.group.collapsed ? 'Expand' : 'Collapse'} ${row.group.name}`"
-              @click="emit('toggleGroup', row.group.id)"
+            <!-- Request row -->
+            <div
+              v-if="row.type === 'request'"
+              :data-request-context="row.session.id"
             >
-              <ChevronRight
-                v-if="row.group.collapsed"
-                :size="13"
-                aria-hidden="true"
-              />
-              <ChevronDown v-else :size="13" aria-hidden="true" />
-            </button>
-            <Folder :size="13" aria-hidden="true" />
-            <span v-if="editingId !== row.group.id" class="group-name">{{
-              row.group.name
-            }}</span>
-            <form
-              v-else
-              class="browser-form rename-form"
-              @submit.prevent="submitRename(row.group)"
-            >
-              <label class="sr-only" :for="`rename-group-${row.group.id}`"
-                >Rename {{ row.group.name }}</label
-              >
-              <input
-                :id="`rename-group-${row.group.id}`"
-                v-model="draftName"
-                maxlength="80"
-                autofocus
-              />
-              <button type="submit" :aria-label="`Save ${row.group.name}`">
-                Save
-              </button>
-              <button
-                type="button"
-                :aria-label="`Cancel rename ${row.group.name}`"
-                @click="editingId = null"
-              >
-                Cancel
-              </button>
-            </form>
-            <div v-if="editingId !== row.group.id" class="group-actions">
-              <button
-                type="button"
-                class="browser-action"
-                :aria-label="`Add group inside ${row.group.name}`"
-                :title="`Add group inside ${row.group.name}`"
-                @click="startCreating(row.group.id)"
-              >
-                <FolderPlus :size="13" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                class="browser-action move-action"
-                :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
-                :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
-                :disabled="selectionAlreadyIn(row.group.id)"
-                @click="moveSelection(row.group.id)"
-              >
-                <MoveRight :size="13" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                class="browser-action"
-                :aria-label="`Rename ${row.group.name}`"
-                @click="startRename(row.group)"
-              >
-                <Pencil :size="12" aria-hidden="true" />
-              </button>
-              <button
-                type="button"
-                class="browser-action destructive-action"
-                :aria-label="`Delete ${row.group.name}`"
-                @click="deletingId = row.group.id"
-              >
-                <Trash2 :size="12" aria-hidden="true" />
-              </button>
+              <ContextMenu>
+                <ContextMenuTrigger as-child>
+                  <button
+                    type="button"
+                    class="browser-request"
+                    :class="[
+                      levelClass(row.level),
+                      {
+                        active: activeId === row.session.id,
+                        selected: selected.has(row.session.id),
+                      },
+                    ]"
+                    :aria-selected="selected.has(row.session.id)"
+                    :data-request-id="row.session.id"
+                    draggable="true"
+                    :title="sessionLabel(row.session)"
+                    @click="selectRequest(row.session.id, $event)"
+                    @contextmenu="handleRequestContextMenu(row.session.id)"
+                    @dragstart="startRequestDrag(row.session.id, $event)"
+                    @dragover="allowDrop"
+                    @drop="dropOnRequest($event, row.session)"
+                  >
+                    <span :data-method="row.session.draft.method">{{
+                      row.session.draft.method
+                    }}</span>
+                    <strong>{{ sessionLabel(row.session) }}</strong>
+                    <Lock
+                      v-if="effectiveSessionAuth(row.session).type !== 'none'"
+                      :size="10"
+                      aria-hidden="true"
+                      data-auth-indicator
+                      class="auth-indicator"
+                    />
+                  </button>
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                  <ContextMenuItem @select="emit('select', row.session.id)"
+                    >Select</ContextMenuItem
+                  >
+                  <ContextMenuItem
+                    @select="emit('duplicateRequest', row.session.id)"
+                    >Duplicate</ContextMenuItem
+                  >
+                  <ContextMenuItem
+                    @select="emit('closeRequest', row.session.id)"
+                    >Close</ContextMenuItem
+                  >
+                  <ContextMenuSeparator />
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger>Set auth</ContextMenuSubTrigger>
+                    <ContextMenuSubContent>
+                      <ContextMenuItem
+                        @select="
+                          emit('setRequestLocalAuth', row.session.id, undefined)
+                        "
+                        >Inherit</ContextMenuItem
+                      >
+                      <ContextMenuItem
+                        @select="
+                          emit('setRequestLocalAuth', row.session.id, {
+                            type: 'none',
+                          })
+                        "
+                        >No auth</ContextMenuItem
+                      >
+                      <ContextMenuItem
+                        @select="
+                          emit('setRequestLocalAuth', row.session.id, {
+                            type: 'bearer',
+                            token: '',
+                          })
+                        "
+                        >Bearer</ContextMenuItem
+                      >
+                      <ContextMenuItem
+                        @select="
+                          emit('setRequestLocalAuth', row.session.id, {
+                            type: 'basic',
+                            username: '',
+                            password: '',
+                          })
+                        "
+                        >Basic</ContextMenuItem
+                      >
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
+                  <ContextMenuSeparator />
+                  <ContextMenuSub>
+                    <ContextMenuSubTrigger>Move to group</ContextMenuSubTrigger>
+                    <ContextMenuSubContent>
+                      <ContextMenuItem
+                        v-for="group in groups"
+                        :key="group.id"
+                        @select="emit('moveRequest', row.session.id, group.id)"
+                        >{{ group.name }}</ContextMenuItem
+                      >
+                      <ContextMenuItem
+                        @select="emit('moveRequest', row.session.id, null)"
+                        >Ungrouped</ContextMenuItem
+                      >
+                    </ContextMenuSubContent>
+                  </ContextMenuSub>
+                </ContextMenuContent>
+              </ContextMenu>
             </div>
-          </div>
 
-          <form
-            v-if="creatingParent === row.group.id"
-            class="browser-form child-form"
-            :class="levelClass(row.level + 1)"
-            @submit.prevent="submitCreate"
-          >
-            <label class="sr-only" :for="`group-name-${row.group.id}`"
-              >Group name in {{ row.group.name }}</label
-            >
-            <input
-              :id="`group-name-${row.group.id}`"
-              v-model="draftName"
-              maxlength="80"
-              :aria-label="`Group name in ${row.group.name}`"
-              autofocus
-            />
-            <button
-              type="submit"
-              :aria-label="`Create group in ${row.group.name}`"
-            >
-              Add
-            </button>
-            <button
-              type="button"
-              aria-label="Cancel group creation"
-              @click="creatingParent = undefined"
-            >
-              Cancel
-            </button>
-          </form>
+            <!-- Group row -->
+            <template v-else>
+              <div :data-group-context="row.group.id">
+                <ContextMenu>
+                  <ContextMenuTrigger as-child>
+                    <div
+                      class="browser-group-row"
+                      :class="levelClass(row.level)"
+                      :data-group-id="row.group.id"
+                      draggable="true"
+                      @dragstart="startGroupDrag(row.group.id, $event)"
+                      @dragover="allowDrop"
+                      @drop="dropOnGroup($event, row.group)"
+                    >
+                      <button
+                        type="button"
+                        class="tree-toggle"
+                        :aria-label="`${row.group.collapsed ? 'Expand' : 'Collapse'} ${row.group.name}`"
+                        @click="emit('toggleGroup', row.group.id)"
+                      >
+                        <ChevronRight
+                          v-if="row.group.collapsed"
+                          :size="13"
+                          aria-hidden="true"
+                        />
+                        <ChevronDown v-else :size="13" aria-hidden="true" />
+                      </button>
+                      <Folder :size="13" aria-hidden="true" />
+                      <span
+                        v-if="editingId !== row.group.id"
+                        class="group-name"
+                      >
+                        {{ row.group.name }}
+                        <Lock
+                          v-if="effectiveGroupAuth(row.group).type !== 'none'"
+                          :size="10"
+                          aria-hidden="true"
+                          data-auth-indicator
+                          class="auth-indicator"
+                        />
+                      </span>
+                      <form
+                        v-else
+                        class="browser-form rename-form"
+                        @submit.prevent="submitRename(row.group)"
+                      >
+                        <label
+                          class="sr-only"
+                          :for="`rename-group-${row.group.id}`"
+                          >Rename {{ row.group.name }}</label
+                        >
+                        <input
+                          :id="`rename-group-${row.group.id}`"
+                          v-model="draftName"
+                          maxlength="80"
+                          autofocus
+                        />
+                        <button
+                          type="submit"
+                          :aria-label="`Save ${row.group.name}`"
+                        >
+                          Save
+                        </button>
+                        <button
+                          type="button"
+                          :aria-label="`Cancel rename ${row.group.name}`"
+                          @click="editingId = null"
+                        >
+                          Cancel
+                        </button>
+                      </form>
+                      <div
+                        v-if="editingId !== row.group.id"
+                        class="group-actions"
+                      >
+                        <button
+                          type="button"
+                          class="browser-action"
+                          :aria-label="`Group settings for ${row.group.name}`"
+                          :title="`Group settings for ${row.group.name}`"
+                          @click="emit('openGroupSettings', row.group.id)"
+                        >
+                          <Settings :size="12" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          class="browser-action"
+                          :aria-label="`Add group inside ${row.group.name}`"
+                          :title="`Add group inside ${row.group.name}`"
+                          @click="startCreating(row.group.id)"
+                        >
+                          <FolderPlus :size="13" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          class="browser-action move-action"
+                          :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
+                          :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
+                          :disabled="selectionAlreadyIn(row.group.id)"
+                          @click="moveSelection(row.group.id)"
+                        >
+                          <MoveRight :size="13" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          class="browser-action"
+                          :aria-label="`Rename ${row.group.name}`"
+                          @click="startRename(row.group)"
+                        >
+                          <Pencil :size="12" aria-hidden="true" />
+                        </button>
+                        <button
+                          type="button"
+                          class="browser-action destructive-action"
+                          :aria-label="`Delete ${row.group.name}`"
+                          @click="deletingId = row.group.id"
+                        >
+                          <Trash2 :size="12" aria-hidden="true" />
+                        </button>
+                      </div>
+                    </div>
+                  </ContextMenuTrigger>
+                  <ContextMenuContent>
+                    <ContextMenuItem
+                      @select="emit('openGroupSettings', row.group.id)"
+                      >Settings</ContextMenuItem
+                    >
+                    <ContextMenuItem @select="startCreating(row.group.id)"
+                      >New child group</ContextMenuItem
+                    >
+                    <ContextMenuItem @select="startRename(row.group)"
+                      >Rename</ContextMenuItem
+                    >
+                    <ContextMenuItem
+                      @select="emit('toggleGroup', row.group.id)"
+                      >{{
+                        row.group.collapsed ? "Expand" : "Collapse"
+                      }}</ContextMenuItem
+                    >
+                    <ContextMenuItem @select="moveSelection(row.group.id)"
+                      >Move selection here</ContextMenuItem
+                    >
+                    <ContextMenuSeparator />
+                    <ContextMenuItem @select="deletingId = row.group.id"
+                      >Delete</ContextMenuItem
+                    >
+                  </ContextMenuContent>
+                </ContextMenu>
+              </div>
 
-          <div
-            v-if="deletingId === row.group.id"
-            class="delete-confirmation"
-            :class="levelClass(row.level + 1)"
-          >
-            <p>
-              Delete {{ row.group.name }}? Requests move to
-              {{ parentName(row.group.parentId) }}. Child groups are promoted.
-            </p>
-            <button
-              type="button"
-              @click="
-                emit('deleteGroup', row.group.id);
-                deletingId = null;
-              "
-            >
-              Delete
-            </button>
-            <button type="button" @click="deletingId = null">Cancel</button>
-          </div>
-        </template>
-      </template>
-    </div>
+              <form
+                v-if="creatingParent === row.group.id"
+                class="browser-form child-form"
+                :class="levelClass(row.level + 1)"
+                @submit.prevent="submitCreate"
+              >
+                <label class="sr-only" :for="`group-name-${row.group.id}`"
+                  >Group name in {{ row.group.name }}</label
+                >
+                <input
+                  :id="`group-name-${row.group.id}`"
+                  v-model="draftName"
+                  maxlength="80"
+                  :aria-label="`Group name in ${row.group.name}`"
+                  autofocus
+                />
+                <button
+                  type="submit"
+                  :aria-label="`Create group in ${row.group.name}`"
+                >
+                  Add
+                </button>
+                <button
+                  type="button"
+                  aria-label="Cancel group creation"
+                  @click="creatingParent = undefined"
+                >
+                  Cancel
+                </button>
+              </form>
+
+              <div
+                v-if="deletingId === row.group.id"
+                class="delete-confirmation"
+                :class="levelClass(row.level + 1)"
+              >
+                <p>
+                  Delete {{ row.group.name }}? Requests move to
+                  {{ parentName(row.group.parentId) }}. Child groups are
+                  promoted.
+                </p>
+                <!-- prettier-ignore -->
+                <button
+                  type="button"
+                  @click="emit('deleteGroup', row.group.id); deletingId = null"
+                >
+                  Delete
+                </button>
+                <button type="button" @click="deletingId = null">Cancel</button>
+              </div>
+            </template>
+          </template>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem @select="startCreating(null)"
+          >New group</ContextMenuItem
+        >
+        <ContextMenuItem @select="emit('createRequest')"
+          >New request</ContextMenuItem
+        >
+      </ContextMenuContent>
+    </ContextMenu>
   </aside>
 </template>
 
@@ -591,6 +806,9 @@ function startGroupDrag(id: number, event: DragEvent) {
   white-space: nowrap;
   color: var(--foreground);
   font: 0.6875rem var(--font-mono);
+  display: flex;
+  align-items: center;
+  gap: 4px;
 }
 .tree-toggle,
 .browser-action {
@@ -665,6 +883,11 @@ function startGroupDrag(id: number, event: DragEvent) {
   text-overflow: ellipsis;
   white-space: nowrap;
   font-weight: 500;
+}
+.auth-indicator {
+  flex: none;
+  color: var(--primary);
+  opacity: 0.7;
 }
 .level-0 {
   padding-left: 12px;

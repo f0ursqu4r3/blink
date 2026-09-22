@@ -3,6 +3,10 @@ export type RequestGroup = {
   name: string;
   parentId: number | null;
   collapsed: boolean;
+  /** Local auth override. Undefined = inherit from parent group. */
+  localAuth?: import("./authorization").AuthorizationConfig | undefined;
+  /** Local token definitions for interpolation. */
+  localDefinitions?: Record<string, string> | undefined;
 };
 
 export type GroupedSession = {

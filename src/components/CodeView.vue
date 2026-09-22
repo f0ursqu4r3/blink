@@ -55,7 +55,7 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
 );
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
 
-watch([element, () => props.active, () => props.text], () => {
+watch([element, () => props.text], () => {
   if (element.value && props.active !== false)
     element.value.scrollTop = scroll.value;
 });

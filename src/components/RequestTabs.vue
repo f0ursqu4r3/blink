@@ -2,6 +2,13 @@
 import { nextTick, ref, watch } from "vue";
 import { Plus, X } from "lucide-vue-next";
 import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
   sessionLabel,
   sessionHost,
   sessionStatus,
@@ -12,6 +19,7 @@ const emit = defineEmits<{
   select: [id: number];
   close: [id: number];
   create: [];
+  duplicate: [];
 }>();
 const strip = ref<HTMLElement>();
 async function reveal() {
@@ -43,85 +51,137 @@ function navigate(event: KeyboardEvent, index: number) {
 </script>
 
 <template>
-  <div class="tab-strip">
-    <div ref="strip" class="request-tabs" role="tablist" aria-label="Requests">
-      <div
-        v-for="(session, index) in sessions"
-        :key="session.id"
-        class="tab-cell"
-        :class="{ selected: activeId === session.id }"
-        role="presentation"
-      >
+  <ContextMenu>
+    <ContextMenuTrigger as-child data-testid="tab-strip-ctx-trigger">
+      <div class="tab-strip">
+        <div
+          ref="strip"
+          class="request-tabs"
+          role="tablist"
+          aria-label="Requests"
+        >
+          <ContextMenu v-for="(session, index) in sessions" :key="session.id">
+            <ContextMenuTrigger
+              as-child
+              :data-testid="`tab-ctx-trigger-${session.id}`"
+            >
+              <div
+                class="tab-cell"
+                :class="{ selected: activeId === session.id }"
+                role="presentation"
+              >
+                <button
+                  type="button"
+                  role="tab"
+                  :id="`request-tab-${session.id}`"
+                  :aria-controls="`request-pane-${session.id}`"
+                  :aria-selected="activeId === session.id"
+                  :tabindex="activeId === session.id ? 0 : -1"
+                  :title="`${session.draft.method} ${sessionLabel(session)} · ${sessionHost(session)} · ${sessionStatus(session)}`"
+                  @click="emit('select', session.id)"
+                  @keydown="navigate($event, index)"
+                >
+                  <span
+                    class="tab-method"
+                    :data-method="session.draft.method"
+                    >{{ session.draft.method }}</span
+                  >
+                  <span class="tab-label"
+                    ><span class="tab-path">{{ sessionLabel(session) }}</span
+                    ><span
+                      v-if="
+                        sessionHost(session) &&
+                        sessionHost(session) !== sessionLabel(session)
+                      "
+                      class="tab-host"
+                      >{{ sessionHost(session) }}</span
+                    ></span
+                  >
+                  <span
+                    v-if="session.busy"
+                    class="tab-state sending"
+                    aria-label="Sending"
+                    >↗</span
+                  >
+                  <span
+                    v-else-if="session.error"
+                    class="tab-state failed"
+                    aria-label="Request failed"
+                    >!</span
+                  >
+                  <span
+                    v-else-if="session.response"
+                    class="tab-state"
+                    :class="{ failed: session.response.status >= 400 }"
+                    >{{ sessionStatus(session) }}</span
+                  >
+                </button>
+                <button
+                  type="button"
+                  class="tab-close"
+                  data-close-request
+                  :disabled="session.busy"
+                  :aria-label="`Close ${sessionLabel(session)}`"
+                  :title="
+                    session.busy
+                      ? 'Wait for the request to finish'
+                      : 'Close request'
+                  "
+                  @click="emit('close', session.id)"
+                >
+                  <X :size="12" aria-hidden="true" />
+                </button>
+              </div>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem
+                :data-testid="`tab-ctx-select-${session.id}`"
+                @select="emit('select', session.id)"
+                >Select</ContextMenuItem
+              >
+              <ContextMenuItem
+                :data-testid="`tab-ctx-duplicate-${session.id}`"
+                @select="
+                  () => {
+                    emit('select', session.id);
+                    emit('duplicate');
+                  }
+                "
+                >Duplicate</ContextMenuItem
+              >
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                :data-testid="`tab-ctx-close-${session.id}`"
+                :disabled="session.busy"
+                @select="emit('close', session.id)"
+                >Close</ContextMenuItem
+              >
+            </ContextMenuContent>
+          </ContextMenu>
+        </div>
         <button
           type="button"
-          role="tab"
-          :id="`request-tab-${session.id}`"
-          :aria-controls="`request-pane-${session.id}`"
-          :aria-selected="activeId === session.id"
-          :tabindex="activeId === session.id ? 0 : -1"
-          :title="`${session.draft.method} ${sessionLabel(session)} · ${sessionHost(session)} · ${sessionStatus(session)}`"
-          @click="emit('select', session.id)"
-          @keydown="navigate($event, index)"
+          class="new-tab"
+          data-new-request
+          aria-label="New request"
+          title="New request · Cmd/Ctrl+T"
+          @click="emit('create')"
         >
-          <span class="tab-method" :data-method="session.draft.method">{{
-            session.draft.method
-          }}</span>
-          <span class="tab-label"
-            ><span class="tab-path">{{ sessionLabel(session) }}</span
-            ><span
-              v-if="
-                sessionHost(session) &&
-                sessionHost(session) !== sessionLabel(session)
-              "
-              class="tab-host"
-              >{{ sessionHost(session) }}</span
-            ></span
-          >
-          <span
-            v-if="session.busy"
-            class="tab-state sending"
-            aria-label="Sending"
-            >↗</span
-          >
-          <span
-            v-else-if="session.error"
-            class="tab-state failed"
-            aria-label="Request failed"
-            >!</span
-          >
-          <span
-            v-else-if="session.response"
-            class="tab-state"
-            :class="{ failed: session.response.status >= 400 }"
-            >{{ sessionStatus(session) }}</span
-          >
-        </button>
-        <button
-          type="button"
-          class="tab-close"
-          data-close-request
-          :disabled="session.busy"
-          :aria-label="`Close ${sessionLabel(session)}`"
-          :title="
-            session.busy ? 'Wait for the request to finish' : 'Close request'
-          "
-          @click="emit('close', session.id)"
-        >
-          <X :size="12" aria-hidden="true" />
+          <Plus :size="15" aria-hidden="true" />
         </button>
       </div>
-    </div>
-    <button
-      type="button"
-      class="new-tab"
-      data-new-request
-      aria-label="New request"
-      title="New request · Cmd/Ctrl+T"
-      @click="emit('create')"
-    >
-      <Plus :size="15" aria-hidden="true" />
-    </button>
-  </div>
+    </ContextMenuTrigger>
+    <ContextMenuContent>
+      <ContextMenuItem data-testid="tab-strip-ctx-new" @select="emit('create')"
+        >New request</ContextMenuItem
+      >
+      <ContextMenuItem
+        data-testid="tab-strip-ctx-duplicate"
+        @select="emit('duplicate')"
+        >Duplicate active</ContextMenuItem
+      >
+    </ContextMenuContent>
+  </ContextMenu>
 </template>
 
 <style scoped>

@@ -32,7 +32,14 @@ struct ResponseOutput {
 }
 
 #[tauri::command]
-async fn send_request(request: RequestInput) -> Result<ResponseOutput, String> {
+async fn send_request(mut request: RequestInput) -> Result<ResponseOutput, String> {
+    request.url = resolve_environment_references(&request.url)?;
+    for header in &mut request.headers {
+        header.value = resolve_environment_references(&header.value)?;
+    }
+    if let Some(body) = &mut request.body {
+        *body = resolve_environment_references(body)?;
+    }
     let url = reqwest::Url::parse(&request.url)
         .map_err(|_| "Enter an absolute HTTP or HTTPS URL.".to_string())?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -106,6 +113,34 @@ async fn send_request(request: RequestInput) -> Result<ResponseOutput, String> {
         body,
         size_bytes,
     })
+}
+
+fn resolve_environment_references(value: &str) -> Result<String, String> {
+    let mut output = String::with_capacity(value.len());
+    let mut remainder = value;
+
+    while let Some(start) = remainder.find("<<") {
+        output.push_str(&remainder[..start]);
+        let after_open = &remainder[start + 2..];
+        let Some(end) = after_open.find(">>") else {
+            return Err("Invalid environment variable reference.".to_string());
+        };
+        let name = &after_open[..end];
+        let valid_name = !name.is_empty()
+            && name.bytes().enumerate().all(|(index, byte)| {
+                byte == b'_' || byte.is_ascii_alphabetic() || index > 0 && byte.is_ascii_digit()
+            });
+        if !valid_name {
+            return Err("Invalid environment variable reference.".to_string());
+        }
+        let variable = std::env::var(name)
+            .map_err(|_| format!("Undefined environment variable: \"{name}\"."))?;
+        output.push_str(&variable);
+        remainder = &after_open[end + 2..];
+    }
+
+    output.push_str(remainder);
+    Ok(output)
 }
 
 fn network_error(error: reqwest::Error) -> String {

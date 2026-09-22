@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { createSession, draftFingerprint } from "../session";
+import {
+  createSession,
+  draftFingerprint,
+  requestFingerprint,
+} from "../session";
+import { buildRequest } from "../request";
 import { encodeWorkspace, decodeWorkspace } from "../workspace";
 
 describe("durable workspace snapshots", () => {
@@ -59,6 +64,28 @@ describe("durable workspace snapshots", () => {
 
     expect(result.groups).toEqual([]);
     expect(result.sessions[0].groupId).toBeNull();
+  });
+  it("migrates old response fingerprints to the resolved request format", () => {
+    const session = createSession();
+    session.draft.url = "https://example.test/users";
+    session.response = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 8,
+      sizeBytes: 2,
+      headers: [],
+      body: "{}",
+    };
+    session.sentFingerprint = draftFingerprint(session.draft);
+    const legacy = JSON.parse(encodeWorkspace([session], session.id));
+    legacy.version = 2;
+    delete legacy.globalDefinitions;
+
+    const result = decodeWorkspace(JSON.stringify(legacy));
+
+    expect(result.sessions[0].sentFingerprint).toBe(
+      requestFingerprint(buildRequest(result.sessions[0].draft), "none"),
+    );
   });
   it("restores interrupted requests as idle errors without replaying them", () => {
     const session = createSession();

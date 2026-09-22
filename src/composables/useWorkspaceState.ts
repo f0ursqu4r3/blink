@@ -29,6 +29,8 @@ export function useWorkspaceState() {
   const error = ref("");
   const saving = ref(false);
   const exitBlocked = ref(false);
+  /** Workspace-global token definitions, shared across all requests. */
+  const globalDefinitions = ref<Record<string, string>>({});
   let revision = 0;
   let unlisten: UnlistenFn | undefined;
   const closing = ref(false);
@@ -48,6 +50,7 @@ export function useWorkspaceState() {
       sessions.value = restored.sessions;
       groups.value = restored.groups;
       activeId.value = restored.activeId;
+      globalDefinitions.value = restored.globalDefinitions ?? {};
     }
     error.value = "";
     ready.value = true;
@@ -79,7 +82,12 @@ export function useWorkspaceState() {
     saving.value = true;
     try {
       await writer.save(
-        encodeWorkspace(sessions.value, activeId.value, groups.value),
+        encodeWorkspace(
+          sessions.value,
+          activeId.value,
+          groups.value,
+          globalDefinitions.value,
+        ),
       );
       if (current === revision) error.value = "";
       return true;
@@ -94,7 +102,12 @@ export function useWorkspaceState() {
   watch(
     () =>
       ready.value
-        ? encodeWorkspace(sessions.value, activeId.value, groups.value)
+        ? encodeWorkspace(
+            sessions.value,
+            activeId.value,
+            groups.value,
+            globalDefinitions.value,
+          )
         : null,
     () => {
       if (ready.value && sessions.value.length) void flush();
@@ -103,7 +116,7 @@ export function useWorkspaceState() {
   async function reset() {
     const session = createSession();
     try {
-      await writer.save(encodeWorkspace([session], session.id, []));
+      await writer.save(encodeWorkspace([session], session.id, [], {}));
       sessions.value = [session];
       groups.value = [];
       activeId.value = session.id;
@@ -127,7 +140,12 @@ export function useWorkspaceState() {
     }
     let snapshot: string;
     do {
-      snapshot = encodeWorkspace(sessions.value, activeId.value, groups.value);
+      snapshot = encodeWorkspace(
+        sessions.value,
+        activeId.value,
+        groups.value,
+        globalDefinitions.value,
+      );
       if (!(await flush())) {
         exitBlocked.value = true;
         closing.value = false;
@@ -135,7 +153,13 @@ export function useWorkspaceState() {
       }
       await nextTick();
     } while (
-      snapshot !== encodeWorkspace(sessions.value, activeId.value, groups.value)
+      snapshot !==
+      encodeWorkspace(
+        sessions.value,
+        activeId.value,
+        groups.value,
+        globalDefinitions.value,
+      )
     );
     await quitWithoutSaving();
   }
@@ -262,6 +286,64 @@ export function useWorkspaceState() {
     groups.value = result.groups;
     sessions.value = result.sessions;
   }
+
+  // ── Narrow state setters ───────────────────────────────────────────────────
+
+  /**
+   * Set the local auth config on a request session draft.
+   * Pass `undefined` to revert to "inherit from group".
+   */
+  function setRequestLocalAuth(
+    sessionId: number,
+    localAuth: import("@/lib/authorization").AuthorizationConfig | undefined,
+  ) {
+    const session = sessions.value.find((s) => s.id === sessionId);
+    if (!session) return;
+    session.draft.localAuth = localAuth;
+  }
+
+  /**
+   * Set the name of a group.  Trims whitespace; no-op if blank or not found.
+   */
+  function setGroupName(groupId: number, name: string) {
+    const group = groups.value.find((g) => g.id === groupId);
+    if (group && name.trim()) group.name = name.trim();
+  }
+
+  /**
+   * Set the local auth override for a group.
+   * Pass `undefined` to clear (revert to inherit from parent).
+   */
+  function setGroupLocalAuth(
+    groupId: number,
+    localAuth: import("@/lib/authorization").AuthorizationConfig | undefined,
+  ) {
+    const group = groups.value.find((g) => g.id === groupId);
+    if (!group) return;
+    group.localAuth = localAuth;
+  }
+
+  /**
+   * Set (or clear) the token definitions for a group.
+   * Pass `undefined` to remove local definitions entirely.
+   */
+  function setGroupLocalDefinitions(
+    groupId: number,
+    localDefinitions: Record<string, string> | undefined,
+  ) {
+    const group = groups.value.find((g) => g.id === groupId);
+    if (!group) return;
+    group.localDefinitions = localDefinitions;
+  }
+
+  /**
+   * Replace the workspace-wide global definitions map.
+   * Merges shallowly: keys absent from the new map are removed.
+   */
+  function setGlobalDefinitions(defs: Record<string, string>) {
+    globalDefinitions.value = { ...defs };
+  }
+
   return {
     sessions,
     groups,
@@ -271,6 +353,7 @@ export function useWorkspaceState() {
     error,
     status,
     exitBlocked,
+    globalDefinitions,
     restore,
     flush,
     reset,
@@ -282,5 +365,10 @@ export function useWorkspaceState() {
     moveRequests,
     reorderGroup,
     deleteGroup,
+    setRequestLocalAuth,
+    setGroupName,
+    setGroupLocalAuth,
+    setGroupLocalDefinitions,
+    setGlobalDefinitions,
   };
 }

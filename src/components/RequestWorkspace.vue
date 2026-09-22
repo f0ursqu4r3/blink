@@ -2,14 +2,77 @@
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
 import { ArrowUpRight, Check, ChevronDown, Terminal } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 import RequestEditor from "./RequestEditor.vue";
 import ResponsePanel from "./ResponsePanel.vue";
 import { methods } from "@/lib/request";
 import type { RequestSession } from "@/lib/session";
+import type { RequestGroup } from "@/lib/groups";
+import {
+  buildResolvedRequestContext,
+  resolveAuthorization,
+} from "@/lib/authorization";
 import { useRequestRunner } from "@/composables/useRequestRunner";
 import { useClipboard } from "@/composables/useClipboard";
-const props = defineProps<{ session: RequestSession; active: boolean }>();
-const { prepared, curl, stale, send } = useRequestRunner(props.session);
+const props = defineProps<{
+  session: RequestSession;
+  active: boolean;
+  groups?: RequestGroup[];
+  globalDefinitions?: Record<string, string>;
+}>();
+
+const resolvedCtx = computed(() =>
+  buildResolvedRequestContext(
+    props.session.draft,
+    props.session.groupId ?? null,
+    props.groups ?? [],
+    props.globalDefinitions ?? {},
+  ),
+);
+
+const effectiveAuth = computed(() =>
+  resolveAuthorization(
+    props.session.draft.localAuth,
+    props.session.groupId ?? null,
+    props.groups ?? [],
+  ),
+);
+
+const inheritedSource = computed(() => {
+  if (props.session.draft.localAuth !== undefined) return undefined;
+  const groups = props.groups ?? [];
+  const byId = new Map(groups.map((g) => [g.id, g]));
+  let cursor: number | null = props.session.groupId ?? null;
+  const seen = new Set<number>();
+  while (cursor !== null) {
+    if (seen.has(cursor)) break;
+    seen.add(cursor);
+    const g = byId.get(cursor);
+    if (!g) break;
+    if (g.localAuth !== undefined) {
+      const authLabel =
+        g.localAuth.type === "bearer"
+          ? "Bearer"
+          : g.localAuth.type === "basic"
+            ? "Basic"
+            : "None";
+      return `${g.name} · ${authLabel}`;
+    }
+    cursor = g.parentId;
+  }
+  return undefined;
+});
+
+const { prepared, curl, stale, send } = useRequestRunner(
+  props.session,
+  resolvedCtx,
+);
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
 const urlInput = ref<HTMLInputElement>();
@@ -114,69 +177,92 @@ function resizeWithKeyboard(event: KeyboardEvent) {
     class="request-workspace"
     data-request-pane
     :data-active="active"
-    :hidden="!active"
+    :aria-hidden="!active"
     :id="`request-pane-${session.id}`"
     role="tabpanel"
     :aria-labelledby="`request-tab-${session.id}`"
   >
-    <form class="request-bar" @submit.prevent="send">
-      <div class="endpoint">
-        <div class="method-select" :data-http-method="session.draft.method">
-          <label :for="`${prefix}-method`" class="sr-only">HTTP method</label>
-          <select
-            :id="`${prefix}-method`"
-            data-method
-            v-model="session.draft.method"
-            :disabled="session.busy"
+    <ContextMenu>
+      <ContextMenuTrigger as-child>
+        <form class="request-bar" @submit.prevent="send">
+          <div class="endpoint">
+            <div class="method-select" :data-http-method="session.draft.method">
+              <label :for="`${prefix}-method`" class="sr-only"
+                >HTTP method</label
+              >
+              <select
+                :id="`${prefix}-method`"
+                data-method
+                v-model="session.draft.method"
+                :disabled="session.busy"
+              >
+                <option v-for="method in methods" :key="method">
+                  {{ method }}
+                </option></select
+              ><ChevronDown :size="12" aria-hidden="true" />
+            </div>
+            <label :for="`${prefix}-url`" class="sr-only">Request URL</label>
+            <input
+              :id="`${prefix}-url`"
+              data-request-url
+              ref="urlInput"
+              v-model="session.draft.url"
+              :disabled="session.busy"
+              :aria-describedby="
+                session.draft.url && prepared.error
+                  ? `${prefix}-validation`
+                  : undefined
+              "
+              type="text"
+              inputmode="url"
+              spellcheck="false"
+              autocomplete="off"
+              placeholder="https://api.example.com/v1/resource"
+            />
+          </div>
+          <Button
+            variant="secondary"
+            class="curl-button"
+            :disabled="!prepared.request"
+            :aria-expanded="showCurl"
+            :aria-controls="`${prefix}-curl`"
+            aria-label="cURL"
+            title="Inspect and copy cURL"
+            @click="showCurl = !showCurl"
           >
-            <option v-for="method in methods" :key="method">
-              {{ method }}
-            </option></select
-          ><ChevronDown :size="12" aria-hidden="true" />
-        </div>
-        <label :for="`${prefix}-url`" class="sr-only">Request URL</label>
-        <input
-          :id="`${prefix}-url`"
-          data-request-url
-          ref="urlInput"
-          v-model="session.draft.url"
-          :disabled="session.busy"
-          :aria-describedby="
-            session.draft.url && prepared.error
-              ? `${prefix}-validation`
-              : undefined
-          "
-          type="text"
-          inputmode="url"
-          spellcheck="false"
-          autocomplete="off"
-          placeholder="https://api.example.com/v1/resource"
-        />
-      </div>
-      <Button
-        variant="secondary"
-        class="curl-button"
-        :disabled="!prepared.request"
-        :aria-expanded="showCurl"
-        :aria-controls="`${prefix}-curl`"
-        aria-label="cURL"
-        title="Inspect and copy cURL"
-        @click="showCurl = !showCurl"
-      >
-        <Terminal :size="14" aria-hidden="true" /><span>cURL</span>
-      </Button>
-      <Button
-        type="submit"
-        data-send
-        class="send-button"
-        :disabled="!prepared.request || session.busy"
-      >
-        <ArrowUpRight :size="15" aria-hidden="true" /><span>{{
-          session.busy ? "Sending" : "Send"
-        }}</span
-        ><kbd>{{ shortcut }} ↵</kbd>
-      </Button>
-    </form>
+            <Terminal :size="14" aria-hidden="true" /><span>cURL</span>
+          </Button>
+          <Button
+            type="submit"
+            data-send
+            class="send-button"
+            :disabled="!prepared.request || session.busy"
+          >
+            <ArrowUpRight :size="15" aria-hidden="true" /><span>{{
+              session.busy ? "Sending" : "Send"
+            }}</span
+            ><kbd>{{ shortcut }} ↵</kbd>
+          </Button>
+        </form>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem
+          data-testid="ctx-send"
+          :disabled="session.busy || !prepared.request"
+          @select="send()"
+          >Send</ContextMenuItem
+        >
+        <ContextMenuItem data-testid="ctx-focus-url" @select="focusUrl()"
+          >Focus URL</ContextMenuItem
+        >
+        <ContextMenuSeparator />
+        <ContextMenuItem
+          data-testid="ctx-show-curl"
+          @select="showCurl = !showCurl"
+          >cURL</ContextMenuItem
+        >
+      </ContextMenuContent>
+    </ContextMenu>
     <p
       v-if="session.draft.url && prepared.error"
       :id="`${prefix}-validation`"
@@ -186,29 +272,44 @@ function resizeWithKeyboard(event: KeyboardEvent) {
     >
       {{ prepared.error }}
     </p>
-    <section
-      v-if="showCurl"
-      :id="`${prefix}-curl`"
-      data-curl-preview
-      class="curl-preview"
-      aria-label="cURL export"
-    >
-      <div>
-        <span>POSIX SHELL · INCLUDES CREDENTIALS</span
-        ><Button variant="ghost" @click="copy(curl)"
-          ><Check v-if="copied" :size="13" aria-hidden="true" />{{
-            copied ? "Copied" : "Copy cURL"
-          }}</Button
+    <ContextMenu>
+      <ContextMenuTrigger as-child>
+        <section
+          v-if="showCurl"
+          :id="`${prefix}-curl`"
+          data-curl-preview
+          class="curl-preview"
+          aria-label="cURL export"
         >
-      </div>
-      <pre tabindex="0">{{ curl }}</pre>
-      <p v-if="copyError" role="alert">{{ copyError }}</p>
-    </section>
+          <div>
+            <span>POSIX SHELL · INCLUDES CREDENTIALS</span
+            ><Button variant="ghost" @click="copy(curl)"
+              ><Check v-if="copied" :size="13" aria-hidden="true" />{{
+                copied ? "Copied" : "Copy cURL"
+              }}</Button
+            >
+          </div>
+          <pre tabindex="0">{{ curl }}</pre>
+          <p v-if="copyError" role="alert">{{ copyError }}</p>
+        </section>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem data-testid="ctx-copy-curl" @select="copy(curl)"
+          >Copy cURL</ContextMenuItem
+        >
+        <ContextMenuSeparator />
+        <ContextMenuItem data-testid="ctx-close-curl" @select="showCurl = false"
+          >Close</ContextMenuItem
+        >
+      </ContextMenuContent>
+    </ContextMenu>
     <div class="panels" :class="{ resizing }" :style="panelStyle">
       <RequestEditor
         v-model="session.draft"
         v-model:tab="session.view.requestTab"
         :busy="session.busy"
+        :effective-auth="effectiveAuth"
+        :inherited-source="inheritedSource"
       />
       <div
         class="panel-resize"
@@ -244,8 +345,11 @@ function resizeWithKeyboard(event: KeyboardEvent) {
   min-height: 0;
   min-width: 0;
 }
-.request-workspace[hidden] {
-  display: none;
+.request-workspace[data-active="false"] {
+  position: absolute;
+  inset: 0;
+  visibility: hidden;
+  pointer-events: none;
 }
 .request-bar {
   display: flex;

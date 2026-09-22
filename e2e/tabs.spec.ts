@@ -176,6 +176,19 @@ test("tab switches preserve response scrolling and send only the active request"
     (element) => element.scrollTop,
   );
   expect(scroll).toBeGreaterThan(0);
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const workspace = JSON.parse(
+          localStorage.getItem("blink.workspace.v1")!,
+        );
+        return workspace.tabs.find(
+          (session: { draft: { url: string } }) =>
+            session.draft.url === "https://example.test/first",
+        )?.view.responseScroll;
+      }),
+    )
+    .toBe(scroll);
   await page.getByRole("button", { name: "New request", exact: true }).click();
   await pane
     .getByLabel("Request URL", { exact: true })
@@ -187,11 +200,13 @@ test("tab switches preserve response scrolling and send only the active request"
     "https://example.test/second",
   ]);
   await tabs.first().click();
-  expect(
-    await pane
-      .locator("[data-json-tree], .code-view")
-      .evaluate((element) => element.scrollTop),
-  ).toBe(scroll);
+  await expect
+    .poll(() =>
+      pane
+        .locator("[data-json-tree], .code-view")
+        .evaluate((element) => element.scrollTop),
+    )
+    .toBe(scroll);
 });
 
 for (const width of [1180, 390]) {

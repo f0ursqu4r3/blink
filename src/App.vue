@@ -1,13 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { CopyPlus, HardDrive, ScanLine } from "lucide-vue-next";
+import { CopyPlus, HardDrive, ScanLine, Settings } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestTabs from "@/components/RequestTabs.vue";
 import RequestBrowser from "@/components/RequestBrowser.vue";
 import RequestWorkspace from "@/components/RequestWorkspace.vue";
+import GroupSettingsDialog from "@/components/GroupSettingsDialog.vue";
+import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vue";
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
 import { createSession, hasDraft, sessionLabel } from "@/lib/session";
+import type { AuthorizationConfig } from "@/lib/authorization";
 
 const {
   sessions,
@@ -18,6 +21,7 @@ const {
   error: storageError,
   status: storageStatus,
   exitBlocked,
+  globalDefinitions,
   restore,
   flush,
   reset,
@@ -29,7 +33,13 @@ const {
   moveRequests,
   reorderGroup,
   deleteGroup,
+  setRequestLocalAuth,
+  setGroupName,
+  setGroupLocalAuth,
+  setGroupLocalDefinitions,
+  setGlobalDefinitions,
 } = useWorkspaceState();
+
 const active = computed(() =>
   sessions.value.find((session) => session.id === activeId.value)!,
 );
@@ -43,6 +53,36 @@ const closeTarget = computed(() =>
 const sending = computed(
   () => sessions.value.filter((session) => session.busy).length,
 );
+
+// Group settings dialog state
+const groupSettingsOpen = ref(false);
+const groupSettingsId = ref<number | null>(null);
+const applicationSettingsOpen = ref(false);
+const groupSettingsGroup = computed(
+  () => groups.value.find((g) => g.id === groupSettingsId.value) ?? null,
+);
+
+function openGroupSettings(groupId: number) {
+  groupSettingsId.value = groupId;
+  groupSettingsOpen.value = true;
+}
+
+function handleSaveGroupSettings(
+  groupId: number,
+  changes: {
+    name?: string;
+    localAuth?: AuthorizationConfig | undefined;
+    localDefinitions?: Record<string, string>;
+  },
+) {
+  if (changes.name !== undefined) setGroupName(groupId, changes.name);
+  if (Object.prototype.hasOwnProperty.call(changes, "localAuth"))
+    setGroupLocalAuth(groupId, changes.localAuth);
+  if (changes.localDefinitions !== undefined)
+    setGroupLocalDefinitions(groupId, changes.localDefinitions);
+  groupSettingsOpen.value = false;
+}
+
 function select(id: number) {
   activeId.value = id;
   pendingClose.value = null;
@@ -64,11 +104,25 @@ function cancelClose() {
   pendingClose.value = null;
   document.getElementById(`request-tab-${activeId.value}`)?.focus();
 }
-function create(duplicate = false) {
+function create(duplicate = false, inGroupId?: number | null) {
   if (!ready.value) return;
-  const groupId = active.value?.groupId ?? null;
+  const groupId =
+    inGroupId !== undefined ? inGroupId : (active.value?.groupId ?? null);
   const session = createSession(duplicate ? active.value?.draft : undefined);
   session.groupId = groupId;
+  sessions.value.push(session);
+  select(session.id);
+  updateSelection([session.id], session.id);
+}
+function duplicate(sessionId?: number) {
+  if (!ready.value) return;
+  const source =
+    sessionId !== undefined
+      ? sessions.value.find((s) => s.id === sessionId)
+      : active.value;
+  if (!source) return;
+  const session = createSession(source.draft);
+  session.groupId = source.groupId;
   sessions.value.push(session);
   select(session.id);
   updateSelection([session.id], session.id);
@@ -132,7 +186,7 @@ function onKey(event: KeyboardEvent) {
     }
     if (key === "d" && event.shiftKey) {
       event.preventDefault();
-      create(true);
+      duplicate();
     }
   }
 }
@@ -152,11 +206,18 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       <div class="header-actions">
         <Button
           variant="ghost"
+          aria-label="Application settings"
+          title="Application settings"
+          @click="applicationSettingsOpen = true"
+          ><Settings :size="14" aria-hidden="true"
+        /></Button>
+        <Button
+          variant="ghost"
           data-duplicate-request
           :disabled="!ready"
           aria-label="Duplicate request"
           title="Duplicate request · Cmd/Ctrl+Shift+D"
-          @click="create(true)"
+          @click="duplicate()"
           ><CopyPlus :size="14" aria-hidden="true" /><span
             class="duplicate-label"
             >Duplicate</span
@@ -190,6 +251,11 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         @reorder-group="reorderGroup"
         @delete-group="deleteGroup"
         @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
+        @open-group-settings="openGroupSettings"
+        @create-request="create(false, null)"
+        @duplicate-request="(id) => duplicate(id)"
+        @close-request="(id) => close(id)"
+        @set-request-local-auth="(id, auth) => setRequestLocalAuth(id, auth)"
       />
       <div class="workspace-content">
         <RequestTabs
@@ -198,6 +264,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           @select="select"
           @create="create()"
           @close="close"
+          @duplicate="duplicate()"
         />
         <div
           v-if="closeTarget"
@@ -225,6 +292,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           :key="session.id"
           :session="session"
           :active="session.id === activeId"
+          :groups="groups"
+          :global-definitions="globalDefinitions"
         />
       </div>
     </div>
@@ -244,6 +313,20 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       >
       <span v-else class="limit-note">30 s TIMEOUT · 4 MiB LIMIT</span>
     </footer>
+    <GroupSettingsDialog
+      :group="groupSettingsGroup"
+      :groups="groups"
+      :sessions="sessions"
+      :open="groupSettingsOpen"
+      @update:open="groupSettingsOpen = $event"
+      @save="handleSaveGroupSettings"
+    />
+    <ApplicationSettingsDialog
+      :definitions="globalDefinitions"
+      :open="applicationSettingsOpen"
+      @update:open="applicationSettingsOpen = $event"
+      @save="setGlobalDefinitions"
+    />
   </main>
 </template>
 
@@ -263,6 +346,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   flex: 1;
 }
 .workspace-content {
+  position: relative;
   flex-direction: column;
 }
 .console-header {

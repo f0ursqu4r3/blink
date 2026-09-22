@@ -2,6 +2,14 @@
 import { computed, ref, watch } from "vue";
 import { useVirtualizer } from "@tanstack/vue-virtual";
 import { parse } from "lossless-json";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import { useClipboard } from "@/composables/useClipboard";
 
 type JsonContainer = Record<string, unknown> | unknown[];
 type JsonRow = {
@@ -108,7 +116,7 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
 );
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
 
-watch([element, () => props.active, () => props.text], () => {
+watch([element, () => props.text], () => {
   if (element.value && props.active !== false)
     element.value.scrollTop = scroll.value;
 });
@@ -139,6 +147,23 @@ function valueClass(value: unknown) {
 function measureRow(node: unknown) {
   if (node instanceof HTMLElement) virtualizer.value.measureElement(node);
 }
+
+const { copy } = useClipboard();
+const contextRow = ref<JsonRow | null>(null);
+
+function openContextMenu(row: JsonRow) {
+  contextRow.value = row;
+}
+
+function copyPath() {
+  if (!contextRow.value) return;
+  void copy(contextRow.value.id);
+}
+
+function copyValue() {
+  if (!contextRow.value) return;
+  void copy(valueLabel(contextRow.value.value));
+}
 </script>
 
 <template>
@@ -154,42 +179,67 @@ function measureRow(node: unknown) {
     aria-label="JSON response body"
     @scroll.passive="saveScroll"
   >
-    <div
-      class="tree-canvas"
-      :style="{ height: `${virtualizer.getTotalSize()}px` }"
-    >
-      <div
-        v-for="virtualRow in virtualRows"
-        :key="String(virtualRow.key)"
-        :ref="measureRow"
-        class="tree-row"
-        :data-index="virtualRow.index"
-        :style="{
-          transform: `translateY(${virtualRow.start}px)`,
-          paddingInlineStart: `${virtualRow.index >= 0 ? rows[virtualRow.index].depth * 18 + 12 : 12}px`,
-        }"
-      >
-        <template v-if="rows[virtualRow.index]">
-          <button
-            v-if="rows[virtualRow.index].container"
-            type="button"
-            class="tree-toggle"
-            :aria-label="`${collapsed.has(rows[virtualRow.index].id) ? 'Expand' : 'Collapse'} ${rows[virtualRow.index].key ?? 'root'}`"
-            :aria-expanded="!collapsed.has(rows[virtualRow.index].id)"
-            @click="toggle(rows[virtualRow.index])"
+    <ContextMenu>
+      <ContextMenuTrigger as-child>
+        <div
+          class="tree-canvas"
+          :style="{ height: `${virtualizer.getTotalSize()}px` }"
+        >
+          <div
+            v-for="virtualRow in virtualRows"
+            :key="String(virtualRow.key)"
+            :ref="measureRow"
+            class="tree-row"
+            :data-index="virtualRow.index"
+            :style="{
+              transform: `translateY(${virtualRow.start}px)`,
+              paddingInlineStart: `${virtualRow.index >= 0 ? rows[virtualRow.index].depth * 18 + 12 : 12}px`,
+            }"
+            @contextmenu="
+              rows[virtualRow.index] && openContextMenu(rows[virtualRow.index])
+            "
           >
-            {{ collapsed.has(rows[virtualRow.index].id) ? "›" : "⌄" }}
-          </button>
-          <span v-else class="tree-spacer" aria-hidden="true" />
-          <span v-if="rows[virtualRow.index].key !== null" class="key"
-            >"{{ rows[virtualRow.index].key }}":
-          </span>
-          <span :class="valueClass(rows[virtualRow.index].value)">
-            {{ valueLabel(rows[virtualRow.index].value) }}
-          </span>
+            <template v-if="rows[virtualRow.index]">
+              <button
+                v-if="rows[virtualRow.index].container"
+                type="button"
+                class="tree-toggle"
+                :aria-label="`${collapsed.has(rows[virtualRow.index].id) ? 'Expand' : 'Collapse'} ${rows[virtualRow.index].key ?? 'root'}`"
+                :aria-expanded="!collapsed.has(rows[virtualRow.index].id)"
+                @click="toggle(rows[virtualRow.index])"
+              >
+                {{ collapsed.has(rows[virtualRow.index].id) ? "›" : "⌄" }}
+              </button>
+              <span v-else class="tree-spacer" aria-hidden="true" />
+              <span v-if="rows[virtualRow.index].key !== null" class="key"
+                >"{{ rows[virtualRow.index].key }}":
+              </span>
+              <span :class="valueClass(rows[virtualRow.index].value)">
+                {{ valueLabel(rows[virtualRow.index].value) }}
+              </span>
+            </template>
+          </div>
+        </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem data-testid="ctx-copy-path" @select="copyPath"
+          >Copy path</ContextMenuItem
+        >
+        <ContextMenuItem data-testid="ctx-copy-value" @select="copyValue"
+          >Copy value</ContextMenuItem
+        >
+        <template v-if="contextRow?.container">
+          <ContextMenuSeparator data-testid="ctx-separator" />
+          <ContextMenuItem
+            data-testid="ctx-toggle"
+            @select="contextRow && toggle(contextRow)"
+            >{{
+              contextRow && collapsed.has(contextRow.id) ? "Expand" : "Collapse"
+            }}</ContextMenuItem
+          >
         </template>
-      </div>
-    </div>
+      </ContextMenuContent>
+    </ContextMenu>
     <p v-if="!rows.length" class="empty-tree">
       No JSON values match this filter.
     </p>

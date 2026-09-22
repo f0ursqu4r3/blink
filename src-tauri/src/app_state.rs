@@ -56,10 +56,16 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
     let value: serde_json::Value =
         serde_json::from_str(content).map_err(|_| "Workspace data is not valid JSON.")?;
     let version = value.get("version").and_then(|v| v.as_u64());
-    let supports_groups = version == Some(2) && value.get("groups").is_some_and(|v| v.is_array());
-    if !matches!(version, Some(1) | Some(2))
+    let supports_groups =
+        matches!(version, Some(2) | Some(3)) && value.get("groups").is_some_and(|v| v.is_array());
+    let supports_global_definitions = version == Some(3)
+        && value
+            .get("globalDefinitions")
+            .is_some_and(|v| v.is_object());
+    if !matches!(version, Some(1) | Some(2) | Some(3))
         || !value.get("tabs").is_some_and(|v| v.is_array())
-        || (version == Some(2) && !supports_groups)
+        || (matches!(version, Some(2) | Some(3)) && !supports_groups)
+        || (version == Some(3) && !supports_global_definitions)
     {
         return Err("Unsupported workspace format.".into());
     }
@@ -144,6 +150,7 @@ mod tests {
     const SECOND: &str = r#"{"version":1,"activeId":2,"tabs":[{"name":"second"}]}"#;
     const GROUPED: &str =
         "{\"version\":2,\"activeId\":1,\"groups\":[],\"tabs\":[{\"name\":\"grouped\"}]}";
+    const TOKENIZED: &str = "{\"version\":3,\"activeId\":1,\"groups\":[],\"globalDefinitions\":{},\"tabs\":[{\"name\":\"tokenized\"}]}";
     #[test]
     fn round_trip_and_atomic_replace() {
         let dir = tempfile::tempdir().unwrap();
@@ -155,6 +162,8 @@ mod tests {
         assert_eq!(load(&path).unwrap().as_deref(), Some(SECOND));
         save(&path, GROUPED).unwrap();
         assert_eq!(load(&path).unwrap().as_deref(), Some(GROUPED));
+        save(&path, TOKENIZED).unwrap();
+        assert_eq!(load(&path).unwrap().as_deref(), Some(TOKENIZED));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;

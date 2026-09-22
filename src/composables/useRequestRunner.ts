@@ -1,37 +1,78 @@
-import { computed, onScopeDispose } from "vue";
+import { computed, toValue, onScopeDispose, type MaybeRefOrGetter } from "vue";
 import { buildRequest, toCurl } from "@/lib/request";
-import { draftFingerprint, type RequestSession } from "@/lib/session";
+import type { ResolvedRequestContext } from "@/lib/authorization";
+import { requestFingerprint, type RequestSession } from "@/lib/session";
 import { sendRequest } from "@/lib/transport";
 
-export function useRequestRunner(session: RequestSession) {
+export type { MaybeRefOrGetter };
+
+/**
+ * useRequestRunner — manages the send/cURL/stale lifecycle for a single session.
+ *
+ * @param session  The reactive session object whose draft is the source of truth.
+ * @param contextSource  Optional reactive source (Ref, ComputedRef, or getter)
+ *   for a ResolvedRequestContext (auth + token definitions) built by the caller
+ *   from group ancestry and workspace globals.
+ *
+ *   Because `toValue()` is called inside computed getters, any Ref or computed
+ *   that wraps the context is automatically tracked: changes to group auth,
+ *   global definitions, or the request ancestry will re-evaluate `prepared`,
+ *   `curl`, and `stale` without the caller doing anything special.
+ *
+ *   When omitted, buildRequest falls back to the draft's flat auth fields
+ *   (backward-compatible with callers that pass no context).
+ */
+export function useRequestRunner(
+  session: RequestSession,
+  contextSource?: MaybeRefOrGetter<ResolvedRequestContext | undefined>,
+) {
   let alive = true;
   let clock: ReturnType<typeof setInterval> | undefined;
+
   const prepared = computed(() => {
+    // toValue(undefined) → undefined; toValue(ref(ctx)) → ctx; toValue(() => ctx) → ctx
+    const ctx =
+      contextSource !== undefined ? toValue(contextSource) : undefined;
     try {
-      return { request: buildRequest(session.draft), error: "" };
+      return { request: buildRequest(session.draft, ctx), error: "", ctx };
     } catch (cause) {
       return {
         request: null,
         error: cause instanceof Error ? cause.message : String(cause),
+        ctx,
       };
     }
   });
+
   const curl = computed(() =>
     prepared.value.request ? toCurl(prepared.value.request) : "",
   );
-  const stale = computed(
-    () =>
-      Boolean(session.response) &&
-      session.sentFingerprint !== draftFingerprint(session.draft),
-  );
+
+  /**
+   * Stale: true when a response exists but the current fully-resolved
+   * RequestInput (including effective auth) differs from what was sent.
+   * Uses requestFingerprint (not draftFingerprint) so group-auth / token
+   * definition changes are included.
+   */
+  const stale = computed(() => {
+    if (!session.response) return false;
+    const req = prepared.value.request;
+    const ctx = prepared.value.ctx;
+    const authType = ctx?.auth?.type;
+    return session.sentFingerprint !== requestFingerprint(req, authType);
+  });
+
   async function send() {
     if (session.busy || !prepared.value.request) return;
     const request = prepared.value.request;
+    const ctx = prepared.value.ctx;
+    const authType = ctx?.auth?.type;
     session.busy = true;
     session.error = "";
     session.response = null;
     session.elapsed = 0;
-    session.sentFingerprint = draftFingerprint(session.draft);
+    // Persist the resolved-request fingerprint so stale can compare accurately.
+    session.sentFingerprint = requestFingerprint(request, authType);
     const start = performance.now();
     clock = setInterval(() => {
       session.elapsed = performance.now() - start;
@@ -47,9 +88,11 @@ export function useRequestRunner(session: RequestSession) {
       if (alive) session.busy = false;
     }
   }
+
   onScopeDispose(() => {
     alive = false;
     clearInterval(clock);
   });
+
   return { prepared, curl, stale, send };
 }

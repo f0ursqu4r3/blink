@@ -32,7 +32,10 @@ describe("request session metadata", () => {
     };
     expect(sessionStatus(session)).toBe("200");
     session.draft.method = "POST";
-    expect(sessionStatus(session)).toBe("Edited");
+    // sessionStatus always shows the response code; stale detection lives in
+    // useRequestRunner.stale (response panel) to avoid false positives when
+    // sentFingerprint is a resolved-request fingerprint, not a draft fingerprint.
+    expect(sessionStatus(session)).toBe("200");
   });
   it("duplicates all credentials and body data without row aliasing or responses", () => {
     const first = createSession();

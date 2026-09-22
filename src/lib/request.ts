@@ -1,3 +1,7 @@
+import { interpolate } from "./interpolation";
+import type { InterpolationContext } from "./interpolation";
+import type { ResolvedRequestContext } from "./authorization";
+
 export const methods = [
   "GET",
   "POST",
@@ -21,6 +25,8 @@ export type Draft = {
   token: string;
   username: string;
   password: string;
+  /** Structured local auth override. Undefined = inherit from group. */
+  localAuth?: import("./authorization").AuthorizationConfig | undefined;
 };
 export type RequestInput = {
   method: Method;
@@ -63,32 +69,38 @@ export const activePairs = (rows: Pair[]) =>
 export const supportsBody = (method: string) =>
   method !== "GET" && method !== "HEAD";
 
-export function buildRequest(draft: Draft): RequestInput {
+export function buildRequest(
+  draft: Draft,
+  ctx?: ResolvedRequestContext | InterpolationContext,
+): RequestInput {
+  const interp = ctx ? (s: string) => interpolate(s, ctx) : (s: string) => s;
+
+  const rawUrl = interp(draft.url.trim());
+
   let target: URL;
   try {
-    target = new URL(draft.url.trim());
+    target = new URL(rawUrl);
   } catch {
     throw new Error("Enter an absolute HTTP or HTTPS URL.");
   }
   if (!["http:", "https:"].includes(target.protocol))
     throw new Error("Only HTTP and HTTPS URLs are supported.");
-  if (!/^https?:\/\/[^/\\\s]/i.test(draft.url.trim()))
+  if (!/^https?:\/\/[^/\\\s]/i.test(rawUrl))
     throw new Error("Enter an absolute URL starting with http:// or https://.");
   if (target.username || target.password)
     throw new Error("Use the Auth tab instead of credentials in the URL.");
-  // Append only new rows; do not re-encode the original URL or query string.
-  let url = draft.url.trim().split("#")[0];
+  let url = rawUrl.split("#")[0];
   const query = activePairs(draft.query);
   if (query.length) {
     const additions = new URLSearchParams(
-      query.map(({ key, value }) => [key, value]),
+      query.map(({ key, value }) => [interp(key), interp(value)]),
     );
     const separator = url.includes("?") ? (/[?&]$/.test(url) ? "" : "&") : "?";
     url += separator + additions.toString();
   }
   const headers = activePairs(draft.headers).map(({ key, value }) => ({
     key: key.trim(),
-    value,
+    value: interp(value),
   }));
   for (const header of headers) {
     if (!/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(header.key))
@@ -96,30 +108,53 @@ export function buildRequest(draft: Draft): RequestInput {
     if (/[\r\n]/.test(header.value))
       throw new Error(`Line breaks are not allowed in ${header.key}.`);
   }
-  if (draft.auth !== "none") {
+
+  const resolvedAuth =
+    (ctx as ResolvedRequestContext | undefined)?.auth ??
+    draft.localAuth ??
+    (draft.auth === "bearer"
+      ? { type: "bearer" as const, token: draft.token }
+      : draft.auth === "basic"
+        ? {
+            type: "basic" as const,
+            username: draft.username,
+            password: draft.password,
+          }
+        : { type: "none" as const });
+  const effectiveAuthType = resolvedAuth.type;
+
+  if (effectiveAuthType !== "none") {
     if (headers.some((h) => h.key.toLowerCase() === "authorization"))
       throw new Error("Remove the Authorization header or select No auth.");
-    if (draft.auth === "bearer") {
-      if (!draft.token.trim() || /\s/.test(draft.token.trim()))
+    if (effectiveAuthType === "bearer") {
+      const token =
+        resolvedAuth.type === "bearer" ? interp(resolvedAuth.token).trim() : "";
+      if (!token || /\s/.test(token))
         throw new Error("Enter a bearer token without spaces or line breaks.");
       headers.push({
         key: "Authorization",
-        value: `Bearer ${draft.token.trim()}`,
+        value: `Bearer ${token}`,
       });
     } else {
-      if (draft.username.includes(":"))
+      const username =
+        resolvedAuth.type === "basic" ? interp(resolvedAuth.username) : "";
+      const password =
+        resolvedAuth.type === "basic" ? interp(resolvedAuth.password) : "";
+      if (username.includes(":"))
         throw new Error("Basic auth usernames cannot contain a colon.");
-      const bytes = new TextEncoder().encode(
-        `${draft.username}:${draft.password}`,
-      );
+      const bytes = new TextEncoder().encode(`${username}:${password}`);
       headers.push({
         key: "Authorization",
         value: `Basic ${btoa(Array.from(bytes, (b) => String.fromCharCode(b)).join(""))}`,
       });
     }
   }
-  const body =
+
+  let body =
     supportsBody(draft.method) && draft.bodyMode !== "none" ? draft.body : null;
+  if (body !== null && ctx) {
+    body = interp(body);
+  }
   if (body !== null && draft.bodyMode === "json") {
     try {
       JSON.parse(body);

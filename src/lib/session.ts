@@ -38,6 +38,28 @@ export function draftFingerprint(draft: Draft) {
     headers: rows(draft.headers),
   });
 }
+
+/**
+ * Fingerprint the fully-resolved RequestInput that was actually sent.
+ * Includes effective auth type so that a group/global auth change that
+ * changes the Authorization header marks the existing response stale.
+ *
+ * @param request  The resolved RequestInput, or null when build failed.
+ * @param authType Optional resolved auth type tag for the fingerprint.
+ */
+export function requestFingerprint(
+  request: import("./request").RequestInput | null,
+  authType?: string,
+): string {
+  if (!request) return "";
+  return JSON.stringify({
+    method: request.method,
+    url: request.url,
+    headers: request.headers,
+    body: request.body,
+    _authType: authType,
+  });
+}
 const emptyFingerprint = draftFingerprint(createDraft());
 export function hasDraft(session: RequestSession) {
   return (
@@ -75,13 +97,16 @@ export function sessionLabel(session: RequestSession) {
     return "Untitled " + String(session.id).padStart(2, "0");
   }
 }
+
+/**
+ * Returns a short status label for the tab.
+ * "Edited" / stale detection is handled by useRequestRunner.stale in the
+ * response panel — sessionStatus just reflects transport state.
+ */
 export function sessionStatus(session: RequestSession) {
   if (session.busy) return "Sending";
   if (session.error) return "Failed";
-  if (session.response)
-    return session.sentFingerprint === draftFingerprint(session.draft)
-      ? String(session.response.status)
-      : "Edited";
+  if (session.response) return String(session.response.status);
   return "Draft";
 }
 export function sessionHost(session: RequestSession) {

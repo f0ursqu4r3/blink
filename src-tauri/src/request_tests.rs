@@ -67,6 +67,19 @@ fn input(url: String) -> RequestInput {
     }
 }
 
+#[test]
+fn resolves_environment_references_without_exposing_values_in_errors() {
+    std::env::set_var("BLINK_TOKEN_ENV_TEST", "from-environment");
+    assert_eq!(
+        resolve_environment_references("Bearer <<BLINK_TOKEN_ENV_TEST>>").unwrap(),
+        "Bearer from-environment"
+    );
+    let error = resolve_environment_references("<<BLINK_TOKEN_MISSING>>").unwrap_err();
+    assert!(error.contains("BLINK_TOKEN_MISSING"));
+    assert!(!error.contains("from-environment"));
+    std::env::remove_var("BLINK_TOKEN_ENV_TEST");
+}
+
 #[tokio::test]
 async fn get_omits_body_and_measures_full_response() {
     let (url, received) = fixture(

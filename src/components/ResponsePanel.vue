@@ -19,7 +19,14 @@ import {
   X,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
-import { formatBytes, type ApiResponse } from "@/lib/request";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
+import { formatBytes, type ApiResponse, type Header } from "@/lib/request";
 import { useClipboard } from "@/composables/useClipboard";
 import { formatJson } from "@/lib/json";
 import { runJq } from "@/lib/jq";
@@ -165,6 +172,28 @@ function onKey(event: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener("keydown", onKey));
 onUnmounted(() => window.removeEventListener("keydown", onKey));
+
+// ── Header row context menu ────────────────────────────────────────────────
+const contextHeader = ref<Header | null>(null);
+
+function openHeaderCtx(header: Header) {
+  contextHeader.value = header;
+}
+
+function copyHeaderName() {
+  if (!contextHeader.value) return;
+  void copy(contextHeader.value.key);
+}
+
+function copyHeaderValue() {
+  if (!contextHeader.value) return;
+  void copy(contextHeader.value.value);
+}
+
+function copyHeaderPair() {
+  if (!contextHeader.value) return;
+  void copy(`${contextHeader.value.key}: ${contextHeader.value.value}`);
+}
 </script>
 
 <template>
@@ -198,57 +227,88 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         <span>{{ formatBytes(response.sizeBytes) }}</span>
       </div>
       <TabsRoot v-model="tab" class="response-tabs">
-        <div class="response-toolbar">
-          <TabsList class="tab-list" aria-label="Response view">
-            <TabsTrigger value="body" class="tab-trigger">Body</TabsTrigger>
-            <TabsTrigger
-              value="headers"
-              class="tab-trigger"
-              data-response-headers
-              >Headers <span>{{ response.headers.length }}</span></TabsTrigger
+        <ContextMenu>
+          <ContextMenuTrigger as-child>
+            <div class="response-toolbar">
+              <TabsList class="tab-list" aria-label="Response view">
+                <TabsTrigger value="body" class="tab-trigger">Body</TabsTrigger>
+                <TabsTrigger
+                  value="headers"
+                  class="tab-trigger"
+                  data-response-headers
+                  >Headers
+                  <span>{{ response.headers.length }}</span></TabsTrigger
+                >
+              </TabsList>
+              <div class="response-actions">
+                <Button
+                  v-if="tab === 'body' && parsed"
+                  variant="ghost"
+                  :aria-pressed="pretty"
+                  @click="pretty = !pretty"
+                  >{{ pretty ? "Pretty" : "Raw" }}</Button
+                >
+                <Button
+                  v-if="tab === 'body'"
+                  variant="ghost"
+                  class="size-7 shrink-0 p-0"
+                  :aria-pressed="wrap"
+                  aria-label="Wrap lines"
+                  title="Wrap lines"
+                  @click="wrap = !wrap"
+                  ><WrapText :size="14" aria-hidden="true"
+                /></Button>
+                <Button
+                  v-if="tab === 'body'"
+                  variant="ghost"
+                  class="size-7 shrink-0 p-0"
+                  :aria-pressed="inspectorVisible"
+                  aria-label="Find response"
+                  title="Find and filter response · Cmd/Ctrl+F"
+                  @click="toggleInspector"
+                  ><Search :size="14" aria-hidden="true"
+                /></Button>
+                <Button
+                  variant="ghost"
+                  class="size-7 shrink-0 p-0"
+                  :aria-label="copied ? 'Copied response' : 'Copy response'"
+                  title="Copy response"
+                  @click="copyResult"
+                  ><Check v-if="copied" :size="14" aria-hidden="true" /><Copy
+                    v-else
+                    :size="14"
+                    aria-hidden="true"
+                /></Button>
+              </div>
+            </div>
+          </ContextMenuTrigger>
+          <ContextMenuContent>
+            <ContextMenuItem
+              data-testid="ctx-copy-response"
+              @select="copyResult"
+              >Copy response</ContextMenuItem
             >
-          </TabsList>
-          <div class="response-actions">
-            <Button
-              v-if="tab === 'body' && parsed"
-              variant="ghost"
-              :aria-pressed="pretty"
-              @click="pretty = !pretty"
-              >{{ pretty ? "Pretty" : "Raw" }}</Button
-            >
-            <Button
-              v-if="tab === 'body'"
-              variant="ghost"
-              class="size-7 shrink-0 p-0"
-              :aria-pressed="wrap"
-              aria-label="Wrap lines"
-              title="Wrap lines"
-              @click="wrap = !wrap"
-              ><WrapText :size="14" aria-hidden="true"
-            /></Button>
-            <Button
-              v-if="tab === 'body'"
-              variant="ghost"
-              class="size-7 shrink-0 p-0"
-              :aria-pressed="inspectorVisible"
-              aria-label="Find response"
-              title="Find and filter response · Cmd/Ctrl+F"
-              @click="toggleInspector"
-              ><Search :size="14" aria-hidden="true"
-            /></Button>
-            <Button
-              variant="ghost"
-              class="size-7 shrink-0 p-0"
-              :aria-label="copied ? 'Copied response' : 'Copy response'"
-              title="Copy response"
-              @click="copyResult"
-              ><Check v-if="copied" :size="14" aria-hidden="true" /><Copy
-                v-else
-                :size="14"
-                aria-hidden="true"
-            /></Button>
-          </div>
-        </div>
+            <template v-if="tab === 'body'">
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                v-if="parsed"
+                data-testid="ctx-toolbar-pretty"
+                @select="pretty = !pretty"
+                >{{ pretty ? "Pretty" : "Raw" }}</ContextMenuItem
+              >
+              <ContextMenuItem
+                data-testid="ctx-toolbar-wrap"
+                @select="wrap = !wrap"
+                >Wrap</ContextMenuItem
+              >
+              <ContextMenuItem
+                data-testid="ctx-toolbar-find"
+                @select="toggleInspector"
+                >Find</ContextMenuItem
+              >
+            </template>
+          </ContextMenuContent>
+        </ContextMenu>
         <div
           v-if="tab === 'body' && inspectorVisible"
           class="response-inspector"
@@ -320,20 +380,45 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           <p v-else class="empty-body">Empty response body.</p>
         </TabsContent>
         <TabsContent value="headers" class="headers-content">
-          <table aria-label="Response headers">
-            <thead>
-              <tr>
-                <th scope="col">Name</th>
-                <th scope="col">Value</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="(header, index) in filteredHeaders" :key="index">
-                <td>{{ header.key }}</td>
-                <td>{{ header.value }}</td>
-              </tr>
-            </tbody>
-          </table>
+          <ContextMenu>
+            <ContextMenuTrigger as-child>
+              <table aria-label="Response headers">
+                <thead>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="(header, index) in filteredHeaders"
+                    :key="index"
+                    @contextmenu="openHeaderCtx(header)"
+                  >
+                    <td>{{ header.key }}</td>
+                    <td>{{ header.value }}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </ContextMenuTrigger>
+            <ContextMenuContent>
+              <ContextMenuItem
+                data-testid="ctx-header-copy-name"
+                @select="copyHeaderName"
+                >Copy name</ContextMenuItem
+              >
+              <ContextMenuItem
+                data-testid="ctx-header-copy-value"
+                @select="copyHeaderValue"
+                >Copy value</ContextMenuItem
+              >
+              <ContextMenuItem
+                data-testid="ctx-header-copy-pair"
+                @select="copyHeaderPair"
+                >Copy name: value</ContextMenuItem
+              >
+            </ContextMenuContent>
+          </ContextMenu>
           <p v-if="!filteredHeaders.length" class="empty-body">
             No response headers match this filter.
           </p>

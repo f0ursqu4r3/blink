@@ -1,6 +1,13 @@
 <script setup lang="ts">
 import { Plus, X } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from "@/components/ui/context-menu";
 import { pair, type Pair } from "@/lib/request";
 const rows = defineModel<Pair[]>({ required: true });
 defineProps<{ label: string; disabled?: boolean }>();
@@ -11,73 +18,137 @@ function update(id: number, field: "key" | "value", event: Event) {
       : row,
   );
 }
+function duplicateRow(id: number) {
+  const idx = rows.value.findIndex((r) => r.id === id);
+  if (idx < 0) return;
+  const src = rows.value[idx];
+  const copy = pair(src.key, src.value);
+  copy.enabled = src.enabled;
+  const next = [...rows.value];
+  next.splice(idx + 1, 0, copy);
+  rows.value = next;
+}
+function removeRow(id: number) {
+  rows.value = rows.value.filter((r) => r.id !== id);
+}
+function toggleRow(id: number) {
+  rows.value = rows.value.map((r) =>
+    r.id === id ? { ...r, enabled: !r.enabled } : r,
+  );
+}
+function enableAll() {
+  rows.value = rows.value.map((r) => ({ ...r, enabled: true }));
+}
+function disableAll() {
+  rows.value = rows.value.map((r) => ({ ...r, enabled: false }));
+}
+function addRow() {
+  rows.value = [...rows.value, pair()];
+}
 </script>
 
 <template>
   <div>
-    <table class="pair-table" :aria-label="label">
-      <thead>
-        <tr>
-          <th class="check-cell"><span class="sr-only">Enabled</span></th>
-          <th scope="col">Name</th>
-          <th scope="col">Value</th>
-          <th class="action-cell"><span class="sr-only">Remove</span></th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="(row, index) in rows"
-          :key="row.id"
-          :class="{ muted: !row.enabled }"
+    <ContextMenu>
+      <ContextMenuTrigger as-child data-testid="kv-table-ctx-trigger">
+        <table class="pair-table" :aria-label="label">
+          <thead>
+            <tr>
+              <th class="check-cell"><span class="sr-only">Enabled</span></th>
+              <th scope="col">Name</th>
+              <th scope="col">Value</th>
+              <th class="action-cell"><span class="sr-only">Remove</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            <ContextMenu v-for="(row, index) in rows" :key="row.id">
+              <ContextMenuTrigger
+                as-child
+                :data-testid="`kv-row-ctx-trigger-${row.id}`"
+              >
+                <tr :class="{ muted: !row.enabled }">
+                  <td class="check-cell">
+                    <input
+                      type="checkbox"
+                      :aria-label="`Enable ${label} row ${index + 1}`"
+                      :checked="row.enabled"
+                      :disabled="disabled"
+                      @change="
+                        rows = rows.map((r) =>
+                          r.id === row.id ? { ...r, enabled: !r.enabled } : r,
+                        )
+                      "
+                    />
+                  </td>
+                  <td>
+                    <input
+                      :aria-label="`${label} name ${index + 1}`"
+                      :value="row.key"
+                      placeholder="Name"
+                      :disabled="disabled"
+                      spellcheck="false"
+                      autocomplete="off"
+                      @input="update(row.id, 'key', $event)"
+                    />
+                  </td>
+                  <td>
+                    <input
+                      :aria-label="`${label} value ${index + 1}`"
+                      :value="row.value"
+                      placeholder="Value"
+                      :disabled="disabled"
+                      spellcheck="false"
+                      autocomplete="off"
+                      @input="update(row.id, 'value', $event)"
+                    />
+                  </td>
+                  <td class="action-cell">
+                    <Button
+                      variant="ghost"
+                      class="size-7 shrink-0 p-0"
+                      :aria-label="`Remove ${label} row ${index + 1}`"
+                      :disabled="disabled"
+                      @click="rows = rows.filter((r) => r.id !== row.id)"
+                      ><X :size="13" aria-hidden="true"
+                    /></Button>
+                  </td>
+                </tr>
+              </ContextMenuTrigger>
+              <ContextMenuContent>
+                <ContextMenuItem
+                  data-testid="kv-row-ctx-toggle"
+                  @select="toggleRow(row.id)"
+                  >{{ row.enabled ? "Disable" : "Enable" }}</ContextMenuItem
+                >
+                <ContextMenuItem
+                  data-testid="kv-row-ctx-duplicate"
+                  @select="duplicateRow(row.id)"
+                  >Duplicate</ContextMenuItem
+                >
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  data-testid="kv-row-ctx-remove"
+                  @select="removeRow(row.id)"
+                  >Remove</ContextMenuItem
+                >
+              </ContextMenuContent>
+            </ContextMenu>
+          </tbody>
+        </table>
+      </ContextMenuTrigger>
+      <ContextMenuContent>
+        <ContextMenuItem data-testid="kv-ctx-add-row" @select="addRow"
+          >Add row</ContextMenuItem
         >
-          <td class="check-cell">
-            <input
-              type="checkbox"
-              :aria-label="`Enable ${label} row ${index + 1}`"
-              :checked="row.enabled"
-              :disabled="disabled"
-              @change="
-                rows = rows.map((r) =>
-                  r.id === row.id ? { ...r, enabled: !r.enabled } : r,
-                )
-              "
-            />
-          </td>
-          <td>
-            <input
-              :aria-label="`${label} name ${index + 1}`"
-              :value="row.key"
-              placeholder="Name"
-              :disabled="disabled"
-              spellcheck="false"
-              autocomplete="off"
-              @input="update(row.id, 'key', $event)"
-            />
-          </td>
-          <td>
-            <input
-              :aria-label="`${label} value ${index + 1}`"
-              :value="row.value"
-              placeholder="Value"
-              :disabled="disabled"
-              spellcheck="false"
-              autocomplete="off"
-              @input="update(row.id, 'value', $event)"
-            />
-          </td>
-          <td class="action-cell">
-            <Button
-              variant="ghost"
-              class="size-7 shrink-0 p-0"
-              :aria-label="`Remove ${label} row ${index + 1}`"
-              :disabled="disabled"
-              @click="rows = rows.filter((r) => r.id !== row.id)"
-              ><X :size="13" aria-hidden="true"
-            /></Button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+        <ContextMenuSeparator />
+        <ContextMenuItem data-testid="kv-ctx-enable-all" @select="enableAll"
+          >Enable all</ContextMenuItem
+        >
+        <ContextMenuItem data-testid="kv-ctx-disable-all" @select="disableAll"
+          >Disable all</ContextMenuItem
+        >
+      </ContextMenuContent>
+    </ContextMenu>
     <Button
       variant="ghost"
       class="m-2"
