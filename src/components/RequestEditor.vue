@@ -1,7 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
-import { Braces, KeyRound, LoaderCircle, Network } from "lucide-vue-next";
+import {
+  Braces,
+  Check,
+  KeyRound,
+  LoaderCircle,
+  Network,
+} from "lucide-vue-next";
 import HelpTooltip from "./HelpTooltip.vue";
 import { Button } from "@/components/ui/button";
 import {
@@ -57,6 +63,11 @@ const cachedSchema = computed(() =>
 const now = ref(Date.now());
 const clock = setInterval(() => (now.value = Date.now()), 60_000);
 onBeforeUnmount(() => clearInterval(clock));
+const schemaStatus = computed(() =>
+  cachedSchema.value
+    ? `Schema loaded · ${formatSchemaAge(cachedSchema.value.fetchedAt, now.value)}`
+    : "",
+);
 watch(currentSchemaKey, () => (schemaError.value = ""));
 
 async function loadSchema() {
@@ -277,47 +288,53 @@ function clearBody() {
                 <option value="text">Text</option>
                 <option value="graphql">GraphQL</option>
               </select>
-              <template v-if="draft.bodyMode === 'graphql'">
-                <Button
-                  variant="ghost"
-                  :disabled="busy || schemaLoading || !draft.url.trim()"
-                  @click="loadSchema"
-                >
-                  <LoaderCircle
-                    v-if="schemaLoading"
-                    :size="13"
-                    class="animate-spin"
-                    aria-hidden="true"
-                  />
-                  <Network v-else :size="13" aria-hidden="true" />Fetch schema
-                </Button>
-                <HelpTooltip
-                  text="Fetch schema sends an introspection query with this request's URL, headers, and auth."
-                >
-                  <button
-                    type="button"
-                    class="text-[0.6875rem] text-muted-foreground underline decoration-dotted underline-offset-3"
+              <div class="ml-auto flex min-w-0 items-center gap-1">
+                <template v-if="draft.bodyMode === 'graphql'">
+                  <Button
+                    variant="ghost"
+                    class="relative size-7 shrink-0 p-0"
+                    aria-label="Fetch schema"
+                    :title="
+                      cachedSchema
+                        ? `${schemaStatus}. Fetch again with this request's URL, headers, and auth`
+                        : 'Fetch schema with this request\'s URL, headers, and auth'
+                    "
+                    :disabled="busy || schemaLoading || !draft.url.trim()"
+                    @click="loadSchema"
                   >
-                    Schema help
-                  </button>
-                </HelpTooltip>
-                <span
-                  v-if="cachedSchema"
-                  data-testid="schema-status"
-                  class="text-[0.6875rem]"
-                  >Schema loaded ·
-                  {{ formatSchemaAge(cachedSchema.fetchedAt, now) }}</span
+                    <LoaderCircle
+                      v-if="schemaLoading"
+                      :size="14"
+                      class="animate-spin"
+                      aria-hidden="true"
+                    />
+                    <Network v-else :size="14" aria-hidden="true" />
+                    <span
+                      v-if="cachedSchema && !schemaLoading"
+                      data-testid="schema-status"
+                      class="absolute top-0.5 right-0.5 flex size-2.5 items-center justify-center rounded-full bg-success text-background ring-2 ring-background"
+                    >
+                      <Check :size="8" :stroke-width="4" aria-hidden="true" />
+                      <span class="sr-only">{{ schemaStatus }}</span>
+                    </span>
+                  </Button>
+                </template>
+                <Button
+                  v-if="formattable"
+                  variant="ghost"
+                  class="size-7 shrink-0 p-0"
+                  aria-label="Format body"
+                  :title="
+                    draft.bodyMode === 'graphql'
+                      ? 'Format GraphQL'
+                      : 'Format JSON'
+                  "
+                  :disabled="busy || !draft.body"
+                  @click="formatBody"
                 >
-              </template>
-              <Button
-                v-if="formattable"
-                variant="ghost"
-                class="ml-auto"
-                :disabled="busy || !draft.body"
-                @click="formatBody"
-              >
-                <Braces :size="13" aria-hidden="true" />Format
-              </Button>
+                  <Braces :size="14" aria-hidden="true" />
+                </Button>
+              </div>
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>

@@ -34,7 +34,7 @@ afterEach(() => {
 });
 
 const formatButton = (w: ReturnType<typeof mount>) =>
-  w.findAll("[data-body-actions] button").find((b) => b.text() === "Format")!;
+  w.find("[data-body-actions] button[aria-label='Format body']");
 
 function mountEditor(bodyMode: "json" | "graphql") {
   const draft = {
@@ -145,7 +145,7 @@ describe("RequestEditor – GraphQL body", () => {
     expect(wrapper.find("[role='alert']").exists()).toBe(false);
   });
   const fetchButton = (w: ReturnType<typeof mount>) =>
-    w.findAll("button").find((b) => b.text().includes("Fetch schema"));
+    w.findAll("button[aria-label='Fetch schema']")[0];
 
   it("shows Fetch schema only in GraphQL mode", async () => {
     const { wrapper, draft } = mountEditor("json");
@@ -272,5 +272,26 @@ describe("RequestEditor – GraphQL body", () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+  it("uses icon-only body actions without help text", () => {
+    const { wrapper } = mountEditor("graphql");
+    const actions = wrapper.find("[data-body-actions]");
+    for (const label of ["Fetch schema", "Format body"]) {
+      const button = actions.find(`button[aria-label='${label}']`);
+      expect(button.exists()).toBe(true);
+      expect(button.text()).toBe("");
+    }
+    expect(actions.text()).not.toContain("help");
+  });
+  it("shows a loaded schema as a badge on the Fetch schema button", async () => {
+    const { wrapper } = mountEditor("graphql");
+    respond(introspection);
+    await fetchButton(wrapper)!.trigger("click");
+    await flushPromises();
+    const button = fetchButton(wrapper)!;
+    const badge = button.find("[data-testid='schema-status']");
+    expect(badge.exists()).toBe(true);
+    expect(badge.find("svg").exists()).toBe(true);
+    expect(badge.find(".sr-only").text()).toBe("Schema loaded · just now");
   });
 });
