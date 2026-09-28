@@ -69,7 +69,7 @@ Rejected:
   - "after X" converts to "before the next sibling of the same kind", or
     `null` (end of list).
 - `resolveTabDrop(payload, targetTabId, zone, openIds)` returns
-  `{ type: "reorderTabs" | "openRequests", ids, beforeId }` or `null`.
+  `{ key, zone, ids, beforeId }` or `null`.
 
 ### `src/composables/useDragDrop.ts` (shared drag session)
 
@@ -79,18 +79,20 @@ A module-level singleton, so the sidebar and the tab bar share one session.
 - Pointer lifecycle: the drag starts after 4px of movement (mouse), or after
   a 250ms long-press (`pointer: coarse`). The engine uses pointer capture.
 - Payload: `{ kind: "requests", ids }` or `{ kind: "group", id }`.
-- Targets register `{ el, accepts(payload), resolve(pointer) => indicator |
-  null, drop(indicator) }`. On each move, the engine finds the target under
-  the pointer (`document.elementFromPoint` plus the registered elements) and
-  exposes a reactive `indicator`.
+- Each surface (sidebar list, tab bar) registers `{ el, axis, scroller?,
+  resolve(payload, pointer) => hit | null }`. On each move, the engine finds
+  the surface whose rectangle holds the pointer and exposes the reactive hit
+  (row key and zone). Hit-testing uses rectangles, not
+  `document.elementFromPoint`, so it also runs in jsdom.
 - Preview: an element teleported to `body` that follows the cursor with an
   8px offset.
 - Edge auto-scroll: 24px zone at the edges of the scroll container of the
   current target. The speed increases near the edge.
 - Hover-to-expand: 600ms on the `into` zone of a collapsed folder calls the
   target's `expand()`.
-- Cancel on Esc, `pointercancel`, window `blur`, lost pointer capture, or
-  payload ids that no longer exist.
+- Cancel on Esc, `pointercancel`, or window `blur`. Payload ids that no
+  longer exist make the drop a no-op (the resolvers and state actions filter
+  them).
 - After a completed drag, suppress the next `click` on the source.
 
 ### Components
@@ -102,7 +104,7 @@ A module-level singleton, so the sidebar and the tab bar share one session.
   do not start a drag.
 - `RequestTabs.vue`: register tabs as sources and targets, and register the
   strip's empty area (after the last tab) as an "append" target. New emits:
-  `reorder: [ids, beforeId]`, `openRequests: [ids, beforeId]`.
+  `openRequests: [ids, beforeId]` (covers tab reorder too).
 - `App.vue`: wire the new emits to the state actions.
 
 ## State changes (`src/composables/useWorkspaceState.ts`)
@@ -111,8 +113,8 @@ A module-level singleton, so the sidebar and the tab bar share one session.
 - New `moveGroup(groupId, parentId, beforeGroupId | null)`: replaces
   `reorderGroup`. It handles reorder, nest, and un-nest. It checks
   `canNestGroup` and that the ids exist. `setGroupParent` delegates to it.
-- New `reorderTabs(ids, beforeId | null)`: reorders `openIds`.
-- New `openRequests(ids, beforeId | null)`: inserts ids into `openIds` at the
+- New `openRequests(ids, beforeId | null)`: covers tab reorder and
+  sidebar → tab bar: inserts ids into `openIds` at the
   position. Already-open ids move there. The first id becomes active.
 
 Requests always list before subfolders inside a folder. A request drop in the
@@ -126,7 +128,7 @@ already save their order). No migration.
 - Source rows dim to 40% opacity during the drag.
 - Preview: pill with `bg-popover`, `border-border`, `shadow-md`. It shows the
   method badge and label (request), or the folder icon and name (folder).
-  With more than one item, it shows a count badge ("3 requests").
+  With more than one item, the label is the count ("3 requests").
 - Before/after indicator: 2px `--color-primary` line, indented to the target
   level. Tabs use a vertical 2px line between tabs.
 - Into indicator: the folder row gets `bg-accent` plus a 1px `primary` inset
@@ -158,7 +160,7 @@ already save their order). No migration.
    `resolveTreeDrop` for before, after, into, after the last item, a folder
    into its own descendant (reject), un-nest to root, multi-select across
    folders, no-op moves; `resolveTabDrop` for reorder and open.
-2. State: `moveGroup`, `reorderTabs`, `openRequests`, and the existing
+2. State: `moveGroup`, `openRequests`, and the existing
    `moveRequests` cases.
 3. Component (vitest + jsdom): pointer-event sequences with stubbed
    `getBoundingClientRect`. Check emitted events, click suppression after a
