@@ -46,6 +46,14 @@ function choose(id: number) {
   open.value = false;
   emit("select", id);
 }
+function onFocusOut(event: FocusEvent) {
+  const next = event.relatedTarget as Node | null;
+  const container = event.currentTarget as HTMLElement;
+  if (!next || !container.contains(next)) {
+    // Focus already moved outside; do not steal it back.
+    open.value = false;
+  }
+}
 function onKey(event: KeyboardEvent) {
   const count = matches.value.length;
   if (event.key === "Escape") {
@@ -96,6 +104,7 @@ defineExpose({ show });
       <div
         class="absolute inset-x-0 top-0 z-50 overflow-hidden rounded-lg border border-border bg-secondary shadow-[0_8px_24px_oklch(0_0_0/0.4)]"
         data-surface="command-center"
+        @focusout="onFocusOut"
       >
         <input
           ref="input"

@@ -92,4 +92,17 @@ describe("CommandCenter", () => {
     expect(list).toHaveLength(2);
     wrapper.unmount();
   });
+
+  it("closes when focus leaves the popover for an outside element", async () => {
+    const { wrapper } = render();
+    await wrapper.get("[data-command-center-trigger]").trigger("click");
+    const input = wrapper.get('[role="combobox"]');
+    const outside = document.createElement("button");
+    document.body.appendChild(outside);
+    await input.trigger("focusout", { relatedTarget: outside });
+    expect(wrapper.find('[role="combobox"]').exists()).toBe(false);
+    expect(wrapper.emitted("select")).toBeUndefined();
+    outside.remove();
+    wrapper.unmount();
+  });
 });

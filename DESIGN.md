@@ -11,14 +11,15 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 
 - **Color strategy:** Default: near-black warm surfaces, thin graphite
   dividers, off-white text, and an industrial amber accent. Use the accent
-  sparingly: active tab and activity bar markers, focus rings, primary
-  actions, and progress. Everything else uses neutral or semantic tokens. A
-  Ghostty palette can replace the default: surfaces mix foreground into
-  background, the accent comes from a chosen palette slot (default 4, blue),
-  and semantic colors come from the palette: success slot 2, warning slot 3,
-  errors slot 1, info slot 4, keyword slot 5. HTTP method colors: GET
-  success, POST warning, PUT/PATCH info, DELETE error, HEAD/OPTIONS keyword.
-  Components use tokens only; never hardcode colors.
+  sparingly: active tab and activity markers, focus rings and focused
+  borders, primary buttons, checkboxes, the resize handle, sending/progress
+  indicators, and the close-confirm bar border. Everything else uses neutral
+  or semantic tokens. A Ghostty palette can replace the default: surfaces mix
+  foreground into background, the accent comes from a chosen palette slot
+  (default 4, blue), and semantic colors come from the palette: success slot
+  2, warning slot 3, errors slot 1, info slot 4, keyword slot 5. HTTP method
+  colors: GET success, POST warning, PUT/PATCH info, DELETE error,
+  HEAD/OPTIONS keyword. Components use tokens only; never hardcode colors.
 - **Typography:** Local system fonts only. Monospace for URL, headers, body,
   metrics, and compact uppercase section labels. System sans-serif for tabs
   and explanatory text. No web font requests.
@@ -31,8 +32,8 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
   window. Below 900 pixels, panels stack without hiding core request
   controls. Below 760 pixels, the activity bar hides; the title bar holds a
   Browser toggle that opens the Browser as an overlay and a Settings button.
-- **Shape:** 8-pixel radius for cards and popovers, 4-pixel radius for
-  controls.
+- **Shape:** 8-pixel radius for cards, popovers, menus, and dialogs; 4-pixel
+  radius for controls and tooltips.
 - **Density:** Small icon-and-label controls. No floating toolbars, large
   buttons, repeated summaries, or redundant metadata badges.
 - **Motion:** Short opacity and color transitions only. Respect reduced motion.

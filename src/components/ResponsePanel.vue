@@ -356,7 +356,7 @@ function copyHeaderPair() {
           class="flex min-h-9.5 gap-2 px-2 py-1.25 border-b border-border bg-muted max-[680px]:flex-col"
         >
           <label
-            class="flex flex-[1_1_180px] min-w-0 items-center gap-1.5 border border-input bg-background pl-2 text-muted-foreground focus-within:border-primary max-[680px]:basis-8.5"
+            class="flex flex-[1_1_180px] min-w-0 items-center gap-1.5 rounded border border-input bg-background pl-2 text-muted-foreground focus-within:border-primary max-[680px]:basis-8.5"
           >
             <Search :size="13" aria-hidden="true" />
             <span class="sr-only">Filter response</span>
@@ -372,7 +372,7 @@ function copyHeaderPair() {
           </label>
           <form
             v-if="sourceParsed"
-            class="flex flex-[1_1_260px] min-w-0 items-center gap-1.5 border border-input bg-background focus-within:border-primary max-[680px]:basis-8.5"
+            class="flex flex-[1_1_260px] min-w-0 items-center gap-1.5 rounded border border-input bg-background focus-within:border-primary max-[680px]:basis-8.5"
             aria-label="jq query"
             @submit.prevent="executeJq"
           >

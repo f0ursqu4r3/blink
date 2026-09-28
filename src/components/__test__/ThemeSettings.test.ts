@@ -109,4 +109,25 @@ describe("ThemeSettings", () => {
     });
     wrapper.unmount();
   });
+
+  it("drops a theme read that resolves after the component unmounts", async () => {
+    const wrapper = mount(ThemeSettings, { attachTo: document.body });
+    await flushPromises();
+    let resolveRead!: (text: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      resolveRead = resolve;
+    });
+    vi.mocked(readGhosttyTheme).mockImplementationOnce(() => pending);
+
+    await wrapper.get("#app-theme").setValue("Monokai Pro");
+    wrapper.unmount();
+
+    resolveRead(
+      "background = #262427\nforeground = #fcfcfa\npalette = 5=#a392e8\n",
+    );
+    await flushPromises();
+
+    expect(document.documentElement.dataset.theme).toBeUndefined();
+    expect(useTheme().draft.value).toBeNull();
+  });
 });

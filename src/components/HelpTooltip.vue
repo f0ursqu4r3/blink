@@ -40,7 +40,7 @@ function openFromClick(event: MouseEvent) {
       /></TooltipTrigger>
       <TooltipPortal>
         <TooltipContent
-          class="z-[70] max-w-72 border border-border bg-secondary px-2 py-1.5 font-mono text-[11px] text-foreground shadow-sm"
+          class="z-[70] max-w-72 rounded border border-border bg-secondary px-2 py-1.5 font-mono text-[11px] text-foreground shadow-sm"
           :side-offset="6"
           @escape-key-down.prevent="open = false"
         >

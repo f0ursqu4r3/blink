@@ -1,7 +1,8 @@
 use std::{
     collections::BTreeSet,
     fs,
-    path::{Path, PathBuf},
+    io::Read as _,
+    path::{Component, Path, PathBuf},
 };
 
 const LIMIT: u64 = 64 * 1024;
@@ -18,7 +19,18 @@ fn theme_dirs() -> Vec<PathBuf> {
 }
 
 fn valid_name(name: &str) -> bool {
-    !name.is_empty() && !name.contains('/') && !name.contains('\\') && !name.contains("..")
+    if name.is_empty()
+        || name.contains('/')
+        || name.contains('\\')
+        || name.contains("..")
+        || name.contains(':')
+    {
+        return false;
+    }
+    // Reject a name that resolves to something other than a single plain
+    // path segment (e.g. a Windows drive prefix like `C:foo`, `.`, or `/`).
+    let mut components = Path::new(name).components();
+    matches!(components.next(), Some(Component::Normal(_))) && components.next().is_none()
 }
 
 fn list(dirs: &[PathBuf]) -> Vec<String> {
@@ -57,7 +69,17 @@ fn read(dirs: &[PathBuf], name: &str) -> Result<String, String> {
         if meta.len() > LIMIT {
             return Err("Theme file is larger than 64 KiB.".into());
         }
-        return fs::read_to_string(path).map_err(|error| format!("Could not read theme: {error}"));
+        let file =
+            fs::File::open(path).map_err(|error| format!("Could not read theme: {error}"))?;
+        let mut contents = String::new();
+        let read = file
+            .take(LIMIT + 1)
+            .read_to_string(&mut contents)
+            .map_err(|error| format!("Could not read theme: {error}"))?;
+        if read as u64 > LIMIT {
+            return Err("Theme file is larger than 64 KiB.".into());
+        }
+        return Ok(contents);
     }
     Err(format!("Theme {name} not found."))
 }
@@ -106,7 +128,7 @@ mod tests {
     #[test]
     fn rejects_path_names_large_files_and_missing_themes() {
         let (_user, bundled, paths) = dirs();
-        for name in ["", "../secret", "a/b", "a\\b", ".."] {
+        for name in ["", "../secret", "a/b", "a\\b", "..", "C:foo"] {
             assert_eq!(read(&paths, name), Err("Invalid theme name.".into()));
         }
         fs::write(bundled.path().join("Huge"), vec![b'#'; 64 * 1024 + 1]).unwrap();

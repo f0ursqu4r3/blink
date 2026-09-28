@@ -42,7 +42,7 @@ const emit = defineEmits<{
 <style scoped>
 @reference "../style.css";
 .activity-button {
-  @apply relative flex size-9 items-center justify-center rounded-md text-muted-foreground hover:bg-accent hover:text-foreground;
+  @apply relative flex size-9 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground;
 }
 .activity-button[aria-pressed="true"] {
   @apply text-foreground;

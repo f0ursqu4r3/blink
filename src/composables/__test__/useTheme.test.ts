@@ -73,4 +73,9 @@ describe("theme state", () => {
     state.revert();
     expect(styleText()).toContain("--term-bg:#ffffff;");
   });
+
+  it("commits without writing when the draft has not changed and storage is unavailable", () => {
+    const state = createThemeState(null, document);
+    expect(state.commit()).toBe("");
+  });
 });

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, onUnmounted, ref } from "vue";
 import { useTheme } from "@/composables/useTheme";
 import { accentSlots, DEFAULT_ACCENT, type AccentSlot } from "@/lib/theme";
 import {
@@ -24,6 +24,11 @@ onMounted(async () => {
   } catch {
     readError.value = "Could not list Ghostty themes.";
   }
+});
+// Drops a pending readGhosttyTheme() that resolves after this component is
+// gone, so it cannot overwrite state another mounted instance owns.
+onUnmounted(() => {
+  request++;
 });
 
 async function choose(name: string) {

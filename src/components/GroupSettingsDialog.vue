@@ -295,7 +295,7 @@ function handleCancel() {
   <DialogRoot :open="open" @update:open="emit('update:open', $event)">
     <DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
     <DialogContent
-      class="fixed left-1/2 top-1/2 z-[60] flex max-h-[90dvh] w-[min(620px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 flex-col border border-border bg-background"
+      class="fixed left-1/2 top-1/2 z-[60] flex max-h-[90dvh] w-[min(620px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg overflow-hidden border border-border bg-background"
       data-testid="group-settings-dialog"
       :aria-describedby="undefined"
       @pointer-down-outside.prevent

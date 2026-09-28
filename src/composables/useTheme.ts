@@ -19,6 +19,8 @@ export type ThemeState = {
   preview(next: ThemeSetting | null): void;
   commit(): string;
   revert(): void;
+  /** Re-read storage and show the saved theme. Used when storage changes
+   * outside this state (tests, other windows). */
   reload(): void;
 };
 
@@ -52,6 +54,7 @@ export function createThemeState(
 
   function commit() {
     if (error.value) return error.value;
+    if (JSON.stringify(draft.value) === JSON.stringify(saved.value)) return "";
     saved.value = draft.value;
     try {
       if (!storage) throw new Error("no storage");
