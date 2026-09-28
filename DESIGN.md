@@ -11,7 +11,7 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 
 - **Color strategy:** Default: near-black warm surfaces, thin graphite
   dividers, off-white text, and an industrial amber accent. Use the accent
-  sparingly: active tab, focus rings and focused borders, primary buttons,
+  sparingly: active tab, focused field borders, primary buttons,
   checkboxes, the resize handle, sending/progress indicators, and the
   close-confirm bar border. Everything else uses neutral or semantic tokens.
   A Ghostty palette can replace the default: surfaces mix
@@ -61,7 +61,9 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Keep the add-tab action visible when the tab strip overflows. Support
   keyboard selection, protected closing, and a usable final blank tab.
 - Mark responses as previous when their request draft changes after sending.
-- Keep body/header tabs keyboard-accessible with visible focus indicators.
+- Keep body/header tabs keyboard-accessible. Show keyboard focus as in VS Code:
+  no focus ring; a focused control gets a subtle foreground tint, and text
+  fields show only the caret and their focused border.
 - Render response content as text. Never execute or embed response HTML.
 - Restore the current open tabs, drafts, responses, and view settings locally.
   Never replay interrupted requests or build an implicit request history.

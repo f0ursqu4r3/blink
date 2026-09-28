@@ -271,6 +271,6 @@ function save() {
 <style scoped>
 @reference "../style.css";
 .help-trigger {
-  @apply inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-input text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground focus-visible:outline-2 focus-visible:outline-ring;
+  @apply inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-input text-[10px] text-muted-foreground hover:bg-accent hover:text-foreground;
 }
 </style>

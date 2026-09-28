@@ -111,7 +111,7 @@ const theme = EditorView.theme(
       color: "var(--foreground)",
       backgroundColor: "transparent",
     },
-    "&.cm-focused": { outline: "2px solid var(--ring)", outlineOffset: "-2px" },
+    "&.cm-focused": { outline: "none" },
     ".cm-scroller": {
       fontFamily: "var(--font-mono)",
       lineHeight: "1.75",

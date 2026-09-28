@@ -16,7 +16,6 @@ const emit = defineEmits<{
     :class="[
       'flex items-center gap-2 rounded-sm px-2 py-1 cursor-default outline-none select-none text-foreground font-mono text-xs',
       'data-highlighted:bg-accent data-highlighted:text-foreground',
-      'focus-visible:outline-2 focus-visible:outline-ring focus-visible:-outline-offset-2',
       'data-disabled:opacity-40 data-disabled:pointer-events-none',
       $props.class,
     ]"

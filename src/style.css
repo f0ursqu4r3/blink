@@ -124,9 +124,27 @@
     color: var(--muted-foreground);
     opacity: 0.85;
   }
+  /* VS Code style: no focus ring. A focused control gets a subtle tint over
+     its own background; text fields show only the caret. */
   :focus-visible {
-    outline: 2px solid var(--ring);
-    outline-offset: -2px;
+    outline: none;
+  }
+  :is(
+    button,
+    a,
+    select,
+    summary,
+    [role="tab"],
+    [role="option"],
+    [role="treeitem"],
+    [role="menuitem"],
+    [role="checkbox"],
+    [role="switch"]
+  ):focus-visible {
+    background-image: linear-gradient(
+      color-mix(in oklch, var(--foreground) 10%, transparent),
+      color-mix(in oklch, var(--foreground) 10%, transparent)
+    );
   }
   ::selection {
     background: var(--selection);
