@@ -8,6 +8,8 @@ async function drag(
   to: Locator,
   spot: Spot = "middle",
 ) {
+  // A previous drop slides rows and tabs for 150ms; measure after it ends.
+  await page.waitForFunction(() => document.getAnimations().length === 0);
   const a = await from.boundingBox();
   const b = await to.boundingBox();
   if (!a || !b) throw new Error("drag target not visible");

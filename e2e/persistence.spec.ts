@@ -144,12 +144,14 @@ test("response scroll position survives reload", async ({ page }) => {
   await pane.getByRole("button", { name: /Send/ }).click();
   const responseScroller = pane.locator("[data-virtual-scroller]");
   await expect(responseScroller).toBeVisible();
-  await responseScroller.evaluate((el) => {
-    el.scrollTop = 320;
-  });
-  await expect
-    .poll(() => responseScroller.evaluate((el) => el.scrollTop))
-    .toBe(320);
+  // The app stores the offset in the scroll handler; wait for that event.
+  await responseScroller.evaluate(
+    (el) =>
+      new Promise<void>((done) => {
+        el.addEventListener("scroll", () => done(), { once: true });
+        el.scrollTop = 320;
+      }),
+  );
   // Scrolling alone does not autosave; the unload handler saves the offset.
   await page.reload();
   await expect
