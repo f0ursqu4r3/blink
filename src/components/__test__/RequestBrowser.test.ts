@@ -65,7 +65,7 @@ describe("request browser", () => {
     expect(createGroup).toHaveBeenCalledWith("Identity", 1);
   });
 
-  it("selects a request range and moves the selection into a group on drop", async () => {
+  it("selects a request range", async () => {
     const first = createSession();
     first.draft.url = "https://api.example.test/first";
     const second = createSession();
@@ -73,7 +73,6 @@ describe("request browser", () => {
     const third = createSession();
     third.draft.url = "https://api.example.test/third";
     const updateSelection = vi.fn();
-    const moveRequests = vi.fn();
     const browser = mount(RequestBrowser, {
       props: {
         sessions: [first, second, third],
@@ -82,7 +81,6 @@ describe("request browser", () => {
         selectionAnchorId: first.id,
         groups: [{ id: 1, name: "Platform", parentId: null, collapsed: false }],
         onUpdateSelection: updateSelection,
-        onMoveRequests: moveRequests,
       },
     });
 
@@ -92,18 +90,6 @@ describe("request browser", () => {
     expect(updateSelection).toHaveBeenCalledWith(
       [first.id, second.id, third.id],
       first.id,
-    );
-
-    await browser.get('[data-group-id="1"]').trigger("drop", {
-      dataTransfer: {
-        types: ["application/x-blink-request-ids"],
-        getData: () => JSON.stringify([first.id, second.id, third.id]),
-      },
-    });
-    expect(moveRequests).toHaveBeenCalledWith(
-      [first.id, second.id, third.id],
-      1,
-      null,
     );
   });
 });

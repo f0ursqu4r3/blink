@@ -1,19 +1,27 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from 'vue';
-import { CopyPlus, Plus, X } from 'lucide-vue-next';
+import { nextTick, ref, watch } from "vue";
+import { CopyPlus, Plus, X } from "lucide-vue-next";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
+} from "@/components/ui/context-menu";
 import {
   sessionLabel,
   sessionHost,
   sessionStatus,
   type RequestSession,
-} from '@/lib/session';
+} from "@/lib/session";
+import { useDragDrop, type DropHit } from "@/composables/useDragDrop";
+import {
+  hitZone,
+  resolveTabDrop,
+  stepTab,
+  type DragPayload,
+  type Point,
+} from "@/lib/drag-drop";
 const props = defineProps<{
   sessions: RequestSession[];
   activeId: number | null;
@@ -23,32 +31,97 @@ const emit = defineEmits<{
   close: [id: number];
   create: [];
   duplicate: [];
+  openRequests: [ids: number[], beforeId: number | null];
 }>();
 const strip = ref<HTMLElement>();
+const drag = useDragDrop();
+// The bar is a reka `as-child` trigger, whose template ref binds only on the
+// first mount. Reach it through the strip instead.
+drag.registerSurface({
+  el: () => strip.value?.parentElement,
+  scroller: () => strip.value,
+  axis: "x",
+  resolve: resolveTabsDrop,
+});
+function resolveTabsDrop(payload: DragPayload, point: Point): DropHit | null {
+  const openIds = props.sessions.map((session) => session.id);
+  const cell = Array.from(
+    strip.value?.querySelectorAll<HTMLElement>("[data-tab-id]") ?? [],
+  ).find((candidate) => {
+    const box = candidate.getBoundingClientRect();
+    return point.x >= box.left && point.x < box.right;
+  });
+  // Past the last tab (over the buttons or empty bar) appends.
+  const targetId = cell
+    ? Number(cell.dataset.tabId)
+    : (openIds[openIds.length - 1] ?? null);
+  const zone = cell
+    ? hitZone(cell.getBoundingClientRect(), point, "tab")
+    : "after";
+  const drop = resolveTabDrop(payload, targetId, zone, openIds);
+  if (!drop) return null;
+  return {
+    key: drop.key,
+    zone: drop.zone,
+    commit: () => emit("openRequests", drop.ids, drop.beforeId),
+  };
+}
+function pressTab(session: RequestSession, event: PointerEvent) {
+  drag.startPress(event, {
+    payload: () => ({ kind: "requests", ids: [session.id] }),
+    preview: () => ({
+      label: sessionLabel(session),
+      method: session.draft.method,
+    }),
+  });
+}
+function dropZoneFor(id: number) {
+  const hit = drag.state.hit;
+  return hit?.key === `tab-${id}` ? hit.zone : null;
+}
+function isDragged(id: number) {
+  const payload = drag.state.payload;
+  return payload?.kind === "requests" && payload.ids.includes(id);
+}
 async function reveal() {
   await nextTick();
   strip.value
     ?.querySelector('[aria-selected="true"]')
-    ?.scrollIntoView?.({ block: 'nearest', inline: 'nearest' });
+    ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
 }
 watch(() => props.activeId, reveal);
 function navigate(event: KeyboardEvent, index: number) {
+  if (
+    event.altKey &&
+    (event.key === "ArrowLeft" || event.key === "ArrowRight")
+  ) {
+    event.preventDefault();
+    const id = props.sessions[index].id;
+    const step = stepTab(
+      props.sessions.map((session) => session.id),
+      id,
+      event.key === "ArrowLeft" ? -1 : 1,
+    );
+    if (step) emit("openRequests", [id], step.beforeId);
+    void nextTick(() => document.getElementById(`request-tab-${id}`)?.focus());
+    return;
+  }
   if (event.altKey || event.ctrlKey || event.metaKey) return;
   let next = index;
-  if (event.key === 'ArrowRight') next = (index + 1) % props.sessions.length;
-  else if (event.key === 'ArrowLeft')
+  if (event.key === "ArrowRight") next = (index + 1) % props.sessions.length;
+  else if (event.key === "ArrowLeft")
     next = (index + props.sessions.length - 1) % props.sessions.length;
-  else if (event.key === 'Home') next = 0;
-  else if (event.key === 'End') next = props.sessions.length - 1;
-  else if (event.key === 'Delete') {
+  else if (event.key === "Home") next = 0;
+  else if (event.key === "End") next = props.sessions.length - 1;
+  else if (event.key === "Delete") {
     event.preventDefault();
-    emit('close', props.sessions[index].id);
+    emit("close", props.sessions[index].id);
     return;
   } else return;
   event.preventDefault();
-  emit('select', props.sessions[next].id);
+  emit("select", props.sessions[next].id);
   void nextTick(() =>
-    document.getElementById(`request-tab-${props.sessions[next].id}`)?.focus()
+    document.getElementById(`request-tab-${props.sessions[next].id}`)?.focus(),
   );
 }
 </script>
@@ -58,6 +131,7 @@ function navigate(event: KeyboardEvent, index: number) {
     <ContextMenuTrigger as-child data-testid="tab-strip-ctx-trigger">
       <div
         class="flex min-w-0 shrink-0 h-9 bg-muted border-b border-border pointer-coarse:h-11"
+        data-tab-bar
       >
         <div
           ref="strip"
@@ -72,9 +146,25 @@ function navigate(event: KeyboardEvent, index: number) {
             >
               <div
                 class="tab-cell relative flex items-stretch shrink-0 w-52.5 border-r border-border text-muted-foreground max-[760px]:w-46.25"
-                :class="{ selected: activeId === session.id }"
+                :class="{
+                  selected: activeId === session.id,
+                  'opacity-40': isDragged(session.id),
+                }"
                 role="presentation"
+                :data-drop-key="`tab-${session.id}`"
+                :data-tab-id="session.id"
+                @pointerdown="pressTab(session, $event)"
               >
+                <span
+                  v-if="dropZoneFor(session.id)"
+                  class="pointer-events-none absolute inset-y-0 z-10 w-0.5 bg-primary"
+                  :class="
+                    dropZoneFor(session.id) === 'before'
+                      ? 'left-0'
+                      : '-right-px'
+                  "
+                  :data-drop-indicator="dropZoneFor(session.id)"
+                />
                 <button
                   type="button"
                   role="tab"
@@ -137,6 +227,7 @@ function navigate(event: KeyboardEvent, index: number) {
                   type="button"
                   class="flex items-center justify-center w-6.5 shrink-0 text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent pointer-coarse:w-11"
                   data-close-request
+                  data-no-drag
                   :aria-label="`Close ${sessionLabel(session)}`"
                   title="Close tab · Cmd/Ctrl+W"
                   @click="emit('close', session.id)"
@@ -217,7 +308,7 @@ function navigate(event: KeyboardEvent, index: number) {
 }
 .tab-cell.selected::before {
   position: absolute;
-  content: '';
+  content: "";
   inset: 0 0 auto;
   height: 2px;
   background: var(--primary);

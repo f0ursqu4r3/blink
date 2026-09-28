@@ -5,8 +5,9 @@ import { createSession, type RequestSession } from "@/lib/session";
 import { methods } from "@/lib/request";
 import {
   createGroup,
-  canNestGroup,
   deleteGroupAndPromoteContents,
+  groupsAfterMove,
+  sessionsAfterMove,
   type RequestGroup,
 } from "@/lib/groups";
 import { nativeTransport } from "@/lib/transport";
@@ -247,6 +248,22 @@ export function useWorkspaceState() {
       activeId.value =
         openIds.value[Math.min(index, openIds.value.length - 1)] ?? null;
   }
+  /**
+   * Open requests as tabs before `beforeId`, or at the end. Open requests
+   * move there. The first request becomes active.
+   */
+  function openRequests(ids: number[], beforeId: number | null) {
+    const known = [...new Set(ids)].filter((id) =>
+      sessions.value.some((session) => session.id === id),
+    );
+    if (!known.length) return;
+    const moving = new Set(known);
+    const remaining = openIds.value.filter((id) => !moving.has(id));
+    const index = beforeId === null ? -1 : remaining.indexOf(beforeId);
+    remaining.splice(index < 0 ? remaining.length : index, 0, ...known);
+    openIds.value = remaining;
+    activeId.value = known[0];
+  }
   /** Remove a request from the workspace. The workspace always keeps one request. */
   function deleteRequest(id: number) {
     const index = sessions.value.findIndex((session) => session.id === id);
@@ -285,51 +302,36 @@ export function useWorkspaceState() {
     groupId: number | null,
     beforeSessionId: number | null,
   ) {
-    const ids = new Set(sessionIds);
-    if (!ids.size) return;
     if (groupId !== null && !groups.value.some((group) => group.id === groupId))
       return;
-
+    const ids = new Set(sessionIds);
     const moving = sessions.value.filter((session) => ids.has(session.id));
     if (!moving.length) return;
-    const remaining = sessions.value.filter((session) => !ids.has(session.id));
-    const beforeIndex =
-      beforeSessionId === null
-        ? -1
-        : remaining.findIndex((session) => session.id === beforeSessionId);
-    const endIndex = remaining.reduce(
-      (index, session, current) =>
-        session.groupId === groupId ? current + 1 : index,
-      -1,
+    sessions.value = sessionsAfterMove(
+      sessions.value,
+      sessionIds,
+      groupId,
+      beforeSessionId,
     );
-    const insertAt = beforeIndex >= 0 ? beforeIndex : endIndex + 1;
     moving.forEach((session) => {
       session.groupId = groupId;
     });
-    remaining.splice(insertAt, 0, ...moving);
-    sessions.value = remaining;
   }
-  function reorderGroup(groupId: number, beforeGroupId: number) {
-    const sourceIndex = groups.value.findIndex((group) => group.id === groupId);
-    const targetIndex = groups.value.findIndex(
-      (group) => group.id === beforeGroupId,
+  /** Reorder, nest, or un-nest a group. Rejects cycles and unknown ids. */
+  function moveGroup(
+    groupId: number,
+    parentId: number | null,
+    beforeGroupId: number | null,
+  ) {
+    const group = groups.value.find((candidate) => candidate.id === groupId);
+    const next = groupsAfterMove(
+      groups.value,
+      groupId,
+      parentId,
+      beforeGroupId,
     );
-    const source = groups.value[sourceIndex];
-    const target = groups.value[targetIndex];
-    if (
-      !source ||
-      !target ||
-      source.id === target.id ||
-      source.parentId !== target.parentId
-    )
-      return;
-    const next = [...groups.value];
-    next.splice(sourceIndex, 1);
-    next.splice(
-      next.findIndex((group) => group.id === target.id),
-      0,
-      source,
-    );
+    if (!group || !next) return;
+    group.parentId = parentId;
     groups.value = next;
   }
   function deleteGroup(id: number) {
@@ -405,8 +407,8 @@ export function useWorkspaceState() {
   }
   function setGroupParent(groupId: number, parentId: number | null) {
     const group = groups.value.find((g) => g.id === groupId);
-    if (group && canNestGroup(groups.value, groupId, parentId))
-      group.parentId = parentId;
+    if (group && group.parentId !== parentId)
+      moveGroup(groupId, parentId, null);
   }
   function setGroupNewRequestDefaults(
     groupId: number,
@@ -443,13 +445,14 @@ export function useWorkspaceState() {
     quitWithoutSaving,
     openRequest,
     closeTab,
+    openRequests,
     deleteRequest,
     addGroup,
     renameGroup,
     toggleGroup,
     moveRequest,
     moveRequests,
-    reorderGroup,
+    moveGroup,
     deleteGroup,
     setRequestLocalAuth,
     setGroupName,

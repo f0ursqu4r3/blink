@@ -4,6 +4,7 @@ import { HardDrive, PanelLeft, Settings } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestTabs from "@/components/RequestTabs.vue";
 import RequestBrowser from "@/components/RequestBrowser.vue";
+import DragPreview from "@/components/DragPreview.vue";
 import RequestWorkspace from "@/components/RequestWorkspace.vue";
 import GroupSettingsDialog from "@/components/GroupSettingsDialog.vue";
 import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vue";
@@ -39,13 +40,14 @@ const {
   quitWithoutSaving,
   openRequest,
   closeTab,
+  openRequests,
   deleteRequest,
   addGroup,
   renameGroup,
   toggleGroup,
   moveRequest,
   moveRequests,
-  reorderGroup,
+  moveGroup,
   deleteGroup,
   setRequestLocalAuth,
   setGroupName,
@@ -158,6 +160,11 @@ function selectFromSearch(id: number) {
 }
 function collapseAllGroups() {
   for (const group of groups.value) group.collapsed = true;
+}
+/** Place requests in the tab bar (drag or Alt+Arrow) and select them. */
+function placeTabs(ids: number[], beforeId: number | null) {
+  openRequests(ids, beforeId);
+  updateSelection(ids, ids[0] ?? null);
 }
 function updateSelection(ids: number[], anchorId: number | null) {
   selectedRequestIds.value = ids;
@@ -387,7 +394,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         @toggle-group="toggleGroup"
         @move-request="moveRequest"
         @move-requests="moveRequests"
-        @reorder-group="reorderGroup"
+        @move-group="moveGroup"
         @delete-group="deleteGroup"
         @collapse-all-groups="collapseAllGroups"
         @open-group-settings="openGroupSettings"
@@ -407,6 +414,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           @create="create()"
           @close="close"
           @duplicate="duplicate()"
+          @open-requests="placeTabs"
         />
         <div
           v-if="activeId === null"
@@ -474,5 +482,6 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         }
       "
     />
+    <DragPreview />
   </main>
 </template>

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, nextTick, ref } from "vue";
 import GroupActionsMenu from "./GroupActionsMenu.vue";
 import HelpTooltip from "./HelpTooltip.vue";
 import {
@@ -31,6 +31,16 @@ import {
   ContextMenuSubTrigger,
   ContextMenuSubContent,
 } from "@/components/ui/context-menu/index";
+import { useDragDrop, type DropHit } from "@/composables/useDragDrop";
+import {
+  hitZone,
+  resolveTreeDrop,
+  stepRequests,
+  type DragPayload,
+  type Point,
+  type TreeCommand,
+  type TreeTarget,
+} from "@/lib/drag-drop";
 
 const props = defineProps<{
   sessions: RequestSession[];
@@ -56,7 +66,11 @@ const emit = defineEmits<{
     groupId: number | null,
     beforeId: number | null,
   ];
-  reorderGroup: [groupId: number, beforeGroupId: number];
+  moveGroup: [
+    groupId: number,
+    parentId: number | null,
+    beforeGroupId: number | null,
+  ];
   deleteGroup: [id: number];
   collapseAllGroups: [];
   openGroupSettings: [groupId: number];
@@ -79,8 +93,6 @@ const deletingId = ref<number | null>(null);
 const deletingRequestId = ref<number | null>(null);
 const draftName = ref("");
 const groupingSelection = ref<number[] | null>(null);
-const requestMime = "application/x-blink-request-ids";
-const groupMime = "application/x-blink-group-id";
 
 const groupById = computed(
   () => new Map(props.groups.map((group) => [group.id, group])),
@@ -171,9 +183,17 @@ function selectionAlreadyIn(groupId: number | null) {
     )
   );
 }
-function levelPadding(level: number): string {
+function indent(level: number) {
   const pxMap = [12, 28, 44, 60, 76, 92, 108];
-  return `padding-left: ${pxMap[Math.min(level, 6)]}px`;
+  return pxMap[Math.min(level, 6)];
+}
+function levelPadding(level: number): string {
+  return `padding-left: ${indent(level)}px`;
+}
+function rowKey(row: BrowserRow) {
+  return row.type === "group"
+    ? `group-${row.group.id}`
+    : `request-${row.session.id}`;
 }
 function parentName(parentId: number | null) {
   return parentId === null
@@ -225,65 +245,159 @@ function handleRequestContextMenu(sessionId: number) {
   emit("updateSelection", [sessionId], sessionId);
 }
 
-function requestIdsFrom(event: DragEvent) {
-  try {
-    const value = event.dataTransfer?.getData(requestMime);
-    const ids = value ? JSON.parse(value) : [];
-    return Array.isArray(ids) && ids.every(Number.isSafeInteger) ? ids : [];
-  } catch {
-    return [];
+const rootEl = ref<HTMLElement>();
+// A template ref on a reka `as-child` trigger binds only on the first mount,
+// so find the list from the root instead.
+function listEl() {
+  return rootEl.value?.querySelector<HTMLElement>("[data-browser-list]");
+}
+const drag = useDragDrop();
+drag.registerSurface({
+  el: listEl,
+  axis: "y",
+  resolve: resolveBrowserDrop,
+});
+
+function treeTarget(key: string): TreeTarget | null {
+  const [type, value] = key.split("-");
+  if (type === "root")
+    return { type: "root", position: value === "start" ? "start" : "end" };
+  const id = Number(value);
+  if (!Number.isSafeInteger(id)) return null;
+  if (type === "group") return { type: "group", id };
+  return type === "request" ? { type: "request", id } : null;
+}
+
+/** The keyed row under the pointer. Below the last row counts as root-end. */
+function rowAt(point: Point) {
+  const rows = Array.from(
+    listEl()?.querySelectorAll<HTMLElement>("[data-drop-key]") ?? [],
+  );
+  const row = rows.find((candidate) => {
+    const box = candidate.getBoundingClientRect();
+    return point.y >= box.top && point.y < box.bottom;
+  });
+  if (row) return row;
+  const last = rows[rows.length - 1];
+  return last && point.y >= last.getBoundingClientRect().top ? last : null;
+}
+
+function resolveBrowserDrop(
+  payload: DragPayload,
+  point: Point,
+): DropHit | null {
+  const row = rowAt(point);
+  const target = row ? treeTarget(row.dataset.dropKey ?? "") : null;
+  if (!row || !target) return null;
+  const zone =
+    target.type === "root"
+      ? "into"
+      : hitZone(
+          row.getBoundingClientRect(),
+          point,
+          target.type === "group" ? "group" : "request",
+        );
+  const drop = resolveTreeDrop(payload, target, zone, {
+    sessions: props.sessions,
+    groups: props.groups,
+  });
+  if (!drop) return null;
+  const group =
+    target.type === "group" ? groupById.value.get(target.id) : undefined;
+  return {
+    key: drop.key,
+    zone: drop.zone,
+    commit: () => commitTreeDrop(drop.command),
+    ...(group?.collapsed
+      ? { expand: () => emit("toggleGroup", group.id) }
+      : {}),
+  };
+}
+
+function commitTreeDrop(command: TreeCommand) {
+  if (command.type === "moveRequests")
+    emit("moveRequests", command.ids, command.groupId, command.beforeId);
+  else
+    emit("moveGroup", command.groupId, command.parentId, command.beforeGroupId);
+}
+
+function dragIds(id: number) {
+  return selected.value.has(id) ? (props.selectedIds ?? []) : [id];
+}
+
+function pressRequest(session: RequestSession, event: PointerEvent) {
+  if (deletingRequestId.value === session.id) return;
+  drag.startPress(event, {
+    payload: () => ({ kind: "requests", ids: dragIds(session.id) }),
+    preview: () => {
+      const count = dragIds(session.id).length;
+      return count > 1
+        ? { label: `${count} requests` }
+        : { label: sessionLabel(session), method: session.draft.method };
+    },
+    onStart: () => {
+      if (!selected.value.has(session.id))
+        emit("updateSelection", [session.id], session.id);
+    },
+  });
+}
+
+function pressGroup(group: RequestGroup, event: PointerEvent) {
+  if (editingId.value === group.id) return;
+  drag.startPress(event, {
+    payload: () => ({ kind: "group", id: group.id }),
+    preview: () => ({ label: group.name, folder: true }),
+  });
+}
+
+/** The indicator zone for a row key, when the drag targets it. */
+function dropZoneFor(key: string) {
+  const hit = drag.state.hit;
+  return hit?.key === key ? hit.zone : null;
+}
+const draggedKeys = computed(() => {
+  const payload = drag.state.payload;
+  if (!payload) return new Set<string>();
+  return new Set(
+    payload.kind === "requests"
+      ? payload.ids.map((id) => `request-${id}`)
+      : [`group-${payload.id}`],
+  );
+});
+/** Rows inside the folder that the drag targets with "into". */
+const intoRows = computed(() => {
+  const keys = new Set<string>();
+  const hit = drag.state.hit;
+  if (hit?.zone !== "into" || !hit.key.startsWith("group-")) return keys;
+  const start = rows.value.findIndex((row) => rowKey(row) === hit.key);
+  if (start < 0) return keys;
+  const level = rows.value[start].level;
+  for (const row of rows.value.slice(start + 1)) {
+    if (row.level <= level) break;
+    keys.add(rowKey(row));
   }
-}
+  return keys;
+});
 
-function hasType(event: DragEvent, type: string) {
-  return Array.from(event.dataTransfer?.types ?? []).includes(type);
-}
-
-function startRequestDrag(id: number, event: DragEvent) {
-  const ids = selected.value.has(id) ? (props.selectedIds ?? []) : [id];
-  if (!selected.value.has(id)) emit("updateSelection", ids, id);
-  event.dataTransfer?.setData(requestMime, JSON.stringify(ids));
-  event.dataTransfer?.setData("text/plain", ids.join(","));
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
-}
-
-function allowDrop(event: DragEvent) {
-  if (hasType(event, requestMime) || hasType(event, groupMime))
-    event.preventDefault();
-}
-
-function dropOnRequest(event: DragEvent, session: RequestSession) {
-  const ids = requestIdsFrom(event);
-  if (!ids.length) return;
-  event.preventDefault();
-  emit("moveRequests", ids, session.groupId, session.id);
-}
-
-function dropOnGroup(event: DragEvent, group: RequestGroup) {
-  const ids = requestIdsFrom(event);
-  if (ids.length) {
-    event.preventDefault();
-    emit("moveRequests", ids, group.id, null);
+function stepSelection(session: RequestSession, event: KeyboardEvent) {
+  if (!event.altKey || (event.key !== "ArrowUp" && event.key !== "ArrowDown"))
     return;
-  }
-  const source = Number(event.dataTransfer?.getData(groupMime));
-  if (Number.isSafeInteger(source)) {
-    event.preventDefault();
-    emit("reorderGroup", source, group.id);
-  }
-}
-
-function dropOnUngrouped(event: DragEvent) {
-  const ids = requestIdsFrom(event);
-  if (!ids.length) return;
   event.preventDefault();
-  emit("moveRequests", ids, null, null);
-}
-
-function startGroupDrag(id: number, event: DragEvent) {
-  event.dataTransfer?.setData(groupMime, String(id));
-  event.dataTransfer?.setData("text/plain", String(id));
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
+  const ids = dragIds(session.id);
+  const step = stepRequests(
+    props.sessions,
+    ids,
+    event.key === "ArrowUp" ? -1 : 1,
+  );
+  if (!step) return;
+  emit("moveRequests", ids, step.groupId, step.beforeId);
+  void nextTick(() => {
+    const row = listEl()?.querySelector<HTMLElement>(
+      `[data-request-id="${session.id}"]`,
+    );
+    row?.focus();
+    row?.scrollIntoView?.({ block: "nearest" });
+  });
 }
 
 /** Effective auth for a session (used for lock indicator). */
@@ -303,6 +417,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
 <template>
   <aside
+    ref="rootEl"
     id="request-browser"
     class="flex flex-col overflow-hidden rounded-lg border border-border bg-muted w-61 min-w-47 max-[760px]:absolute max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40 max-[760px]:rounded-none"
     :class="{ 'max-[760px]:hidden': !mobileOpen }"
@@ -392,14 +507,18 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
     <ContextMenu>
       <ContextMenuTrigger as-child>
-        <div class="min-h-0 flex-1 overflow-auto py-2">
+        <div class="min-h-0 flex-1 overflow-auto py-2" data-browser-list>
           <!-- UNGROUPED row -->
           <ContextMenu>
             <ContextMenuTrigger as-child>
               <div
                 class="flex min-w-0 items-center gap-1.5 h-7 pl-3 pr-2.25"
-                @dragover="allowDrop"
-                @drop="dropOnUngrouped"
+                :class="{
+                  'bg-accent shadow-[inset_0_0_0_1px_var(--color-primary)]':
+                    dropZoneFor('root') === 'into',
+                }"
+                data-drop-key="root-start"
+                :data-drop-target="dropZoneFor('root') ?? undefined"
               >
                 <span
                   class="flex-1 text-muted-foreground font-mono text-[9px] tracking-[0.12em]"
@@ -428,14 +547,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
             </ContextMenuContent>
           </ContextMenu>
 
-          <template
-            v-for="row in rows"
-            :key="
-              row.type === 'group'
-                ? `group-${row.group.id}`
-                : `request-${row.session.id}`
-            "
-          >
+          <template v-for="row in rows" :key="rowKey(row)">
             <!-- Request row -->
             <div
               v-if="row.type === 'request'"
@@ -445,23 +557,42 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 <ContextMenuTrigger as-child>
                   <button
                     type="button"
-                    class="flex w-full min-w-0 items-center gap-1.5 min-h-6.75 pr-2.25 overflow-hidden text-left text-muted-foreground font-mono text-[10px] cursor-grab [-webkit-user-drag:element] hover:bg-accent hover:text-foreground pointer-coarse:min-h-9.5"
+                    class="relative flex w-full min-w-0 items-center gap-1.5 min-h-6.75 pr-2.25 overflow-hidden text-left text-muted-foreground font-mono text-[10px] hover:bg-accent hover:text-foreground pointer-coarse:min-h-9.5"
                     :class="{
                       'bg-accent text-foreground': activeId === row.session.id,
                       'shadow-[inset_2px_0_0_var(--color-primary)]':
                         selected.has(row.session.id),
+                      'opacity-40': draggedKeys.has(
+                        `request-${row.session.id}`,
+                      ),
+                      'bg-accent/40': intoRows.has(`request-${row.session.id}`),
                     }"
                     :style="levelPadding(row.level)"
                     :aria-selected="selected.has(row.session.id)"
                     :data-request-id="row.session.id"
-                    draggable="true"
+                    :data-drop-key="`request-${row.session.id}`"
                     :title="sessionLabel(row.session)"
                     @click="selectRequest(row.session.id, $event)"
                     @contextmenu="handleRequestContextMenu(row.session.id)"
-                    @dragstart="startRequestDrag(row.session.id, $event)"
-                    @dragover="allowDrop"
-                    @drop="dropOnRequest($event, row.session)"
+                    @pointerdown="pressRequest(row.session, $event)"
+                    @keydown="stepSelection(row.session, $event)"
                   >
+                    <span
+                      v-if="
+                        dropZoneFor(`request-${row.session.id}`) === 'before' ||
+                        dropZoneFor(`request-${row.session.id}`) === 'after'
+                      "
+                      class="pointer-events-none absolute right-0 h-0.5 bg-primary"
+                      :class="
+                        dropZoneFor(`request-${row.session.id}`) === 'before'
+                          ? 'top-0'
+                          : 'bottom-0'
+                      "
+                      :style="{ left: `${indent(row.level)}px` }"
+                      :data-drop-indicator="
+                        dropZoneFor(`request-${row.session.id}`)
+                      "
+                    />
                     <span
                       class="method w-8.5 shrink-0 text-[8px] font-bold"
                       :data-method="row.session.draft.method"
@@ -604,14 +735,37 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 <ContextMenu>
                   <ContextMenuTrigger as-child>
                     <div
-                      class="group/row flex min-w-0 items-center gap-1.5 min-h-7 pr-1.75 text-muted-foreground cursor-grab [-webkit-user-drag:element] pointer-coarse:min-h-9.5"
+                      class="group/row relative flex min-w-0 items-center gap-1.5 min-h-7 pr-1.75 text-muted-foreground pointer-coarse:min-h-9.5"
                       :style="levelPadding(row.level)"
                       :data-group-id="row.group.id"
-                      draggable="true"
-                      @dragstart="startGroupDrag(row.group.id, $event)"
-                      @dragover="allowDrop"
-                      @drop="dropOnGroup($event, row.group)"
+                      :data-drop-key="`group-${row.group.id}`"
+                      :data-drop-target="
+                        dropZoneFor(`group-${row.group.id}`) ?? undefined
+                      "
+                      :class="{
+                        'opacity-40': draggedKeys.has(`group-${row.group.id}`),
+                        'bg-accent/40': intoRows.has(`group-${row.group.id}`),
+                        'bg-accent shadow-[inset_0_0_0_1px_var(--color-primary)]':
+                          dropZoneFor(`group-${row.group.id}`) === 'into',
+                      }"
+                      @pointerdown="pressGroup(row.group, $event)"
                     >
+                      <span
+                        v-if="
+                          dropZoneFor(`group-${row.group.id}`) === 'before' ||
+                          dropZoneFor(`group-${row.group.id}`) === 'after'
+                        "
+                        class="pointer-events-none absolute right-0 h-0.5 bg-primary"
+                        :class="
+                          dropZoneFor(`group-${row.group.id}`) === 'before'
+                            ? 'top-0'
+                            : 'bottom-0'
+                        "
+                        :style="{ left: `${indent(row.level)}px` }"
+                        :data-drop-indicator="
+                          dropZoneFor(`group-${row.group.id}`)
+                        "
+                      />
                       <button
                         type="button"
                         class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
@@ -816,6 +970,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
               </div>
             </template>
           </template>
+          <div data-drop-key="root-end" class="min-h-8" aria-hidden="true" />
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
