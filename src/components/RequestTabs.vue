@@ -85,7 +85,7 @@ function navigate(event: KeyboardEvent, index: number) {
                   @keydown="navigate($event, index)"
                 >
                   <span
-                    class="text-[0.5625rem] font-bold tracking-[0.04em] text-primary data-[method=GET]:text-success data-[method=DELETE]:text-destructive"
+                    class="method text-[0.5625rem] font-bold tracking-[0.04em]"
                     :data-method="session.draft.method"
                   >
                     {{ session.draft.method }}
@@ -178,7 +178,7 @@ function navigate(event: KeyboardEvent, index: number) {
         </div>
         <button
           type="button"
-          class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-primary pointer-coarse:w-11"
+          class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-foreground pointer-coarse:w-11"
           data-new-request
           aria-label="New request"
           title="New request · Cmd/Ctrl+T"
@@ -188,7 +188,7 @@ function navigate(event: KeyboardEvent, index: number) {
         </button>
         <button
           type="button"
-          class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-primary pointer-coarse:w-11"
+          class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-foreground pointer-coarse:w-11"
           data-duplicate-request
           aria-label="Duplicate request"
           title="Duplicate request · Cmd/Ctrl+Shift+D"

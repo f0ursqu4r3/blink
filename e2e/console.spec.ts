@@ -28,7 +28,7 @@ test("compose, send, inspect and close through real controls", async ({
     });
   });
   await page.goto("/");
-  await expect(page.locator("[data-title-bar]")).toHaveCSS("height", "36px");
+  await expect(page.locator("[data-title-bar]")).toHaveCSS("height", "40px");
   await page.screenshot({ path: "artifacts/blink-idle.png" });
   await page
     .getByLabel("Request URL", { exact: true })

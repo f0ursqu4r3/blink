@@ -14,6 +14,9 @@ export const accentSlots: { value: AccentSlot; label: string }[] = [
   { value: 6, label: "Cyan" },
 ];
 
+/** Accent slot for a new Ghostty theme: Blue. */
+export const DEFAULT_ACCENT: AccentSlot = 4;
+
 /**
  * Hex approximation of the default amber theme. Only used for keys a
  * Ghostty text omits; with no theme the oklch tokens in style.css apply.
@@ -82,7 +85,7 @@ const styleId = "blink-theme";
 export function applyTheme(
   doc: Document,
   palette: Palette | null,
-  accent: AccentSlot = 3,
+  accent: AccentSlot = DEFAULT_ACCENT,
 ) {
   let style = doc.getElementById(styleId);
   if (!palette) {

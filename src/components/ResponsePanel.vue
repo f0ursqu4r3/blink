@@ -228,7 +228,7 @@ function copyHeaderPair() {
     <template v-if="response && !busy && !error">
       <p
         v-if="stale"
-        class="py-1.5 px-3.5 border-b border-border text-primary font-mono text-[0.625rem]"
+        class="py-1.5 px-3.5 border-b border-border text-warning font-mono text-[0.625rem]"
         role="status"
       >
         Previous response · request edited since send
@@ -239,7 +239,7 @@ function copyHeaderPair() {
         <span
           data-response-status
           :data-tone="tone"
-          class="inline-flex items-center gap-2 data-[tone=success]:text-success data-[tone=redirect]:text-primary data-[tone=error]:text-destructive"
+          class="inline-flex items-center gap-2 data-[tone=success]:text-success data-[tone=redirect]:text-warning data-[tone=error]:text-destructive"
         >
           <span class="block h-1.25 w-1.25 bg-current" />{{ response.status }}
           {{ response.statusText }}
@@ -261,13 +261,13 @@ function copyHeaderPair() {
               <TabsList class="flex items-center" aria-label="Response view">
                 <TabsTrigger
                   value="body"
-                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-primary data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
+                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-foreground data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
                 >
                   Body
                 </TabsTrigger>
                 <TabsTrigger
                   value="headers"
-                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-primary data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
+                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-foreground data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
                   data-response-headers
                 >
                   Headers
@@ -467,7 +467,7 @@ function copyHeaderPair() {
                     @contextmenu="openHeaderCtx(header)"
                   >
                     <td
-                      class="text-left px-4 py-2 border-b border-border wrap-anywhere align-top text-primary"
+                      class="text-left px-4 py-2 border-b border-border wrap-anywhere align-top text-info"
                     >
                       {{ header.key }}
                     </td>

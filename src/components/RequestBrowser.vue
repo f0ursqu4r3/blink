@@ -363,14 +363,14 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
       />
       <button
         type="submit"
-        class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+        class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
         aria-label="Create top-level group"
       >
         Add
       </button>
       <button
         type="button"
-        class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+        class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
         aria-label="Cancel group creation"
         @click="creatingParent = undefined"
       >
@@ -396,7 +396,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 </span>
                 <button
                   type="button"
-                  class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 pointer-coarse:w-8 pointer-coarse:h-8"
+                  class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent disabled:opacity-30 pointer-coarse:w-8 pointer-coarse:h-8"
                   :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to Ungrouped`"
                   :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} here`"
                   :disabled="selectionAlreadyIn(null)"
@@ -451,12 +451,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     @drop="dropOnRequest($event, row.session)"
                   >
                     <span
-                      class="w-8.5 shrink-0 text-primary text-[8px] font-bold"
-                      :class="{
-                        'text-success': row.session.draft.method === 'GET',
-                        'text-destructive':
-                          row.session.draft.method === 'DELETE',
-                      }"
+                      class="method w-8.5 shrink-0 text-[8px] font-bold"
                       :data-method="row.session.draft.method"
                     >
                       {{ row.session.draft.method }}
@@ -471,7 +466,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                       :size="10"
                       aria-hidden="true"
                       data-auth-indicator
-                      class="shrink-0 text-primary opacity-70"
+                      class="shrink-0 text-muted-foreground"
                     />
                   </button>
                 </ContextMenuTrigger>
@@ -569,7 +564,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     >
                       <button
                         type="button"
-                        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
+                        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                         :aria-label="`${row.group.collapsed ? 'Expand' : 'Collapse'} ${row.group.name}`"
                         @click="emit('toggleGroup', row.group.id)"
                       >
@@ -595,7 +590,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                           :size="10"
                           aria-hidden="true"
                           data-auth-indicator
-                          class="shrink-0 text-primary opacity-70"
+                          class="shrink-0 text-muted-foreground"
                         />
                       </span>
                       <form
@@ -618,14 +613,14 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         />
                         <button
                           type="submit"
-                          class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+                          class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                           :aria-label="`Save ${row.group.name}`"
                         >
                           Save
                         </button>
                         <button
                           type="button"
-                          class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+                          class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                           :aria-label="`Cancel rename ${row.group.name}`"
                           @click="editingId = null"
                         >
@@ -641,7 +636,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                           :help-only="false"
                           ><button
                             type="button"
-                            class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
+                            class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                             :aria-label="`Group settings for ${row.group.name}`"
                             @click="emit('openGroupSettings', row.group.id)"
                           >
@@ -652,7 +647,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                           :help-only="false"
                           ><button
                             type="button"
-                            class="inline-flex items-center justify-center size-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:size-8"
+                            class="inline-flex items-center justify-center size-5.5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent pointer-coarse:size-8"
                             :aria-label="`New request in ${row.group.name}`"
                             @click="emit('createRequest', row.group.id)"
                           >
@@ -728,14 +723,14 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 />
                 <button
                   type="submit"
-                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                   :aria-label="`Create group in ${row.group.name}`"
                 >
                   Add
                 </button>
                 <button
                   type="button"
-                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                   aria-label="Cancel group creation"
                   @click="creatingParent = undefined"
                 >
@@ -756,14 +751,14 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 <!-- prettier-ignore -->
                 <button
                   type="button"
-                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                   @click="emit('deleteGroup', row.group.id); deletingId = null"
                 >
                   Delete
                 </button>
                 <button
                   type="button"
-                  class="text-muted-foreground font-mono text-[9px] hover:text-primary"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                   @click="deletingId = null"
                 >
                   Cancel

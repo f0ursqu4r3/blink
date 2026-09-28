@@ -47,6 +47,19 @@ describe("ThemeSettings", () => {
     wrapper.unmount();
   });
 
+  it("defaults the accent to Blue (slot 4) with no theme saved", async () => {
+    const wrapper = mount(ThemeSettings, { attachTo: document.body });
+    await flushPromises();
+    await wrapper
+      .get("[data-theme-colors]")
+      .setValue("background = #101010\npalette = 4=#0000ff");
+    expect(useTheme().draft.value?.accent).toBe(4);
+    expect(
+      wrapper.get<HTMLSelectElement>("#app-theme-accent").element.value,
+    ).toBe("4");
+    wrapper.unmount();
+  });
+
   it("shows parse errors and resets to the default", async () => {
     const wrapper = mount(ThemeSettings, { attachTo: document.body });
     await flushPromises();

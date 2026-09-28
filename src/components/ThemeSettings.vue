@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onMounted, ref } from "vue";
 import { useTheme } from "@/composables/useTheme";
-import { accentSlots, type AccentSlot } from "@/lib/theme";
+import { accentSlots, DEFAULT_ACCENT, type AccentSlot } from "@/lib/theme";
 import {
   canReadGhosttyThemes,
   listGhosttyThemes,
@@ -11,7 +11,7 @@ import {
 const { draft, error, saveError, preview } = useTheme();
 const names = ref<string[]>([]);
 const readError = ref("");
-const accent = computed(() => draft.value?.accent ?? 3);
+const accent = computed(() => draft.value?.accent ?? DEFAULT_ACCENT);
 const message = computed(() => error.value || saveError.value);
 // Guards against a slow readGhosttyTheme() overwriting a newer edit, reset,
 // theme choice, or accent change made while the read was in flight.

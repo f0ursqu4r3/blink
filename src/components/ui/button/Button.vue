@@ -8,7 +8,7 @@ import HelpTooltip from "@/components/HelpTooltip.vue";
 defineOptions({ inheritAttrs: false });
 
 const buttonVariants = cva(
-  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-xs px-2.5 font-mono text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 [@media(pointer:coarse)]:min-h-11",
+  "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded px-2.5 font-mono text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 [@media(pointer:coarse)]:min-h-11",
   {
     variants: {
       variant: {

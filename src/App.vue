@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { HardDrive, PanelLeft } from "lucide-vue-next";
+import { HardDrive, PanelLeft, Settings } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestTabs from "@/components/RequestTabs.vue";
 import RequestBrowser from "@/components/RequestBrowser.vue";
@@ -303,8 +303,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
     :inert="closing || undefined"
   >
     <header
-      class="relative flex h-9 shrink-0 items-center justify-center px-2"
-      :class="{ 'pl-19.5': macOverlay }"
+      class="relative flex h-10 shrink-0 items-center justify-center px-2"
+      :class="{ 'px-21': macOverlay }"
       data-title-bar
       data-tauri-drag-region
     >
@@ -322,6 +322,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         "
       >
         <PanelLeft :size="14" aria-hidden="true" />
+      </Button>
+      <Button
+        variant="ghost"
+        class="absolute right-2 min-[761px]:hidden"
+        aria-label="Application settings"
+        title="Application settings"
+        data-title-settings
+        @click="openApplicationSettings($event)"
+      >
+        <Settings :size="14" aria-hidden="true" />
       </Button>
       <CommandCenter
         v-if="ready"
@@ -400,7 +410,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
           <p class="flex gap-1.25 min-w-0 mr-auto text-xs">
             Discard
             <strong
-              class="overflow-hidden text-ellipsis whitespace-nowrap text-primary font-medium"
+              class="overflow-hidden text-ellipsis whitespace-nowrap text-foreground font-medium"
             >
               {{ sessionLabel(closeTarget) }}
             </strong>

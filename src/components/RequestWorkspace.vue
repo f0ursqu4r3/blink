@@ -194,10 +194,10 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           @submit.prevent="send"
         >
           <div
-            class="flex items-stretch flex-1 min-w-0 h-8.5 border border-input rounded-xs bg-background focus-within:border-primary pointer-coarse:min-h-11"
+            class="flex items-stretch flex-1 min-w-0 h-8.5 border border-input rounded bg-background focus-within:border-primary pointer-coarse:min-h-11"
           >
             <div
-              class="relative border-r border-border shrink-0 text-primary data-[http-method=GET]:text-success data-[http-method=DELETE]:text-destructive"
+              class="method relative border-r border-border shrink-0"
               :data-http-method="session.draft.method"
             >
               <label :for="`${prefix}-method`" class="sr-only">
@@ -307,7 +307,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           aria-label="cURL export"
         >
           <div
-            class="flex items-center justify-between font-mono text-[0.5625rem] tracking-[0.08em] text-primary"
+            class="flex items-center justify-between font-mono text-[0.5625rem] tracking-[0.08em] text-warning"
           >
             <span>POSIX SHELL · INCLUDES CREDENTIALS</span>
             <Button variant="ghost" @click="copy(curl)">

@@ -87,7 +87,7 @@ const highlight = HighlightStyle.define([
   { tag: [tags.string, tags.special(tags.string)], color: "var(--success)" },
   {
     tag: [tags.number, tags.bool, tags.null, tags.atom],
-    color: "var(--primary)",
+    color: "var(--warning)",
   },
   {
     tag: [
@@ -96,7 +96,7 @@ const highlight = HighlightStyle.define([
       tags.operatorKeyword,
       tags.typeName,
     ],
-    color: "var(--info)",
+    color: "var(--keyword)",
   },
   { tag: [tags.comment, tags.meta], color: "var(--muted-foreground)" },
   { tag: tags.invalid, color: "var(--destructive)" },

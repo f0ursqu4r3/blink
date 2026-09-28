@@ -170,3 +170,12 @@ shape (8 px card radius, 4 px control radius), and the theme rule
 - Bottom panel.
 - Reading `~/.config/ghostty/config` or light/dark theme pairs.
 - Theming CodeMirror syntax colors beyond the existing tokens.
+
+## Revision 2026-09-27
+
+1. The accent marks only markers, focus, primary actions, checkboxes, the resize handle, progress, and the close-confirm bar; everything else uses neutral or semantic tokens.
+2. Semantic colors come from the palette: new `--warning` (slot 3) and `--keyword` (slot 5).
+3. HTTP method colors are defined once, in CSS (`.method[data-method]`).
+4. The default accent slot is Blue (4); stored themes keep their stored accent.
+5. The title bar is 40 px; macOS traffic lights are vertically centered and inset; the command center is truly centered.
+6. Below 761 px, a Settings button in the title bar opens Application Settings.

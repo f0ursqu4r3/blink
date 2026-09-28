@@ -105,7 +105,7 @@ describe("ApplicationSettingsDialog", () => {
     expect(JSON.parse(localStorage.getItem(THEME_KEY)!)).toMatchObject({
       name: "Custom",
       text: paper,
-      accent: 3,
+      accent: 4,
     });
     expect(document.documentElement.dataset.theme).toBe("ghostty");
     wrapper.unmount();

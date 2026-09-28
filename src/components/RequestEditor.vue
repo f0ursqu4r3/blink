@@ -287,7 +287,7 @@ function clearBody() {
       class="h-9 shrink-0 px-4 flex items-center justify-between border-b border-border bg-muted font-mono text-[0.625rem] tracking-[0.12em]"
     >
       <h2 class="font-semibold uppercase text-[0.6875rem]">
-        <span class="text-primary mr-2.5">01</span> Request
+        <span class="text-muted-foreground mr-2.5">01</span> Request
       </h2>
       <span class="text-muted-foreground">
         {{ busy ? "SENDING" : "COMPOSE" }}
@@ -302,7 +302,7 @@ function clearBody() {
           v-for="item in tabs"
           :key="item.id"
           :value="item.id"
-          class="tab-trigger h-9.5 px-3 border-b border-transparent text-xs text-muted-foreground flex gap-1.75 items-center hover:text-foreground hover:bg-muted data-[state=active]:text-primary data-[state=active]:border-b-primary pointer-coarse:min-h-11"
+          class="tab-trigger h-9.5 px-3 border-b border-transparent text-xs text-muted-foreground flex gap-1.75 items-center hover:text-foreground hover:bg-muted data-[state=active]:text-foreground data-[state=active]:border-b-primary pointer-coarse:min-h-11"
         >
           {{ item.label }}
           <span

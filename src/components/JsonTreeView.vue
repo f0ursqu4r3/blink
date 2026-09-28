@@ -141,7 +141,7 @@ function valueClass(value: unknown) {
   if (typeof value === 'string') return 'text-success';
   if (typeof value === 'boolean') return 'text-info';
   if (typeof value === 'object' && value && 'isLosslessNumber' in value)
-    return 'text-primary';
+    return 'text-warning';
   return 'text-muted-foreground';
 }
 // Vue can call the ref before the row is in the DOM. A detached row measures
@@ -210,7 +210,7 @@ function copyValue() {
               <button
                 v-if="rows[virtualRow.index].container"
                 type="button"
-                class="inline-flex w-3.5 h-5 flex-none items-center justify-center text-muted-foreground hover:text-primary hover:bg-accent"
+                class="inline-flex w-3.5 h-5 flex-none items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent"
                 :aria-label="`${collapsed.has(rows[virtualRow.index].id) ? 'Expand' : 'Collapse'} ${rows[virtualRow.index].key ?? 'root'}`"
                 :aria-expanded="!collapsed.has(rows[virtualRow.index].id)"
                 @click="toggle(rows[virtualRow.index])"

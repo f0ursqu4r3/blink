@@ -17,6 +17,8 @@
   --destructive: oklch(0.77 0.13 30);
   --frame: oklch(0.13 0.005 100);
   --info: oklch(0.8 0.07 240);
+  --warning: oklch(0.8 0.11 70);
+  --keyword: oklch(0.76 0.09 300);
   --selection: oklch(0.82 0.145 85 / 25%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -42,6 +44,8 @@
   --success: var(--term-2);
   --destructive: var(--term-1);
   --info: var(--term-4);
+  --warning: var(--term-3);
+  --keyword: var(--term-5);
   --selection: color-mix(in oklch, var(--term-selection-bg) 35%, transparent);
 }
 
@@ -66,6 +70,8 @@
   --color-destructive: var(--destructive);
   --color-frame: var(--frame);
   --color-info: var(--info);
+  --color-warning: var(--warning);
+  --color-keyword: var(--keyword);
 }
 
 @layer base {
@@ -111,7 +117,7 @@
     background: var(--muted);
     color: var(--foreground);
     border: 1px solid var(--input);
-    border-radius: 2px;
+    border-radius: 4px;
   }
   input::placeholder,
   textarea::placeholder {
@@ -135,6 +141,36 @@
 
 [data-surface="context-menu"] {
   background-color: var(--secondary) !important;
+}
+
+/* HTTP method colors. Elements set data-method (or data-http-method, where
+   data-method is already a test hook on a child) to the method name. */
+.method {
+  color: var(--foreground);
+}
+.method[data-method="GET"],
+.method[data-http-method="GET"] {
+  color: var(--success);
+}
+.method[data-method="POST"],
+.method[data-http-method="POST"] {
+  color: var(--warning);
+}
+.method[data-method="PUT"],
+.method[data-method="PATCH"],
+.method[data-http-method="PUT"],
+.method[data-http-method="PATCH"] {
+  color: var(--info);
+}
+.method[data-method="DELETE"],
+.method[data-http-method="DELETE"] {
+  color: var(--destructive);
+}
+.method[data-method="HEAD"],
+.method[data-method="OPTIONS"],
+.method[data-http-method="HEAD"],
+.method[data-http-method="OPTIONS"] {
+  color: var(--keyword);
 }
 
 @media (prefers-reduced-motion: reduce) {

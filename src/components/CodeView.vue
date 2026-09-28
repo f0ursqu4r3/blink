@@ -143,13 +143,13 @@ function measureRow(node: unknown) {
 :deep(.hljs-number),
 :deep(.hljs-literal),
 :deep(.hljs-symbol) {
-  color: var(--primary);
+  color: var(--warning);
 }
 :deep(.hljs-keyword),
 :deep(.hljs-tag),
 :deep(.hljs-selector-tag),
 :deep(.hljs-name) {
-  color: var(--info);
+  color: var(--keyword);
 }
 :deep(.hljs-comment),
 :deep(.hljs-meta) {

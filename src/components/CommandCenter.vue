@@ -75,7 +75,7 @@ defineExpose({ show });
       v-show="!open"
       ref="trigger"
       type="button"
-      class="flex h-6.5 w-full items-center gap-2 rounded-md border border-border bg-muted px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
+      class="flex h-6.5 w-full items-center gap-2 rounded border border-border bg-muted px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
       data-command-center-trigger
       aria-label="Search requests"
       title="Search requests · Cmd/Ctrl+P"
@@ -94,7 +94,7 @@ defineExpose({ show });
         @click="hide"
       />
       <div
-        class="absolute inset-x-0 top-0 z-50 overflow-hidden rounded-md border border-border bg-secondary shadow-[0_8px_24px_oklch(0_0_0/0.4)]"
+        class="absolute inset-x-0 top-0 z-50 overflow-hidden rounded-lg border border-border bg-secondary shadow-[0_8px_24px_oklch(0_0_0/0.4)]"
         data-surface="command-center"
       >
         <input
@@ -132,9 +132,11 @@ defineExpose({ show });
             @mousedown.prevent="choose(match.id)"
             @mousemove="index = i"
           >
-            <span class="w-14 shrink-0 font-mono text-[10px] text-primary">{{
-              match.method
-            }}</span>
+            <span
+              class="method w-14 shrink-0 font-mono text-[10px]"
+              :data-method="match.method"
+              >{{ match.method }}</span
+            >
             <span class="min-w-0 flex-1 truncate">{{ match.label }}</span>
             <span
               v-if="match.groupPath"
