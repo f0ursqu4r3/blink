@@ -340,8 +340,14 @@ export function encodeWorkspace(
         id,
         groupId,
         draft,
-        // The body file does not survive a restart.
-        response: response && { ...response, bodyId: undefined },
+        // The body file does not survive a restart. A truncated or binary
+        // preview is dropped too: keeping every preview up to the
+        // inspection limit could blow past the workspace save limit.
+        response: response && {
+          ...response,
+          body: response.truncated || response.binary ? "" : response.body,
+          bodyId: undefined,
+        },
         error,
         sentFingerprint,
         view,

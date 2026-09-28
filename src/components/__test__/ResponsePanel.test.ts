@@ -230,6 +230,26 @@ describe("stored bodies", () => {
     panel.unmount();
   });
 
+  it("shows a restored-preview notice when a truncated response survived a restart", () => {
+    const panel = render(
+      response({
+        truncated: true,
+        body: "",
+        sizeBytes: 5 * 1024 * 1024,
+        headers: [{ key: "Content-Type", value: "application/json" }],
+      }),
+    );
+    expect(panel.get("[data-response-truncated]").text()).toBe(
+      "Preview is not kept after a restart. Send the request again to inspect it.",
+    );
+    expect(
+      panel.findAll("button").some((button) => button.text() === "Save…"),
+    ).toBe(false);
+    expect(panel.find("[data-response-body]").exists()).toBe(false);
+    expect(panel.text()).not.toContain("Empty response body.");
+    panel.unmount();
+  });
+
   it("disables Save when the stored body is gone", () => {
     const panel = render(response({ truncated: true }));
     const save = panel.get("[data-save-response]");

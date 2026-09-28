@@ -103,6 +103,13 @@ const parsed = computed(() => {
 const savable = computed(() =>
   props.response ? canSaveResponse(props.response) : false,
 );
+// A truncated preview whose body did not survive a restart: nothing left to
+// show or save until the request is sent again.
+const restoredTruncated = computed(() =>
+  Boolean(
+    props.response?.truncated && !props.response.binary && !props.response.body,
+  ),
+);
 // UTF-8 size of the preview, shown in the truncated bar.
 const previewSize = computed(() =>
   props.response?.truncated ? new Blob([props.response.body]).size : 0,
@@ -496,23 +503,29 @@ function copyHeaderPair() {
         >
           {{ saveError }}
         </p>
-        <!-- prettier-ignore -->
         <p
           v-if="tab === 'body' && response.truncated && !response.binary"
           data-response-truncated
           role="status"
           class="flex flex-wrap items-center gap-1 py-1.5 px-3.5 border-b border-border text-muted-foreground font-mono text-[0.625rem]"
         >
-          Preview shows the first {{ formatBytes(previewSize) }} of {{ formatBytes(response.sizeBytes) }}.
-          <button
-            type="button"
-            class="underline decoration-dotted underline-offset-3 hover:text-foreground disabled:no-underline"
-            :disabled="!savable || saving"
-            @click="saveBody"
-          >
-            Save…
-          </button>
-          to get the full body.
+          <template v-if="restoredTruncated">
+            Preview is not kept after a restart. Send the request again to
+            inspect it.
+          </template>
+          <!-- prettier-ignore -->
+          <template v-else>
+            Preview shows the first {{ formatBytes(previewSize) }} of {{ formatBytes(response.sizeBytes) }}.
+            <button
+              type="button"
+              class="underline decoration-dotted underline-offset-3 hover:text-foreground disabled:no-underline"
+              :disabled="!savable || saving"
+              @click="saveBody"
+            >
+              Save…
+            </button>
+            to get the full body.
+          </template>
         </p>
         <TabsContent
           value="body"
@@ -552,7 +565,10 @@ function copyHeaderPair() {
             :filter="search"
             :wrap="wrap"
           />
-          <p v-else class="p-4 text-muted-foreground text-xs">
+          <p
+            v-else-if="!restoredTruncated"
+            class="p-4 text-muted-foreground text-xs"
+          >
             Empty response body.
           </p>
         </TabsContent>

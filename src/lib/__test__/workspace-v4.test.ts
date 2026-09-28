@@ -105,4 +105,60 @@ describe("workspace v4 open tabs", () => {
       decodeWorkspace(JSON.stringify(data)).sessions[0].response!.bodyId,
     ).toBeUndefined();
   });
+
+  it("empties the body of a truncated preview so it does not blow past the save limit", () => {
+    const session = createSession();
+    session.response = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 5 * 1024 * 1024,
+      headers: [],
+      body: "x".repeat(4 * 1024 * 1024),
+      truncated: true,
+      binary: false,
+    };
+    const encoded = JSON.parse(encodeWorkspace([session], session.id));
+    expect(encoded.tabs[0].response.body).toBe("");
+    const restored = decodeWorkspace(JSON.stringify(encoded)).sessions[0]
+      .response!;
+    expect(restored).toMatchObject({
+      body: "",
+      truncated: true,
+      binary: false,
+      sizeBytes: 5 * 1024 * 1024,
+    });
+  });
+
+  it("empties the body of a binary response", () => {
+    const session = createSession();
+    session.response = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 2048,
+      headers: [],
+      body: "",
+      binary: true,
+      truncated: true,
+    };
+    const encoded = JSON.parse(encodeWorkspace([session], session.id));
+    expect(encoded.tabs[0].response.body).toBe("");
+    expect(encoded.tabs[0].response.binary).toBe(true);
+    expect(encoded.tabs[0].response.truncated).toBe(true);
+  });
+
+  it("keeps the body of a complete text response", () => {
+    const session = createSession();
+    session.response = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 5,
+      headers: [],
+      body: "hello",
+    };
+    const encoded = JSON.parse(encodeWorkspace([session], session.id));
+    expect(encoded.tabs[0].response.body).toBe("hello");
+  });
 });
