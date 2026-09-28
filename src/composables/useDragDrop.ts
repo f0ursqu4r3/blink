@@ -156,6 +156,16 @@ function onKey(event: KeyboardEvent) {
   end();
 }
 
+/**
+ * macOS Ctrl+click opens a context menu from a primary-button press: drop the
+ * pending press so moving to the menu does not start a drag. A long-press
+ * that already started a drag keeps it.
+ */
+function onContextMenu(event: MouseEvent) {
+  if (state.payload) event.preventDefault();
+  else end();
+}
+
 function onTouchMove(event: TouchEvent) {
   // Keep the page from scrolling under an active touch drag.
   if (state.payload && event.cancelable) event.preventDefault();
@@ -167,6 +177,7 @@ function listen() {
   window.addEventListener("pointercancel", end);
   window.addEventListener("keydown", onKey, { capture: true });
   window.addEventListener("blur", end);
+  window.addEventListener("contextmenu", onContextMenu);
   window.addEventListener("touchmove", onTouchMove, { passive: false });
 }
 
@@ -176,6 +187,7 @@ function unlisten() {
   window.removeEventListener("pointercancel", end);
   window.removeEventListener("keydown", onKey, { capture: true });
   window.removeEventListener("blur", end);
+  window.removeEventListener("contextmenu", onContextMenu);
   window.removeEventListener("touchmove", onTouchMove);
 }
 

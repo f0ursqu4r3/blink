@@ -128,6 +128,28 @@ describe("useDragDrop", () => {
     expect(drag.state.payload).toBeNull();
   });
 
+  it("drops a pending press when a context menu opens (macOS Ctrl+click)", () => {
+    drag.startPress(
+      pointer("pointerdown", 100, 100, { ctrlKey: true }),
+      source,
+    );
+    window.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    move(100, 140);
+    expect(drag.state.payload).toBeNull();
+  });
+
+  it("keeps an active drag when a context menu event fires (Android long-press)", () => {
+    drag.startPress(pointer("pointerdown", 100, 100), source);
+    move(100, 120);
+    const event = new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+    });
+    window.dispatchEvent(event);
+    expect(drag.state.payload).not.toBeNull();
+    expect(event.defaultPrevented).toBe(true);
+  });
+
   it("marks the document when no target accepts", () => {
     hit = null;
     drag.startPress(pointer("pointerdown", 100, 100), source);
