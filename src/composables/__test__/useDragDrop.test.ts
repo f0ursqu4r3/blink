@@ -150,6 +150,59 @@ describe("useDragDrop", () => {
     expect(event.defaultPrevented).toBe(true);
   });
 
+  it("blocks text selection from the press until the drag ends", () => {
+    const select = () => {
+      const event = new Event("selectstart", {
+        bubbles: true,
+        cancelable: true,
+      });
+      surfaceEl.dispatchEvent(event);
+      return event.defaultPrevented;
+    };
+    drag.startPress(pointer("pointerdown", 100, 100), source);
+    expect(select()).toBe(true);
+    move(100, 120);
+    up(100, 120);
+    expect(select()).toBe(false);
+  });
+
+  it("lets Escape through during a pending press and drops the press", () => {
+    const outer = vi.fn();
+    window.addEventListener("keydown", outer);
+    drag.startPress(pointer("pointerdown", 100, 100), source);
+    const event = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    surfaceEl.dispatchEvent(event);
+    window.removeEventListener("keydown", outer);
+    expect(outer).toHaveBeenCalledTimes(1);
+    expect(event.defaultPrevented).toBe(false);
+    move(100, 120);
+    expect(drag.state.payload).toBeNull();
+  });
+
+  it("clears the source's touch long-press when a touch drag starts", () => {
+    vi.useFakeTimers();
+    const row = document.createElement("div");
+    surfaceEl.append(row);
+    const touchMoves = vi.fn();
+    row.addEventListener("pointermove", (event) => {
+      if ((event as PointerEvent).pointerType === "touch") touchMoves();
+    });
+    row.addEventListener("pointerdown", (pressed) =>
+      drag.startPress(pressed as PointerEvent, source),
+    );
+    row.dispatchEvent(
+      pointer("pointerdown", 100, 100, { pointerType: "touch" }),
+    );
+    expect(touchMoves).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(250);
+    expect(drag.state.payload).not.toBeNull();
+    expect(touchMoves).toHaveBeenCalledTimes(1);
+  });
+
   it("marks the document when no target accepts", () => {
     hit = null;
     drag.startPress(pointer("pointerdown", 100, 100), source);

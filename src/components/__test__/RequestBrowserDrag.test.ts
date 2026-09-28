@@ -199,6 +199,30 @@ describe("RequestBrowser drag and drop", () => {
     expect(onToggleGroup).toHaveBeenCalledWith(1);
   });
 
+  it("does not open the context menu while a touch drag is held still", async () => {
+    vi.useFakeTimers();
+    const { wrapper } = setup([first, second], [platform]);
+    const row = wrapper.get(`[data-drop-key="request-${first.id}"]`).element;
+    row.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        button: 0,
+        clientX: 20,
+        clientY: 40,
+        pointerType: "touch",
+      }),
+    );
+    // Reka starts its long-press timer one tick after pointerdown.
+    await nextTick();
+    vi.advanceTimersByTime(250);
+    expect(useDragDrop().state.payload).not.toBeNull();
+    // Reka also clears the timer one tick after the pointermove.
+    await nextTick();
+    vi.advanceTimersByTime(1000);
+    await nextTick();
+    expect(document.querySelector('[data-state="open"]')).toBeNull();
+  });
+
   it("moves the selection down with Alt+ArrowDown", async () => {
     const { wrapper, onMoveRequests } = setup([first, second], [platform]);
     await wrapper

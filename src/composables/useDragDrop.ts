@@ -48,6 +48,7 @@ let press: {
   source: DragSource;
   origin: Point;
   touch: boolean;
+  el: Element | null;
   timer?: ReturnType<typeof setTimeout>;
 } | null = null;
 let expandTimer: ReturnType<typeof setTimeout> | undefined;
@@ -121,6 +122,17 @@ function update(point: Point) {
 function activate(point: Point) {
   if (!press) return;
   clearTimeout(press.timer);
+  // A touch or pen move on the source clears the context menu trigger's
+  // long-press timer, so holding still during the drag does not open it.
+  if (press.touch)
+    press.el?.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: point.x,
+        clientY: point.y,
+        pointerType: "touch",
+      }),
+    );
   press.source.onStart?.();
   state.payload = press.source.payload();
   state.preview = press.source.preview();
@@ -151,6 +163,8 @@ function onUp() {
 
 function onKey(event: KeyboardEvent) {
   if (event.key !== "Escape") return;
+  // Before the drag starts, Escape belongs to the page (dialogs, menus).
+  if (!state.payload) return end();
   event.preventDefault();
   event.stopPropagation();
   end();
@@ -166,6 +180,11 @@ function onContextMenu(event: MouseEvent) {
   else end();
 }
 
+/** No text selection from a press on a row, before or during the drag. */
+function onSelectStart(event: Event) {
+  event.preventDefault();
+}
+
 function onTouchMove(event: TouchEvent) {
   // Keep the page from scrolling under an active touch drag.
   if (state.payload && event.cancelable) event.preventDefault();
@@ -178,6 +197,7 @@ function listen() {
   window.addEventListener("keydown", onKey, { capture: true });
   window.addEventListener("blur", end);
   window.addEventListener("contextmenu", onContextMenu);
+  window.addEventListener("selectstart", onSelectStart);
   window.addEventListener("touchmove", onTouchMove, { passive: false });
 }
 
@@ -188,6 +208,7 @@ function unlisten() {
   window.removeEventListener("keydown", onKey, { capture: true });
   window.removeEventListener("blur", end);
   window.removeEventListener("contextmenu", onContextMenu);
+  window.removeEventListener("selectstart", onSelectStart);
   window.removeEventListener("touchmove", onTouchMove);
 }
 
@@ -265,9 +286,13 @@ function startPress(event: PointerEvent, source: DragSource) {
   if (event.button !== 0 || press || state.payload) return;
   const target = event.target as Element | null;
   if (target?.closest?.("input, textarea, select, [data-no-drag]")) return;
-  const touch = event.pointerType === "touch";
-  press = { source, origin: { x: event.clientX, y: event.clientY }, touch };
-  if (touch)
+  press = {
+    source,
+    origin: { x: event.clientX, y: event.clientY },
+    touch: event.pointerType !== "mouse",
+    el: event.currentTarget as Element | null,
+  };
+  if (press.touch)
     press.timer = setTimeout(() => {
       if (press) activate(press.origin);
     }, TOUCH_DELAY);
