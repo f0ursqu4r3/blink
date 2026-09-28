@@ -96,7 +96,7 @@ const highlight = HighlightStyle.define([
       tags.operatorKeyword,
       tags.typeName,
     ],
-    color: "oklch(0.8 0.07 240)",
+    color: "var(--info)",
   },
   { tag: [tags.comment, tags.meta], color: "var(--muted-foreground)" },
   { tag: tags.invalid, color: "var(--destructive)" },
@@ -121,7 +121,7 @@ const theme = EditorView.theme(
     ".cm-line": { padding: "0 1rem" },
     ".cm-placeholder": { color: "var(--muted-foreground)", opacity: "0.85" },
     "&.cm-focused .cm-selectionBackground, .cm-selectionBackground": {
-      backgroundColor: "oklch(0.82 0.145 85 / 25%)",
+      backgroundColor: "var(--selection)",
     },
     ".cm-matchingBracket": { outline: "1px solid var(--border)" },
     ".cm-errorLine": {

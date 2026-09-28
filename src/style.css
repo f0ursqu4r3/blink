@@ -15,10 +15,34 @@
   --ring: var(--primary);
   --success: oklch(0.8 0.1 145);
   --destructive: oklch(0.77 0.13 30);
+  --frame: oklch(0.13 0.005 100);
+  --info: oklch(0.8 0.07 240);
+  --selection: oklch(0.82 0.145 85 / 25%);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+}
+
+/* Ghostty theme: every token derives from the --term-* palette that
+   src/lib/theme.ts writes. */
+:root[data-theme="ghostty"] {
+  color-scheme: var(--term-scheme);
+  --background: var(--term-bg);
+  --foreground: var(--term-fg);
+  --muted: color-mix(in oklch, var(--term-fg) 5%, var(--term-bg));
+  --secondary: color-mix(in oklch, var(--term-fg) 9%, var(--term-bg));
+  --accent: color-mix(in oklch, var(--term-fg) 14%, var(--term-bg));
+  --border: color-mix(in oklch, var(--term-fg) 18%, var(--term-bg));
+  --input: color-mix(in oklch, var(--term-fg) 28%, var(--term-bg));
+  --muted-foreground: color-mix(in oklch, var(--term-fg) 64%, var(--term-bg));
+  --frame: color-mix(in oklch, var(--term-bg), black 22%);
+  --primary: var(--term-accent);
+  --primary-foreground: var(--term-bg);
+  --success: var(--term-2);
+  --destructive: var(--term-1);
+  --info: var(--term-4);
+  --selection: color-mix(in oklch, var(--term-selection-bg) 35%, transparent);
 }
 
 @theme inline {
@@ -40,6 +64,8 @@
   --color-ring: var(--ring);
   --color-success: var(--success);
   --color-destructive: var(--destructive);
+  --color-frame: var(--frame);
+  --color-info: var(--info);
 }
 
 @layer base {
@@ -97,7 +123,7 @@
     outline-offset: -2px;
   }
   ::selection {
-    background: oklch(0.82 0.145 85 / 25%);
+    background: var(--selection);
   }
   pre,
   code,

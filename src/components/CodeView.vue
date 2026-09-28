@@ -149,7 +149,7 @@ function measureRow(node: unknown) {
 :deep(.hljs-tag),
 :deep(.hljs-selector-tag),
 :deep(.hljs-name) {
-  color: oklch(0.8 0.07 240);
+  color: var(--info);
 }
 :deep(.hljs-comment),
 :deep(.hljs-meta) {

@@ -137,9 +137,9 @@ function toggle(row: JsonRow) {
 }
 
 function valueClass(value: unknown) {
-  if (value === null) return 'text-[oklch(0.8_0.07_240)]';
+  if (value === null) return 'text-info';
   if (typeof value === 'string') return 'text-success';
-  if (typeof value === 'boolean') return 'text-[oklch(0.8_0.07_240)]';
+  if (typeof value === 'boolean') return 'text-info';
   if (typeof value === 'object' && value && 'isLosslessNumber' in value)
     return 'text-primary';
   return 'text-muted-foreground';
