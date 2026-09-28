@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { buildSchema, introspectionFromSchema } from "graphql";
 import { clearSchemaCache } from "@/lib/graphql-schema";
+import { useVariablesPane } from "@/composables/useVariablesPane";
 import RequestEditor from "../RequestEditor.vue";
 import { createDraft } from "@/lib/request";
 
@@ -31,6 +32,8 @@ afterEach(() => {
   wrappers.splice(0).forEach((w) => w.unmount());
   send.mockReset();
   clearSchemaCache();
+  useVariablesPane().collapsed.value = false;
+  useVariablesPane().height.value = 128;
 });
 
 const formatButton = (w: ReturnType<typeof mount>) =>
@@ -355,5 +358,67 @@ describe("RequestEditor – GraphQL body", () => {
         .find("[data-testid='body-editor']")
         .attributes("data-error-offset"),
     ).toBeUndefined();
+  });
+  const variablesToggle = (w: ReturnType<typeof mount>) =>
+    w.find("button[aria-controls$='-variables-pane']");
+
+  it("collapses and expands the variables pane", async () => {
+    const { wrapper } = mountEditor("graphql");
+    const toggle = variablesToggle(wrapper);
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+    expect(wrapper.find("[data-variables-resize]").exists()).toBe(true);
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-expanded")).toBe("false");
+    expect(
+      (wrapper.find("[data-testid='variables-editor']").element as HTMLElement)
+        .closest("[id$='-variables-pane']")!
+        .getAttribute("style"),
+    ).toContain("display: none");
+    expect(wrapper.find("[data-variables-resize]").exists()).toBe(false);
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-expanded")).toBe("true");
+  });
+  it("keeps the collapsed state across editors", async () => {
+    const first = mountEditor("graphql").wrapper;
+    await variablesToggle(first).trigger("click");
+    const second = mountEditor("graphql").wrapper;
+    expect(variablesToggle(second).attributes("aria-expanded")).toBe("false");
+  });
+  it("applies the shared height to the variables pane", () => {
+    useVariablesPane().height.value = 200;
+    const { wrapper } = mountEditor("graphql");
+    expect(
+      wrapper.find("[id$='-variables-pane']").attributes("style"),
+    ).toContain("height: 200px");
+    expect(
+      wrapper.find("[data-variables-resize]").attributes("aria-valuenow"),
+    ).toBe("200");
+  });
+  it("resizes the variables pane from the keyboard", async () => {
+    const { wrapper } = mountEditor("graphql");
+    const handle = wrapper.find("[data-variables-resize]");
+    expect(handle.attributes("role")).toBe("separator");
+    expect(handle.attributes("aria-orientation")).toBe("horizontal");
+    await handle.trigger("keydown", { key: "Home" });
+    expect(useVariablesPane().height.value).toBe(64);
+  });
+  it("opens collapsed variables to show a format error", async () => {
+    const { wrapper } = mountEditor("graphql");
+    await variablesToggle(wrapper).trigger("click");
+    await wrapper.setProps({
+      modelValue: {
+        ...wrapper.props("modelValue"),
+        body: "{ a }",
+        variables: "{",
+      },
+    });
+    await formatButton(wrapper).trigger("click");
+    await flushPromises();
+    expect(variablesToggle(wrapper).attributes("aria-expanded")).toBe("true");
+    expect(
+      wrapper
+        .find("[data-testid='variables-editor']")
+        .attributes("data-error-offset"),
+    ).toBe("1");
   });
 });

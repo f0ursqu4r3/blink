@@ -71,3 +71,48 @@ test("format error names the line and marks it in the editor", async ({
   await page.keyboard.type("1");
   await expect(page.locator(".cm-errorLine")).toHaveCount(0);
 });
+
+test("variables pane resizes by drag and collapses", async ({ page }) => {
+  await page.goto("/");
+  await page.getByLabel("HTTP method").selectOption("POST");
+  const requestTabs = page.getByRole("tablist", { name: "Request options" });
+  await requestTabs.getByRole("tab", { name: "Body" }).click();
+  await page
+    .getByRole("combobox", { name: "Body", exact: true })
+    .selectOption("graphql");
+  const pane = page.locator("[id$='-variables-pane']");
+  const handle = page.getByRole("separator", { name: "Resize variables" });
+  const height = async () => (await pane.boundingBox())!.height;
+  expect(await height()).toBe(128);
+
+  const box = (await handle.boundingBox())!;
+  const x = box.x + box.width / 2;
+  const y = box.y + box.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y - 60, { steps: 5 });
+  await page.mouse.up();
+  expect(await height()).toBe(188);
+
+  await page.mouse.move(x, y - 60);
+  await page.mouse.down();
+  await page.mouse.move(x, y - 2000, { steps: 5 });
+  await page.mouse.up();
+  const query = await page
+    .getByLabel("GraphQL query", { exact: true })
+    .evaluate((el) => el.closest(".cm-editor")!.getBoundingClientRect().height);
+  expect(query).toBeGreaterThanOrEqual(96);
+
+  await handle.focus();
+  await page.keyboard.press("Home");
+  expect(await height()).toBe(64);
+
+  const toggle = page.getByRole("button", { name: "Variables" });
+  await toggle.click();
+  await expect(toggle).toHaveAttribute("aria-expanded", "false");
+  await expect(pane).toBeHidden();
+  await expect(handle).toHaveCount(0);
+  await toggle.click();
+  await expect(pane).toBeVisible();
+  expect(await height()).toBe(64);
+});

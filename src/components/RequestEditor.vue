@@ -1,9 +1,15 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
+import { computed, nextTick, onBeforeUnmount, ref, useId, watch } from "vue";
+import {
+  MIN_VARIABLES_HEIGHT,
+  resizeVariables,
+  useVariablesPane,
+} from "@/composables/useVariablesPane";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
 import {
   Braces,
   Check,
+  ChevronDown,
   KeyRound,
   LoaderCircle,
   Network,
@@ -45,6 +51,51 @@ const tab = defineModel<string>("tab", { default: "query" });
 const formatError = ref("");
 const bodyEditor = ref<InstanceType<typeof CodeEditor>>();
 const variablesEditor = ref<InstanceType<typeof CodeEditor>>();
+const variablesPane = useVariablesPane();
+
+const queryEditorHeight = () =>
+  (bodyEditor.value?.$el as HTMLElement | undefined)?.clientHeight ?? 0;
+function startVariablesResize(event: PointerEvent) {
+  const handle = event.currentTarget as HTMLElement;
+  const startY = event.clientY;
+  const start = variablesPane.height.value;
+  const query = queryEditorHeight();
+  const move = (e: PointerEvent) =>
+    (variablesPane.height.value = resizeVariables(
+      start,
+      startY - e.clientY,
+      query,
+    ));
+  const stop = () => {
+    handle.removeEventListener("pointermove", move);
+    handle.removeEventListener("pointerup", stop);
+    handle.removeEventListener("pointercancel", stop);
+  };
+  handle.setPointerCapture?.(event.pointerId);
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", stop);
+  handle.addEventListener("pointercancel", stop);
+}
+function resizeVariablesWithKeyboard(event: KeyboardEvent) {
+  const step = event.shiftKey ? 64 : 16;
+  const delta =
+    event.key === "ArrowUp"
+      ? step
+      : event.key === "ArrowDown"
+        ? -step
+        : event.key === "Home"
+          ? -Infinity
+          : event.key === "End"
+            ? Infinity
+            : null;
+  if (delta === null) return;
+  event.preventDefault();
+  variablesPane.height.value = resizeVariables(
+    variablesPane.height.value,
+    delta,
+    queryEditorHeight(),
+  );
+}
 const bodyPlaceholder = computed(() =>
   draft.value.bodyMode === "json"
     ? '{\n  "key": "value"\n}'
@@ -171,7 +222,10 @@ function showFormatError(
   }
   const reason = location.reason.replace(/\.?$/, ".");
   formatError.value = `${label} at ${describeLocation(location)}: ${reason} ${outcome}`;
-  editor?.markError(location.offset);
+  if (editor && editor === variablesEditor.value)
+    variablesPane.collapsed.value = false;
+  // Wait for the pane to show so the editor can focus and scroll.
+  void nextTick(() => editor?.markError(location.offset));
 }
 async function formatGraphqlBody() {
   const body = draft.value.body;
@@ -454,25 +508,55 @@ function clearBody() {
             @update:model-value="setBody"
           />
           <template v-if="draft.bodyMode === 'graphql'">
-            <label
-              :id="`${id}-variables-label`"
-              :for="`${id}-variables`"
-              class="shrink-0 px-3 py-2 border-y border-border text-muted-foreground text-xs"
-            >
-              Variables
-            </label>
-            <CodeEditor
-              ref="variablesEditor"
-              :id="`${id}-variables`"
-              :model-value="draft.variables ?? ''"
-              language="json"
-              :disabled="busy"
-              :placeholder="variablesPlaceholder"
-              :aria-labelledby="`${id}-variables-label`"
-              test-id="variables-editor"
-              class="h-32 shrink-0 pointer-coarse:text-base"
-              @update:model-value="setVariables"
+            <div
+              v-if="!variablesPane.collapsed.value"
+              role="separator"
+              aria-orientation="horizontal"
+              aria-label="Resize variables"
+              tabindex="0"
+              :aria-valuemin="MIN_VARIABLES_HEIGHT"
+              :aria-valuenow="variablesPane.height.value"
+              data-variables-resize
+              class="relative z-1 -mb-1.5 h-1.5 shrink-0 cursor-row-resize touch-none hover:bg-primary/40 focus-visible:bg-primary/40 -outline-offset-2"
+              @pointerdown="startVariablesResize"
+              @keydown="resizeVariablesWithKeyboard"
             />
+            <button
+              type="button"
+              class="flex shrink-0 items-center gap-1.5 px-3 py-2 border-y border-border text-left text-muted-foreground text-xs hover:text-foreground"
+              :aria-expanded="!variablesPane.collapsed.value"
+              :aria-controls="`${id}-variables-pane`"
+              @click="
+                variablesPane.collapsed.value = !variablesPane.collapsed.value
+              "
+            >
+              <ChevronDown
+                :size="12"
+                aria-hidden="true"
+                class="transition-transform"
+                :class="{ '-rotate-90': variablesPane.collapsed.value }"
+              />
+              <span :id="`${id}-variables-label`">Variables</span>
+            </button>
+            <div
+              v-show="!variablesPane.collapsed.value"
+              :id="`${id}-variables-pane`"
+              class="flex shrink-0 flex-col"
+              :style="{ height: `${variablesPane.height.value}px` }"
+            >
+              <CodeEditor
+                ref="variablesEditor"
+                :id="`${id}-variables`"
+                :model-value="draft.variables ?? ''"
+                language="json"
+                :disabled="busy"
+                :placeholder="variablesPlaceholder"
+                :aria-labelledby="`${id}-variables-label`"
+                test-id="variables-editor"
+                class="flex-1 pointer-coarse:text-base"
+                @update:model-value="setVariables"
+              />
+            </div>
           </template>
         </template>
         <p
