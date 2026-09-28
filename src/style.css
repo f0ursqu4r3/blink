@@ -86,6 +86,16 @@
     min-width: 320px;
     height: 100%;
   }
+  /* Pointer drag in progress (useDragDrop). */
+  html[data-dragging],
+  html[data-dragging] * {
+    cursor: grabbing !important;
+    user-select: none;
+  }
+  html[data-dragging][data-drag-invalid],
+  html[data-dragging][data-drag-invalid] * {
+    cursor: not-allowed !important;
+  }
   /* Desktop layout owns every scroll region; the page itself never scrolls. */
   @media (min-width: 761px) {
     html,
