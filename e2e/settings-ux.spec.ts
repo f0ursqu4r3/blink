@@ -99,6 +99,7 @@ test("tooltip opens from a touch tap", async ({ browser }) => {
   const help = page
     .getByRole("dialog", { name: "Application Settings" })
     .getByRole("button", { name: "Token syntax help" });
+  await help.scrollIntoViewIfNeeded();
   const box = await help.boundingBox();
   if (!box) throw new Error("Tooltip trigger has no touch target.");
   await page.touchscreen.tap(box.x + box.width / 2, box.y + box.height / 2);
