@@ -114,6 +114,17 @@ fn following(max_redirects: usize) -> TransportOptions {
     }
 }
 
+fn store() -> (tempfile::TempDir, ResponseStore) {
+    let root = tempfile::tempdir().unwrap();
+    let store = ResponseStore::new(root.path().join("responses"));
+    (root, store)
+}
+
+async fn run(request: RequestInput, options: TransportOptions) -> Result<ResponseOutput, String> {
+    let (_root, store) = store();
+    execute(request, options, &store, DOWNLOAD_LIMIT).await
+}
+
 #[test]
 fn resolves_environment_references_without_exposing_values_in_errors() {
     std::env::set_var("BLINK_TOKEN_ENV_TEST", "from-environment");
@@ -137,7 +148,7 @@ async fn get_omits_body_and_measures_full_response() {
     );
     let mut request = input(url);
     request.body = Some("not sent".into());
-    let result = execute(request, options()).await.unwrap();
+    let result = run(request, options()).await.unwrap();
     assert_eq!(result.status, 200);
     assert_eq!(result.body, "{\"ok\":true}");
     assert_eq!(result.size_bytes, result.body.len());
@@ -165,7 +176,7 @@ async fn post_preserves_whitespace_and_duplicate_headers() {
             value: "b".into(),
         },
     ];
-    assert_eq!(execute(request, options()).await.unwrap().status, 201);
+    assert_eq!(run(request, options()).await.unwrap().status, 201);
     let wire = received.recv().unwrap();
     assert!(wire.ends_with("  exact body\n"));
     assert!(wire.contains("x-tag: a\r\n"));
@@ -180,33 +191,24 @@ async fn returns_redirect_without_following_it() {
         String::new(),
         Duration::ZERO,
     );
-    assert_eq!(execute(input(url), options()).await.unwrap().status, 302);
+    assert_eq!(run(input(url), options()).await.unwrap().status, 302);
 }
 
 #[tokio::test]
 async fn error_status_retains_body() {
     let (url, _received) = fixture("401 Unauthorized", "", "denied".into(), Duration::ZERO);
-    let result = execute(input(url), options()).await.unwrap();
+    let result = run(input(url), options()).await.unwrap();
     assert_eq!(result.status, 401);
     assert_eq!(result.body, "denied");
 }
 
 #[tokio::test]
-async fn rejects_oversized_response() {
-    let (url, _received) = fixture("200 OK", "", "x".repeat(RESPONSE_LIMIT + 1), Duration::ZERO);
-    assert!(execute(input(url), options())
-        .await
-        .unwrap_err()
-        .contains("4 MiB"));
-}
-
-#[tokio::test]
 async fn validates_urls_and_does_not_leak_query_secrets_on_error() {
-    assert!(execute(input("file:///tmp/example".into()), options())
+    assert!(run(input("file:///tmp/example".into()), options())
         .await
         .unwrap_err()
         .contains("HTTP"));
-    assert!(execute(
+    assert!(run(
         input("https://user:password@example.test".into()),
         options()
     )
@@ -219,7 +221,7 @@ async fn validates_urls_and_does_not_leak_query_secrets_on_error() {
         listener.local_addr().unwrap()
     );
     drop(listener);
-    let error = execute(input(url), options()).await.unwrap_err();
+    let error = run(input(url), options()).await.unwrap_err();
     assert!(!error.contains("private-value"));
 }
 
@@ -234,9 +236,7 @@ async fn follows_redirects_and_reports_the_final_url() {
         ),
         ("200 OK", String::new(), b"done".to_vec()),
     ]);
-    let result = execute(input(format!("{base}/a")), following(5))
-        .await
-        .unwrap();
+    let result = run(input(format!("{base}/a")), following(5)).await.unwrap();
     assert_eq!(result.status, 200);
     assert_eq!(result.body, "done");
     assert_eq!(
@@ -254,7 +254,7 @@ async fn stops_at_the_redirect_limit() {
         ("200 OK", String::new(), b"done".to_vec()),
     ]);
     assert_eq!(
-        execute(input(format!("{base}/a")), following(1))
+        run(input(format!("{base}/a")), following(1))
             .await
             .unwrap_err(),
         "Stopped after 1 redirects."
@@ -264,7 +264,7 @@ async fn stops_at_the_redirect_limit() {
 #[tokio::test]
 async fn omits_redirect_fields_without_a_redirect() {
     let base = serve(vec![("200 OK", String::new(), b"ok".to_vec())]);
-    let result = execute(input(base), following(5)).await.unwrap();
+    let result = run(input(base), following(5)).await.unwrap();
     assert_eq!(result.final_url, None);
     assert_eq!(result.redirect_count, None);
 }
@@ -294,7 +294,7 @@ async fn rejects_out_of_range_transport_options() {
         },
     ] {
         assert_eq!(
-            execute(input("http://127.0.0.1:9/".into()), invalid)
+            run(input("http://127.0.0.1:9/".into()), invalid)
                 .await
                 .unwrap_err(),
             "Invalid transport settings."
@@ -315,7 +315,7 @@ fn transport_options_use_the_frontend_field_names() {
 #[tokio::test]
 async fn timeout_message_uses_the_configured_limits() {
     let (url, _received) = fixture("200 OK", "", "late".into(), Duration::from_secs(3));
-    let error = execute(
+    let error = run(
         input(url),
         TransportOptions {
             timeout_seconds: 1,
@@ -328,5 +328,75 @@ async fn timeout_message_uses_the_configured_limits() {
     assert_eq!(
         error,
         "Request timed out (1 s connection / 1 s total limit)."
+    );
+}
+
+#[tokio::test]
+async fn truncates_the_preview_and_stores_the_full_body() {
+    let body = "x".repeat(1024 * 1024 + 10).into_bytes();
+    let base = serve(vec![("200 OK", String::new(), body.clone())]);
+    let (_root, store) = store();
+    let result = execute(
+        input(base),
+        TransportOptions {
+            inspection_limit_mib: 1,
+            ..options()
+        },
+        &store,
+        DOWNLOAD_LIMIT,
+    )
+    .await
+    .unwrap();
+    assert!(result.truncated);
+    assert!(!result.binary);
+    assert_eq!(result.size_bytes, body.len());
+    assert_eq!(result.body.len(), 1024 * 1024);
+    let path = store.path(result.body_id.as_deref().unwrap()).unwrap();
+    assert_eq!(std::fs::read(path).unwrap(), body);
+}
+
+#[tokio::test]
+async fn detects_binary_bodies() {
+    for body in [vec![b'a', 0, b'b'], vec![b'a', 0xff, b'b']] {
+        let base = serve(vec![("200 OK", String::new(), body)]);
+        let result = run(input(base), options()).await.unwrap();
+        assert!(result.binary);
+        assert_eq!(result.body, "");
+    }
+}
+
+#[tokio::test]
+async fn a_character_cut_at_the_preview_limit_stays_text() {
+    // "é" is two bytes. Put its first byte at the last preview position.
+    let mut body = "a".repeat(1024 * 1024 - 1).into_bytes();
+    body.extend_from_slice("é tail".as_bytes());
+    let base = serve(vec![("200 OK", String::new(), body)]);
+    let result = run(
+        input(base),
+        TransportOptions {
+            inspection_limit_mib: 1,
+            ..options()
+        },
+    )
+    .await
+    .unwrap();
+    assert!(!result.binary);
+    assert!(result.truncated);
+    assert_eq!(result.body.len(), 1024 * 1024 - 1);
+}
+
+#[tokio::test]
+async fn rejects_a_body_over_the_download_limit_and_keeps_no_file() {
+    let base = serve(vec![("200 OK", String::new(), vec![b'x'; 64])]);
+    let (root, store) = store();
+    let error = execute(input(base), options(), &store, 32)
+        .await
+        .unwrap_err();
+    assert_eq!(error, "Response exceeds the 1 GiB download limit.");
+    assert_eq!(
+        std::fs::read_dir(root.path().join("responses"))
+            .unwrap()
+            .count(),
+        0
     );
 }

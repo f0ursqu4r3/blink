@@ -1,3 +1,4 @@
+use std::io::Write;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
     Arc,
@@ -7,7 +8,10 @@ use std::time::{Duration, Instant};
 use reqwest::{header::HeaderName, header::HeaderValue, redirect::Policy, Client, Method};
 use serde::{Deserialize, Serialize};
 
-const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
+use response_store::{ResponseStore, STORE_ERROR};
+
+const MIB: usize = 1024 * 1024;
+const DOWNLOAD_LIMIT: u64 = 1024 * 1024 * 1024;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -33,6 +37,10 @@ struct ResponseOutput {
     headers: Vec<HeaderInput>,
     body: String,
     size_bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    body_id: Option<String>,
+    truncated: bool,
+    binary: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     final_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -109,13 +117,16 @@ fn build_client(options: &TransportOptions, redirects: Arc<AtomicUsize>) -> Resu
 async fn send_request(
     request: RequestInput,
     options: TransportOptions,
+    store: tauri::State<'_, ResponseStore>,
 ) -> Result<ResponseOutput, String> {
-    execute(request, options).await
+    execute(request, options, &store, DOWNLOAD_LIMIT).await
 }
 
 async fn execute(
     mut request: RequestInput,
     options: TransportOptions,
+    store: &ResponseStore,
+    download_limit: u64,
 ) -> Result<ResponseOutput, String> {
     options.validate()?;
     request.url = resolve_environment_references(&request.url)?;
@@ -181,20 +192,31 @@ async fn execute(
             value: value.to_str().unwrap_or("[binary value]").to_string(),
         })
         .collect();
-    let mut bytes = Vec::new();
+    let preview_limit = options.inspection_limit_mib * MIB;
+    let mut file = store.create()?;
+    let mut size: u64 = 0;
+    let mut preview = Vec::new();
     while let Some(chunk) = response
         .chunk()
         .await
         .map_err(|error| network_error(error, &options))?
     {
-        if bytes.len() + chunk.len() > RESPONSE_LIMIT {
-            return Err("Response exceeds the 4 MiB inspection limit.".to_string());
+        size += chunk.len() as u64;
+        if size > download_limit {
+            // Dropping `file` deletes it.
+            return Err("Response exceeds the 1 GiB download limit.".to_string());
         }
-        bytes.extend_from_slice(&chunk);
+        file.write_all(&chunk)
+            .map_err(|_| STORE_ERROR.to_string())?;
+        if preview.len() < preview_limit {
+            let take = (preview_limit - preview.len()).min(chunk.len());
+            preview.extend_from_slice(&chunk[..take]);
+        }
     }
     let duration_ms = started_at.elapsed().as_millis();
-    let size_bytes = bytes.len();
-    let body = String::from_utf8_lossy(&bytes).into_owned();
+    let truncated = size > preview.len() as u64;
+    let (body, binary) = decode_preview(preview);
+    let body_id = store.insert(file);
 
     Ok(ResponseOutput {
         status: status.as_u16(),
@@ -202,10 +224,30 @@ async fn execute(
         duration_ms,
         headers,
         body,
-        size_bytes,
+        size_bytes: size as usize,
         final_url,
         redirect_count: (redirect_count > 0).then_some(redirect_count),
+        body_id: Some(body_id),
+        truncated,
+        binary,
     })
+}
+
+/// Decode the preview as UTF-8 text. Returns `(text, binary)`. A NUL byte or
+/// an invalid sequence makes the body binary. An incomplete character at the
+/// end is the preview cut, not binary data, so it is dropped.
+fn decode_preview(mut preview: Vec<u8>) -> (String, bool) {
+    if preview.contains(&0) {
+        return (String::new(), true);
+    }
+    match std::str::from_utf8(&preview) {
+        Ok(_) => (String::from_utf8(preview).unwrap_or_default(), false),
+        Err(error) if error.error_len().is_none() => {
+            preview.truncate(error.valid_up_to());
+            (String::from_utf8(preview).unwrap_or_default(), false)
+        }
+        Err(_) => (String::new(), true),
+    }
 }
 
 fn resolve_environment_references(value: &str) -> Result<String, String> {
@@ -256,6 +298,7 @@ mod app_state;
 mod ghostty_themes;
 #[cfg(test)]
 mod request_tests;
+mod response_store;
 
 fn save_window_state(app: &tauri::AppHandle) {
     use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -270,6 +313,9 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             app.manage(app_state::AppState::new(app.path().app_data_dir()?));
+            app.manage(ResponseStore::new(
+                app.path().app_cache_dir()?.join("responses"),
+            ));
             Ok(())
         })
         .on_window_event(|window, event| match event {
@@ -291,7 +337,8 @@ pub fn run() {
             app_state::app_state_ready,
             app_state::finish_app_exit,
             ghostty_themes::list_ghostty_themes,
-            ghostty_themes::read_ghostty_theme
+            ghostty_themes::read_ghostty_theme,
+            response_store::release_response
         ])
         .build(tauri::generate_context!())
         .expect("error while building Blink")
