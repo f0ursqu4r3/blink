@@ -69,7 +69,10 @@ save, the same as the token definitions error.
 
 ### Options
 
-New type in `src/lib/transport.ts`:
+New module `src/lib/transport-options.ts` holds the type, the defaults, and the
+range checks. `preferences.ts` and `transport.ts` both import it. It is a
+separate module because seven test files mock `@/lib/transport` with only
+`sendRequest`.
 
 ```ts
 export type TransportOptions = {
@@ -221,8 +224,9 @@ Remove path separators and control characters from the name.
 
 ### Lifetime
 
-- The frontend calls `release_response` when a session gets a new response or
-  an error, and when a tab closes.
+- The frontend calls `release_response` when a session sends again, and when a
+  request is deleted. Closing a tab does not release the body, because the
+  request and its response stay in the browser tree and can open again.
 - App start clears the directory, which removes files from a crash or a killed
   process.
 - Workspace save removes `bodyId` from each response.
@@ -231,7 +235,7 @@ Remove path separators and control characters from the name.
 
 ### Browser preview storage
 
-- A module map in `src/lib/transport.ts` holds a `Blob` for each `bodyId`.
+- A module map in `src/lib/response-body.ts` holds a `Blob` for each `bodyId`.
 - The browser path keeps all chunks up to the 1 GiB cap and builds the preview
   from the first `inspectionLimitMiB` MiB.
 - Save creates an object URL, clicks an `<a download>`, and revokes the URL.
@@ -239,7 +243,8 @@ Remove path separators and control characters from the name.
 
 ### Save API for components
 
-`src/lib/transport.ts` exports:
+New module `src/lib/response-body.ts` exports these. It is separate from
+`transport.ts` for the same test-mock reason as `transport-options.ts`:
 
 - `saveResponse(response: ApiResponse, requestUrl: string): Promise<boolean>`
   - With `bodyId`: `save_response`, or the Blob download in the browser.
@@ -248,6 +253,8 @@ Remove path separators and control characters from the name.
   - Otherwise it throws. The UI does not call it in this state.
 - `releaseResponse(response: ApiResponse | null): void`.
 - `canSaveResponse(response: ApiResponse): boolean`.
+- `suggestedFileName(response: ApiResponse, requestUrl: string): string`.
+- `storeBlob(blob: Blob): string`, used by the browser transport.
 
 ## Response panel UI
 
