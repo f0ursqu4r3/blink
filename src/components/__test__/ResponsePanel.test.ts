@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { mount, flushPromises } from "@vue/test-utils";
 import ResponsePanel from "../ResponsePanel.vue";
+vi.mock("@/lib/response-body", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/response-body")>()),
+  saveResponse: vi.fn(),
+}));
+import { saveResponse } from "@/lib/response-body";
+import type { ApiResponse } from "@/lib/request";
 
 describe("large JSON inspection", () => {
   it("keeps large JSON available in structured and raw views", async () => {
@@ -167,5 +173,124 @@ describe("large JSON inspection", () => {
     } finally {
       panel.unmount();
     }
+  });
+});
+
+describe("stored bodies", () => {
+  const response = (extra: Partial<ApiResponse> = {}): ApiResponse => ({
+    status: 200,
+    statusText: "OK",
+    durationMs: 1,
+    sizeBytes: 3,
+    headers: [{ key: "Content-Type", value: "image/png" }],
+    body: "abc",
+    ...extra,
+  });
+  const render = (value: ApiResponse) =>
+    mount(ResponsePanel, {
+      props: {
+        busy: false,
+        error: "",
+        elapsed: 0,
+        response: value,
+        requestUrl: "https://x.test/logo.png",
+      },
+    });
+
+  it("shows a binary notice in place of the editor", () => {
+    const panel = render(
+      response({ binary: true, body: "", sizeBytes: 2048, bodyId: "b" }),
+    );
+    expect(panel.get("[data-response-binary]").text()).toContain(
+      "Binary response · 2.0 KiB · image/png",
+    );
+    expect(panel.find("[data-response-body]").exists()).toBe(false);
+    expect(panel.find('[aria-label="Wrap lines"]').exists()).toBe(false);
+    panel.unmount();
+  });
+
+  it("marks a truncated preview and disables formatting", () => {
+    const panel = render(
+      response({
+        truncated: true,
+        body: '{"a":1',
+        sizeBytes: 5 * 1024 * 1024,
+        bodyId: "b",
+        headers: [{ key: "Content-Type", value: "application/json" }],
+      }),
+    );
+    expect(panel.get("[data-response-truncated]").text()).toContain(
+      "Preview shows the first 6 B of 5.00 MiB.",
+    );
+    const pretty = panel.findAll("button").find((b) => b.text() === "Raw")!;
+    expect(pretty.attributes("disabled")).toBeDefined();
+    expect(pretty.attributes("title")).toBe(
+      "Unavailable for truncated responses",
+    );
+    panel.unmount();
+  });
+
+  it("disables Save when the stored body is gone", () => {
+    const panel = render(response({ truncated: true }));
+    const save = panel.get("[data-save-response]");
+    expect(save.attributes("disabled")).toBeDefined();
+    expect(save.attributes("title")).toBe(
+      "Body is no longer available. Send the request again.",
+    );
+    panel.unmount();
+  });
+
+  it("saves and reports a failure inline", async () => {
+    vi.mocked(saveResponse).mockRejectedValueOnce("disk full");
+    const value = response({ bodyId: "b" });
+    const panel = render(value);
+    await panel.get("[data-save-response]").trigger("click");
+    await flushPromises();
+    expect(vi.mocked(saveResponse)).toHaveBeenCalledWith(
+      value,
+      "https://x.test/logo.png",
+    );
+    expect(panel.get("[data-save-error]").text()).toBe(
+      "Cannot save the file: disk full.",
+    );
+    panel.unmount();
+  });
+
+  it("shows nothing when the user cancels", async () => {
+    vi.mocked(saveResponse).mockResolvedValueOnce(false);
+    const panel = render(response({ bodyId: "b" }));
+    await panel.get("[data-save-response]").trigger("click");
+    await flushPromises();
+    expect(panel.find("[data-save-error]").exists()).toBe(false);
+    panel.unmount();
+  });
+
+  it("shows the redirect target", () => {
+    const desktop = render(
+      response({ finalUrl: "https://final.test/", redirectCount: 2 }),
+    );
+    expect(desktop.get("[data-response-redirect]").text()).toBe(
+      "→ https://final.test/ · 2 redirects",
+    );
+    desktop.unmount();
+    const browser = render(response({ finalUrl: "https://final.test/" }));
+    expect(browser.get("[data-response-redirect]").text()).toBe(
+      "→ https://final.test/ · redirected",
+    );
+    browser.unmount();
+  });
+
+  it("uses the configured timeout while waiting", () => {
+    const panel = mount(ResponsePanel, {
+      props: {
+        busy: true,
+        error: "",
+        elapsed: 1500,
+        response: null,
+        timeoutSeconds: 90,
+      },
+    });
+    expect(panel.text()).toContain("1.5 s elapsed · 90 s timeout");
+    panel.unmount();
   });
 });

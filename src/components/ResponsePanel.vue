@@ -17,6 +17,7 @@ import {
   Search,
   WrapText,
   X,
+  Download,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import {
@@ -27,6 +28,7 @@ import {
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 import { formatBytes, type ApiResponse, type Header } from "@/lib/request";
+import { canSaveResponse, saveResponse } from "@/lib/response-body";
 import { useClipboard } from "@/composables/useClipboard";
 import { formatJson } from "@/lib/json";
 import { runJq } from "@/lib/jq";
@@ -34,14 +36,19 @@ import { responseLanguage } from "@/lib/response-content";
 import CodeView from "./CodeView.vue";
 import JsonTreeView from "./JsonTreeView.vue";
 import HelpTooltip from "./HelpTooltip.vue";
-const props = defineProps<{
-  response: ApiResponse | null;
-  busy: boolean;
-  error: string;
-  elapsed: number;
-  stale?: boolean;
-  active?: boolean;
-}>();
+const props = withDefaults(
+  defineProps<{
+    response: ApiResponse | null;
+    busy: boolean;
+    error: string;
+    elapsed: number;
+    stale?: boolean;
+    active?: boolean;
+    requestUrl?: string;
+    timeoutSeconds?: number;
+  }>(),
+  { timeoutSeconds: 30 },
+);
 const headingId = useId();
 const view = defineModel<RequestView>("view", { default: createView });
 const tab = computed({
@@ -69,7 +76,13 @@ const searchInput = ref<HTMLInputElement | null>(null);
 const jqQuery = ref("");
 const jqOutput = ref<string | null>(null);
 const jqError = ref("");
+// A truncated or binary preview cannot be parsed as a whole document.
+const limited = computed(() =>
+  Boolean(props.response?.truncated || props.response?.binary),
+);
+const unavailable = "Unavailable for truncated responses";
 const sourceParsed = computed(() => {
+  if (limited.value) return null;
   if (!props.response) return null;
   try {
     return { text: formatJson(props.response.body) };
@@ -78,6 +91,7 @@ const sourceParsed = computed(() => {
   }
 });
 const parsed = computed(() => {
+  if (limited.value) return null;
   const body = jqOutput.value ?? props.response?.body;
   if (body === undefined) return null;
   try {
@@ -85,6 +99,34 @@ const parsed = computed(() => {
   } catch {
     return null;
   }
+});
+const savable = computed(() =>
+  props.response ? canSaveResponse(props.response) : false,
+);
+// UTF-8 size of the preview, shown in the truncated bar.
+const previewSize = computed(() =>
+  props.response?.truncated ? new Blob([props.response.body]).size : 0,
+);
+const saving = ref(false);
+const saveError = ref("");
+async function saveBody() {
+  if (!props.response || !savable.value || saving.value) return;
+  saving.value = true;
+  saveError.value = "";
+  try {
+    await saveResponse(props.response, props.requestUrl ?? "");
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    saveError.value = `Cannot save the file: ${reason.replace(/\.$/, "")}.`;
+  } finally {
+    saving.value = false;
+  }
+}
+const redirectLabel = computed(() => {
+  const count = props.response?.redirectCount;
+  return count === undefined
+    ? "redirected"
+    : `${count} ${count === 1 ? "redirect" : "redirects"}`;
 });
 const text = computed(() =>
   pretty.value && parsed.value
@@ -127,6 +169,7 @@ watch(
     jqQuery.value = "";
     jqOutput.value = null;
     jqError.value = "";
+    saveError.value = "";
   },
 );
 function copyResult() {
@@ -251,6 +294,13 @@ function copyHeaderPair() {
         <span class="border-l border-border pl-4">
           {{ formatBytes(response.sizeBytes) }}
         </span>
+        <span
+          v-if="response.finalUrl"
+          data-response-redirect
+          class="basis-full min-w-0 truncate text-muted-foreground"
+          :title="response.finalUrl"
+          >→ {{ response.finalUrl }} · {{ redirectLabel }}</span
+        >
       </div>
       <TabsRoot v-model="tab" class="flex-1 min-h-0 flex flex-col">
         <ContextMenu>
@@ -278,15 +328,17 @@ function copyHeaderPair() {
               </TabsList>
               <div class="flex items-center">
                 <Button
-                  v-if="tab === 'body' && parsed"
+                  v-if="tab === 'body' && (parsed || response.truncated)"
                   variant="ghost"
-                  :aria-pressed="pretty"
+                  :aria-pressed="pretty && !response.truncated"
+                  :disabled="response.truncated"
+                  :title="response.truncated ? unavailable : undefined"
                   @click="pretty = !pretty"
                 >
-                  {{ pretty ? "Pretty" : "Raw" }}
+                  {{ pretty && !response.truncated ? "Pretty" : "Raw" }}
                 </Button>
                 <Button
-                  v-if="tab === 'body'"
+                  v-if="tab === 'body' && !response.binary"
                   variant="ghost"
                   class="size-7 shrink-0 p-0"
                   :aria-pressed="wrap"
@@ -297,7 +349,7 @@ function copyHeaderPair() {
                   <WrapText :size="14" aria-hidden="true" />
                 </Button>
                 <Button
-                  v-if="tab === 'body'"
+                  v-if="tab === 'body' && !response.binary"
                   variant="ghost"
                   class="size-7 shrink-0 p-0"
                   :aria-pressed="inspectorVisible"
@@ -306,6 +358,21 @@ function copyHeaderPair() {
                   @click="toggleInspector"
                 >
                   <Search :size="14" aria-hidden="true" />
+                </Button>
+                <Button
+                  variant="ghost"
+                  class="size-7 shrink-0 p-0"
+                  data-save-response
+                  aria-label="Save response body"
+                  :title="
+                    savable
+                      ? 'Save response body…'
+                      : 'Body is no longer available. Send the request again.'
+                  "
+                  :disabled="!savable || saving"
+                  @click="saveBody"
+                >
+                  <Download :size="14" aria-hidden="true" />
                 </Button>
                 <Button
                   variant="ghost"
@@ -327,7 +394,14 @@ function copyHeaderPair() {
             >
               Copy response
             </ContextMenuItem>
-            <template v-if="tab === 'body'">
+            <ContextMenuItem
+              data-testid="ctx-save-response"
+              :disabled="!savable"
+              @select="saveBody"
+            >
+              Save response body…
+            </ContextMenuItem>
+            <template v-if="tab === 'body' && !response.binary">
               <ContextMenuSeparator />
               <ContextMenuItem
                 v-if="parsed"
@@ -371,7 +445,7 @@ function copyHeaderPair() {
             />
           </label>
           <form
-            v-if="sourceParsed"
+            v-if="sourceParsed || response.truncated"
             class="flex flex-[1_1_260px] min-w-0 items-center gap-1.5 rounded border border-input bg-background focus-within:border-primary max-[680px]:basis-8.5"
             aria-label="jq query"
             @submit.prevent="executeJq"
@@ -382,6 +456,8 @@ function copyHeaderPair() {
               placeholder="jq query, e.g. .items[]"
               spellcheck="false"
               autocomplete="off"
+              :disabled="response.truncated"
+              :title="response.truncated ? unavailable : undefined"
               class="w-full min-w-0 h-6.5 border-0 rounded-none px-1.75 bg-transparent font-mono text-[0.6875rem]"
             />
             <Button
@@ -389,7 +465,7 @@ function copyHeaderPair() {
               variant="ghost"
               data-run-jq
               class="flex-none whitespace-nowrap"
-              :disabled="!jqQuery.trim()"
+              :disabled="!jqQuery.trim() || response.truncated"
             >
               Run jq
             </Button>
@@ -412,14 +488,57 @@ function copyHeaderPair() {
         <p v-if="jqError" role="alert" class="p-4 text-destructive text-xs">
           {{ jqError }}
         </p>
+        <p
+          v-if="saveError"
+          data-save-error
+          role="alert"
+          class="p-4 text-destructive text-xs"
+        >
+          {{ saveError }}
+        </p>
+        <!-- prettier-ignore -->
+        <p
+          v-if="tab === 'body' && response.truncated && !response.binary"
+          data-response-truncated
+          role="status"
+          class="flex flex-wrap items-center gap-1 py-1.5 px-3.5 border-b border-border text-muted-foreground font-mono text-[0.625rem]"
+        >
+          Preview shows the first {{ formatBytes(previewSize) }} of {{ formatBytes(response.sizeBytes) }}.
+          <button
+            type="button"
+            class="underline decoration-dotted underline-offset-3 hover:text-foreground disabled:no-underline"
+            :disabled="!savable || saving"
+            @click="saveBody"
+          >
+            Save…
+          </button>
+          to get the full body.
+        </p>
         <TabsContent
           value="body"
           class="flex-1 min-h-0 overflow-auto data-[state=active]:flex data-[state=active]:flex-col"
         >
+          <div
+            v-if="response.binary"
+            data-response-binary
+            class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-muted-foreground text-xs"
+          >
+            <!-- prettier-ignore -->
+            <p class="font-mono">
+              Binary response · {{ formatBytes(response.sizeBytes) }} · {{ contentType }}
+            </p>
+            <Button
+              variant="secondary"
+              :disabled="!savable || saving"
+              @click="saveBody"
+            >
+              Save…
+            </Button>
+          </div>
           <JsonTreeView
+            v-else-if="response.body && showJsonTree"
             v-model:scroll="view.responseScroll"
             :active="active !== false && tab === 'body'"
-            v-if="response.body && showJsonTree"
             :text="text"
             :filter="search"
             :wrap="wrap"
@@ -553,7 +672,8 @@ function copyHeaderPair() {
         AWAITING RESPONSE
       </h3>
       <p class="mt-2.5 text-xs">
-        {{ (elapsed / 1000).toFixed(1) }} s elapsed · 30 s timeout
+        {{ (elapsed / 1000).toFixed(1) }} s elapsed · {{ timeoutSeconds }} s
+        timeout
       </p>
     </div>
     <div

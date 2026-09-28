@@ -42,7 +42,7 @@ const buttonClass = computed(() =>
 </script>
 
 <template>
-  <HelpTooltip v-if="title" :text="title" :help-only="false">
+  <HelpTooltip v-if="title && !disabled" :text="title" :help-only="false">
     <Primitive
       v-bind="$attrs"
       as="button"
@@ -62,6 +62,7 @@ const buttonClass = computed(() =>
     :disabled="disabled"
     :type="type ?? 'button'"
     :data-variant="variant ?? 'default'"
+    :title="disabled ? title : undefined"
   >
     <slot />
   </Primitive>
