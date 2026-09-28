@@ -43,8 +43,18 @@ export type ApiResponse = {
   statusText: string;
   durationMs: number;
   headers: Header[];
+  /** Preview text: complete unless `truncated`; empty when `binary`. */
   body: string;
+  /** Full body size, not the preview size. */
   sizeBytes: number;
+  /** Stored raw body. Not saved in the workspace. */
+  bodyId?: string;
+  truncated?: boolean;
+  binary?: boolean;
+  /** Set only when a redirect happened. */
+  finalUrl?: string;
+  /** Desktop only. */
+  redirectCount?: number;
 };
 let nextId = 0;
 export function reservePairId(id: number) {

@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { RESPONSE_LIMIT, sendRequest } from "../transport";
+import { decodePreview, sendRequest } from "../transport";
+import { defaultTransportOptions, MIB } from "../transport-options";
 import type { RequestInput } from "../request";
 
 const request: RequestInput = {
@@ -35,14 +36,45 @@ describe("browser preview transport", () => {
       sizeBytes: 3,
     });
   });
-  it("bounds response memory while reading the stream", async () => {
+  it("stops reading at the download limit", async () => {
     vi.stubGlobal(
       "fetch",
-      vi
-        .fn()
-        .mockResolvedValue(new Response(new Uint8Array(RESPONSE_LIMIT + 1))),
+      vi.fn().mockResolvedValue(new Response(new Uint8Array(65))),
     );
-    await expect(sendRequest(request)).rejects.toThrow("4 MiB");
+    await expect(
+      sendRequest(request, defaultTransportOptions(), 64),
+    ).rejects.toThrow("1 GiB download limit");
+  });
+  it("truncates the preview at the inspection limit", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(new Response("x".repeat(MIB + 5))),
+    );
+    const result = await sendRequest(request, {
+      ...defaultTransportOptions(),
+      inspectionLimitMiB: 1,
+    });
+    expect(result).toMatchObject({
+      truncated: true,
+      binary: false,
+      sizeBytes: MIB + 5,
+    });
+    expect(result.body.length).toBe(MIB);
+    expect(result.bodyId).toMatch(/^browser-/);
+  });
+  it("follows redirects when the setting is on", async () => {
+    const response = new Response("done");
+    Object.defineProperty(response, "redirected", { value: true });
+    Object.defineProperty(response, "url", { value: "https://final.test/" });
+    const fetch = vi.fn().mockResolvedValue(response);
+    vi.stubGlobal("fetch", fetch);
+    const result = await sendRequest(request, {
+      ...defaultTransportOptions(),
+      followRedirects: true,
+    });
+    expect(fetch.mock.calls[0][1]).toMatchObject({ redirect: "follow" });
+    expect(result.finalUrl).toBe("https://final.test/");
+    expect(result.redirectCount).toBeUndefined();
   });
   it("explains opaque redirect limitations instead of showing status zero", async () => {
     vi.stubGlobal(
@@ -51,7 +83,7 @@ describe("browser preview transport", () => {
     );
     await expect(sendRequest(request)).rejects.toThrow("desktop app");
   });
-  it("aborts a hanging request after 30 seconds and clears its timer", async () => {
+  it("aborts a hanging request after 5 seconds and clears its timer", async () => {
     vi.useFakeTimers();
     vi.stubGlobal(
       "fetch",
@@ -64,9 +96,44 @@ describe("browser preview transport", () => {
           }),
       ),
     );
-    const result = expect(sendRequest(request)).rejects.toThrow("30 seconds");
-    await vi.advanceTimersByTimeAsync(30_000);
+    const result = expect(
+      sendRequest(request, { ...defaultTransportOptions(), timeoutSeconds: 5 }),
+    ).rejects.toThrow("after 5 seconds");
+    await vi.advanceTimersByTimeAsync(5_000);
     await result;
     expect(vi.getTimerCount()).toBe(0);
+  });
+});
+
+describe("decodePreview", () => {
+  const bytes = (...values: number[]) => new Uint8Array(values);
+  it("treats NUL and invalid sequences as binary", () => {
+    expect(decodePreview(bytes(0x61, 0x00))).toEqual({
+      text: "",
+      binary: true,
+    });
+    expect(decodePreview(bytes(0x61, 0xff, 0x62))).toEqual({
+      text: "",
+      binary: true,
+    });
+    expect(decodePreview(bytes(0x61, 0xff))).toEqual({
+      text: "",
+      binary: true,
+    });
+  });
+  it("drops an incomplete character at the cut", () => {
+    // "é" is C3 A9; "€" is E2 82 AC.
+    expect(decodePreview(bytes(0x61, 0xc3))).toEqual({
+      text: "a",
+      binary: false,
+    });
+    expect(decodePreview(bytes(0x61, 0xe2, 0x82))).toEqual({
+      text: "a",
+      binary: false,
+    });
+    expect(decodePreview(bytes(0x61, 0xc3, 0xa9))).toEqual({
+      text: "aé",
+      binary: false,
+    });
   });
 });
