@@ -121,4 +121,59 @@ describe("ApplicationSettingsDialog", () => {
     expect(wrapper.get("[data-theme-error]").text()).toContain("line 1");
     wrapper.unmount();
   });
+
+  describe("request settings", () => {
+    it("saves transport settings", async () => {
+      const wrapper = renderOpen();
+      await nextTick();
+      await wrapper.get("#app-timeout").setValue("90");
+      await wrapper.get("#app-connect-timeout").setValue("5");
+      await wrapper.get("#app-follow-redirects").setValue(true);
+      await wrapper.get("#app-max-redirects").setValue("3");
+      await wrapper.get("#app-inspection-limit").setValue("8");
+      await wrapper.get("form").trigger("submit");
+      const [, preferences] = wrapper.emitted("save")![0] as [unknown, object];
+      expect(preferences).toMatchObject({
+        timeoutSeconds: 90,
+        connectTimeoutSeconds: 5,
+        followRedirects: true,
+        maxRedirects: 3,
+        inspectionLimitMiB: 8,
+      });
+      wrapper.unmount();
+    });
+
+    it("disables max redirects while redirects are not followed", async () => {
+      const wrapper = renderOpen();
+      await nextTick();
+      expect(
+        (wrapper.get("#app-max-redirects").element as HTMLInputElement)
+          .disabled,
+      ).toBe(true);
+      await wrapper.get("#app-follow-redirects").setValue(true);
+      expect(
+        (wrapper.get("#app-max-redirects").element as HTMLInputElement)
+          .disabled,
+      ).toBe(false);
+      wrapper.unmount();
+    });
+
+    it.each(["", "2.5", "0", "601"])(
+      "blocks the save for timeout %j",
+      async (value) => {
+        const wrapper = renderOpen();
+        await nextTick();
+        await wrapper.get("#app-timeout").setValue(value);
+        await wrapper.get("form").trigger("submit");
+        expect(wrapper.emitted("save")).toBeUndefined();
+        expect(wrapper.get("#app-timeout-error").text()).toBe(
+          "Enter a whole number from 1 to 600.",
+        );
+        expect(wrapper.get("#app-timeout").attributes("aria-invalid")).toBe(
+          "true",
+        );
+        wrapper.unmount();
+      },
+    );
+  });
 });

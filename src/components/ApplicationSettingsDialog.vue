@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { computed, ref, watch } from "vue";
 import {
   DialogContent,
   DialogOverlay,
@@ -14,6 +14,10 @@ import {
   defaultPreferences,
   type WorkspacePreferences,
 } from "../lib/preferences";
+import {
+  transportFieldErrors,
+  type TransportField,
+} from "../lib/transport-options";
 
 const props = defineProps<{
   definitions: Record<string, string>;
@@ -38,6 +42,32 @@ const theme = useTheme();
 // Theme edits preview live. Closing without a successful save restores the
 // saved theme.
 let committed = false;
+
+const numberFields: {
+  key: TransportField;
+  id: string;
+  label: string;
+  help?: string;
+}[] = [
+  { key: "timeoutSeconds", id: "app-timeout", label: "Timeout (s)" },
+  {
+    key: "connectTimeoutSeconds",
+    id: "app-connect-timeout",
+    label: "Connect timeout (s)",
+  },
+  { key: "maxRedirects", id: "app-max-redirects", label: "Max redirects" },
+  {
+    key: "inspectionLimitMiB",
+    id: "app-inspection-limit",
+    label: "Inspection limit (MiB)",
+    help: "Larger bodies show a truncated preview. Save the response to get the full body.",
+  },
+];
+// Errors show only after a save attempt, so typing does not flash errors.
+const submitted = ref(false);
+const fieldErrors = computed(() =>
+  submitted.value ? transportFieldErrors(preferences.value) : {},
+);
 watch(
   () => props.open,
   (open, wasOpen) => {
@@ -59,6 +89,7 @@ watch(
     source.value = formatDefinitions(props.definitions);
     preferences.value = { ...(props.preferences ?? defaultPreferences()) };
     error.value = "";
+    submitted.value = false;
   },
   { immediate: true },
 );
@@ -88,8 +119,14 @@ function parseDefinitions(): Record<string, string> | null {
 }
 
 function save() {
+  submitted.value = true;
   const definitions = parseDefinitions();
-  if (!definitions || theme.error.value) return;
+  if (
+    !definitions ||
+    theme.error.value ||
+    Object.keys(transportFieldErrors(preferences.value)).length
+  )
+    return;
   emit("save", definitions, { ...preferences.value });
   if (theme.commit()) return;
   committed = true;
@@ -188,6 +225,69 @@ function save() {
                 />
                 Wrap response lines</label
               >
+            </fieldset>
+            <fieldset
+              class="grid grid-cols-2 gap-3 border-t border-border pt-3 text-xs max-[440px]:grid-cols-1"
+            >
+              <div
+                class="col-span-full flex items-center gap-1.5 text-muted-foreground"
+              >
+                <span class="font-semibold uppercase tracking-[0.07em]"
+                  >Requests</span
+                >
+                <HelpTooltip
+                  text="These limits apply to every request you send. The download limit is 1 GiB."
+                >
+                  <button
+                    type="button"
+                    aria-label="Request limits help"
+                    class="help-trigger"
+                  >
+                    ?
+                  </button>
+                </HelpTooltip>
+              </div>
+              <label class="col-span-full flex items-center gap-2"
+                ><input
+                  id="app-follow-redirects"
+                  v-model="preferences.followRedirects"
+                  type="checkbox"
+                  class="accent-primary"
+                />
+                Follow redirects</label
+              >
+              <div
+                v-for="field in numberFields"
+                :key="field.key"
+                class="grid content-start gap-1.5 text-muted-foreground"
+              >
+                <label :for="field.id">{{ field.label }}</label>
+                <input
+                  :id="field.id"
+                  v-model.number="preferences[field.key]"
+                  type="number"
+                  step="1"
+                  inputmode="numeric"
+                  :disabled="
+                    field.key === 'maxRedirects' && !preferences.followRedirects
+                  "
+                  :aria-invalid="fieldErrors[field.key] ? 'true' : undefined"
+                  :aria-describedby="
+                    fieldErrors[field.key] ? `${field.id}-error` : undefined
+                  "
+                  class="h-8 w-full min-w-0 border border-input rounded-sm px-2 bg-background text-foreground font-mono disabled:opacity-50 aria-invalid:border-destructive"
+                />
+                <p
+                  v-if="fieldErrors[field.key]"
+                  :id="`${field.id}-error`"
+                  class="text-destructive"
+                >
+                  {{ fieldErrors[field.key] }}
+                </p>
+                <p v-else-if="field.help" class="text-[0.6875rem]">
+                  {{ field.help }}
+                </p>
+              </div>
             </fieldset>
             <section class="grid gap-2 border-t border-border pt-3 text-xs">
               <h3
