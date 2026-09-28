@@ -1,4 +1,4 @@
-import { buildRequest, methods, reservePairId } from "./request";
+import { bodyModes, buildRequest, methods, reservePairId } from "./request";
 import {
   buildResolvedRequestContext,
   type AuthorizationConfig,
@@ -9,6 +9,11 @@ import {
   type RequestSession,
 } from "./session";
 import { reserveGroupId, type RequestGroup } from "./groups";
+import {
+  defaultPreferences,
+  validPreferences,
+  type WorkspacePreferences,
+} from "./preferences";
 
 export const WORKSPACE_KEY = "blink.workspace.v1";
 export const MAX_STATE_BYTES = 64 * 1024 * 1024;
@@ -30,6 +35,7 @@ type SnapshotV3 = {
   groups: RequestGroup[];
   /** Required in v3 encode; must be a flat string map. Empty object when no globals. */
   globalDefinitions: Record<string, string>;
+  preferences?: WorkspacePreferences;
 };
 type Snapshot = SnapshotV1 | SnapshotV2 | SnapshotV3;
 const invalid = () =>
@@ -105,7 +111,8 @@ function validateDraft(input: unknown, version: number) {
   check(methods.includes(draft.method as never));
   for (const key of ["url", "body", "token", "username", "password"])
     check(text(draft[key]));
-  check(["none", "json", "text"].includes(draft.bodyMode as string));
+  check(bodyModes.includes(draft.bodyMode as never));
+  check(draft.variables === undefined || text(draft.variables));
   check(["none", "bearer", "basic"].includes(draft.auth as string));
   // v3: validate localAuth if present
   if (version >= 3 && draft.localAuth !== undefined) {
@@ -168,6 +175,13 @@ function validateGroups(input: unknown, version: number): RequestGroup[] {
           }),
         );
       }
+      if (group.defaultMethod !== undefined)
+        check(methods.includes(group.defaultMethod as never));
+      if (group.defaultUrl !== undefined)
+        check(
+          text(group.defaultUrl) &&
+            (group.defaultUrl as string).length <= 65536,
+        );
     }
     return group as unknown as RequestGroup;
   });
@@ -247,6 +261,8 @@ function parseSnapshot(content: string): Snapshot {
       data.globalDefinitions !== undefined &&
         validateDefinitions(data.globalDefinitions),
     );
+    if (data.preferences !== undefined)
+      check(validPreferences(data.preferences));
   }
   return raw as Snapshot;
 }
@@ -276,12 +292,14 @@ export function encodeWorkspace(
   activeId: number,
   groups: RequestGroup[] = [],
   globalDefinitions: Record<string, string> = {},
+  preferences: WorkspacePreferences = defaultPreferences(),
 ): string {
   return JSON.stringify({
     version: 3,
     activeId,
     groups,
     globalDefinitions,
+    preferences,
     tabs: sessions.map(
       ({
         id,
@@ -361,5 +379,15 @@ export function decodeWorkspace(content: string) {
       }
     }
   }
-  return { sessions, activeId: data.activeId, groups, globalDefinitions };
+  const preferences =
+    version >= 3 && (data as SnapshotV3).preferences !== undefined
+      ? (data as SnapshotV3).preferences
+      : defaultPreferences();
+  return {
+    sessions,
+    activeId: data.activeId,
+    groups,
+    globalDefinitions,
+    preferences,
+  };
 }

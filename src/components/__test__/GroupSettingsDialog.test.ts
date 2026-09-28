@@ -318,7 +318,7 @@ describe("GroupSettingsDialog", () => {
 
       const help = w.get('[data-token-help="local"]');
       expect(help.attributes("aria-label")).toBe("Token syntax help");
-      expect(help.attributes("title")).toContain("{{name}}");
+      expect(help.attributes("title")).toBeUndefined();
       expect(w.find(".help-text").exists()).toBe(false);
     });
 

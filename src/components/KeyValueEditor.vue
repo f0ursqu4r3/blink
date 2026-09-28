@@ -1,24 +1,41 @@
 <script setup lang="ts">
-import { Plus, X } from 'lucide-vue-next';
-import { Button } from '@/components/ui/button';
+import { nextTick, ref } from "vue";
+import { Plus, X } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from '@/components/ui/context-menu';
-import { pair, type Pair } from '@/lib/request';
+} from "@/components/ui/context-menu";
+import { pair, type Pair } from "@/lib/request";
 const rows = defineModel<Pair[]>({ required: true });
-defineProps<{ label: string; disabled?: boolean }>();
-function update(id: number, field: 'key' | 'value', event: Event) {
+const props = defineProps<{ label: string; disabled?: boolean }>();
+const editor = ref<HTMLElement | null>(null);
+function focusRow(index: number) {
+  void nextTick(() => {
+    const inputs =
+      editor.value?.querySelectorAll<HTMLInputElement>("[data-row-name]");
+    const target = inputs?.[Math.min(index, inputs.length - 1)];
+    (
+      target ?? editor.value?.querySelector<HTMLButtonElement>("[data-add-row]")
+    )?.focus();
+  });
+}
+function canEdit() {
+  return !props.disabled;
+}
+function update(id: number, field: "key" | "value", event: Event) {
+  if (!canEdit()) return;
   rows.value = rows.value.map((row) =>
     row.id === id
       ? { ...row, [field]: (event.target as HTMLInputElement).value }
-      : row
+      : row,
   );
 }
 function duplicateRow(id: number) {
+  if (!canEdit()) return;
   const idx = rows.value.findIndex((r) => r.id === id);
   if (idx < 0) return;
   const src = rows.value[idx];
@@ -27,28 +44,41 @@ function duplicateRow(id: number) {
   const next = [...rows.value];
   next.splice(idx + 1, 0, copy);
   rows.value = next;
+  focusRow(idx + 1);
 }
 function removeRow(id: number) {
+  if (!canEdit()) return;
+  const index = rows.value.findIndex((row) => row.id === id);
   rows.value = rows.value.filter((r) => r.id !== id);
+  focusRow(index);
 }
 function toggleRow(id: number) {
+  if (!canEdit()) return;
   rows.value = rows.value.map((r) =>
-    r.id === id ? { ...r, enabled: !r.enabled } : r
+    r.id === id ? { ...r, enabled: !r.enabled } : r,
   );
 }
+function toggleFromInput(id: number) {
+  toggleRow(id);
+}
 function enableAll() {
+  if (!canEdit()) return;
   rows.value = rows.value.map((r) => ({ ...r, enabled: true }));
 }
 function disableAll() {
+  if (!canEdit()) return;
   rows.value = rows.value.map((r) => ({ ...r, enabled: false }));
 }
 function addRow() {
-  rows.value = [...rows.value, pair()];
+  if (!canEdit()) return;
+  const next = [...rows.value, pair()];
+  rows.value = next;
+  focusRow(next.length - 1);
 }
 </script>
 
 <template>
-  <div>
+  <div ref="editor">
     <ContextMenu>
       <ContextMenuTrigger as-child data-testid="kv-table-ctx-trigger">
         <table class="w-full table-fixed border-collapse" :aria-label="label">
@@ -94,11 +124,7 @@ function addRow() {
                       :aria-label="`Enable ${label} row ${index + 1}`"
                       :checked="row.enabled"
                       :disabled="disabled"
-                      @change="
-                        rows = rows.map((r) =>
-                          r.id === row.id ? { ...r, enabled: !r.enabled } : r
-                        )
-                      "
+                      @change="toggleFromInput(row.id)"
                     />
                   </td>
                   <td
@@ -106,6 +132,8 @@ function addRow() {
                   >
                     <input
                       :aria-label="`${label} name ${index + 1}`"
+                      data-row-name
+                      @contextmenu.stop
                       :value="row.key"
                       placeholder="Name"
                       :disabled="disabled"
@@ -121,6 +149,7 @@ function addRow() {
                   >
                     <input
                       :aria-label="`${label} value ${index + 1}`"
+                      @contextmenu.stop
                       :value="row.value"
                       placeholder="Value"
                       :disabled="disabled"
@@ -139,7 +168,7 @@ function addRow() {
                       class="size-7 shrink-0 p-0"
                       :aria-label="`Remove ${label} row ${index + 1}`"
                       :disabled="disabled"
-                      @click="rows = rows.filter((r) => r.id !== row.id)"
+                      @click="removeRow(row.id)"
                     >
                       <X :size="13" aria-hidden="true" />
                     </Button>
@@ -149,12 +178,14 @@ function addRow() {
               <ContextMenuContent>
                 <ContextMenuItem
                   data-testid="kv-row-ctx-toggle"
+                  :disabled="disabled"
                   @select="toggleRow(row.id)"
                 >
-                  {{ row.enabled ? 'Disable' : 'Enable' }}
+                  {{ row.enabled ? "Disable" : "Enable" }}
                 </ContextMenuItem>
                 <ContextMenuItem
                   data-testid="kv-row-ctx-duplicate"
+                  :disabled="disabled"
                   @select="duplicateRow(row.id)"
                 >
                   Duplicate
@@ -162,6 +193,7 @@ function addRow() {
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   data-testid="kv-row-ctx-remove"
+                  :disabled="disabled"
                   @select="removeRow(row.id)"
                 >
                   Remove
@@ -172,14 +204,26 @@ function addRow() {
         </table>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem data-testid="kv-ctx-add-row" @select="addRow">
+        <ContextMenuItem
+          data-testid="kv-ctx-add-row"
+          :disabled="disabled"
+          @select="addRow"
+        >
           Add row
         </ContextMenuItem>
         <ContextMenuSeparator />
-        <ContextMenuItem data-testid="kv-ctx-enable-all" @select="enableAll">
+        <ContextMenuItem
+          data-testid="kv-ctx-enable-all"
+          :disabled="disabled"
+          @select="enableAll"
+        >
           Enable all
         </ContextMenuItem>
-        <ContextMenuItem data-testid="kv-ctx-disable-all" @select="disableAll">
+        <ContextMenuItem
+          data-testid="kv-ctx-disable-all"
+          :disabled="disabled"
+          @select="disableAll"
+        >
           Disable all
         </ContextMenuItem>
       </ContextMenuContent>
@@ -187,8 +231,9 @@ function addRow() {
     <Button
       variant="ghost"
       class="m-2"
+      data-add-row
       :disabled="disabled"
-      @click="rows = [...rows, pair()]"
+      @click="addRow"
     >
       <Plus :size="13" aria-hidden="true" />Add row
     </Button>

@@ -15,7 +15,9 @@ Browser sidebar organizes the request tabs in the current session.
 - Duplicate a complete draft without copying its response or sending it.
 - See methods, endpoint paths, hosts, and request status in compact tabs.
 - Send `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS` requests.
-- Edit query parameters, headers, and JSON or text request bodies.
+- Edit query parameters, headers, and JSON, text, or GraphQL request bodies.
+  GraphQL bodies take a query and optional JSON variables. Format tidies JSON
+  bodies, GraphQL queries, and GraphQL variables.
 - Use Bearer tokens or Basic authentication.
 - Export shell-quoted cURL commands. These include any entered credentials.
 - Inspect response status, duration, headers, and body, including error responses.
@@ -32,9 +34,10 @@ response inspector is a UTF-8 text viewer, not a binary file downloader.
 
 ## Request tabs
 
-Tabs save locally. Closing an edited tab asks for confirmation.
+Tabs save locally. Closing an edited tab asks for confirmation by default.
 An in-flight tab cannot close until its request finishes or times out.
-Closing the final tab opens a new blank tab. New tabs never send automatically.
+Closing the final tab opens a new tab using application defaults.
+New tabs never send automatically.
 
 | Action                   | Shortcut                      |
 | ------------------------ | ----------------------------- |
@@ -44,6 +47,7 @@ Closing the final tab opens a new blank tab. New tabs never send automatically.
 | Next or previous request | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Send active request      | `Cmd/Ctrl+Enter`              |
 | Focus URL                | `Cmd/Ctrl+L`                  |
+| Application settings     | `Cmd/Ctrl+,`                  |
 
 In the request tab strip, use Left/Right, Home/End, and Delete to select or
 close tabs. Escape dismisses the close confirmation or cURL preview. Browser
@@ -52,8 +56,10 @@ hosts can reserve shortcuts; the native Tauri app is the primary target.
 ## Browser groups
 
 The Browser sidebar is a local tree for the open request tabs. Select a request
-in the tree to make it active. Select the move action beside a group to place the
-active request there. Use the Browser move action to return it to Ungrouped.
+in the tree to make it active. Open a group's overflow menu and choose
+**Move selection here** to move the selected requests. Use the Ungrouped move
+action to remove group membership. On narrow windows, open the Browser with the
+header's sidebar button.
 
 Groups can nest to any depth. The Browser indents the first levels and keeps
 later levels usable in the same compact tree. Use a group row to create a child,
@@ -64,6 +70,23 @@ to that parent.
 New and duplicated request tabs start in the active request's group. This makes
 related endpoint work stay together without creating request history or sharing
 it outside this device.
+
+## Settings
+
+Application settings control the default method, body mode, response formatting,
+and line wrapping for new requests. Existing requests and duplicates keep their
+values. Draft-close confirmation is a separate application-wide preference.
+
+Group settings include a parent location, authorization, local tokens, and
+defaults for a new request's method and initial URL. The nearest group override
+wins; unset values inherit from parent groups, then application defaults. Use
+the new-request action beside a group to start a request there. Moving an
+existing request does not rewrite its method or URL.
+
+Secondary help appears in tooltips. Errors, effective authorization, storage
+failures, and destructive confirmations remain visible.
+Settings dialogs keep Save and Cancel visible while their contents scroll.
+Escape closes a tooltip first, then the dialog. Cancel discards unsaved edits.
 
 ## Local state and privacy
 
@@ -87,8 +110,8 @@ On macOS, the snapshot is stored at
 Other desktop systems use Tauri's application data directory. Native saves
 write a temporary file, sync it, then replace the snapshot atomically.
 The versioned format supports up to 128 tabs, 128 groups, and a 64 MiB total
-snapshot. Existing version 1 snapshots restore into Ungrouped and become version
-2 only after Blink saves the changed session.
+snapshot. Existing version 1 snapshots restore into Ungrouped. Versions 1, 2,
+and 3 remain readable; the next save writes version 3 with preferences.
 
 The footer reports saving and failure states. Failed saves preserve the
 previous snapshot and expose Retry. A corrupt or unsupported snapshot is

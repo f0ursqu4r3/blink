@@ -1,7 +1,8 @@
-import { describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { enableAutoUnmount, mount } from "@vue/test-utils";
 import RequestBrowser from "../RequestBrowser.vue";
 import { createSession } from "@/lib/session";
+enableAutoUnmount(afterEach);
 
 describe("request browser", () => {
   it("renders nested groups and moves the active request into a selected group", async () => {
@@ -11,6 +12,7 @@ describe("request browser", () => {
     nested.groupId = 2;
     const moveRequest = vi.fn();
     const browser = mount(RequestBrowser, {
+      global: { stubs: { DropdownMenuPortal: { template: "<slot />" } } },
       props: {
         sessions: [active, nested],
         activeId: active.id,
@@ -26,8 +28,12 @@ describe("request browser", () => {
     expect(browser.text()).toContain("Identity");
     expect(browser.text()).toContain("/users");
     await browser
-      .get('[aria-label="Move active request to Identity"]')
-      .trigger("click");
+      .get('[aria-label="More actions for Identity"]')
+      .trigger("keydown", { key: "Enter" });
+    const move = browser
+      .findAll('[role="menuitem"]')
+      .find((item) => item.text() === "Move selection here")!;
+    await move.trigger("click");
 
     expect(moveRequest).toHaveBeenCalledWith(active.id, 2);
   });
@@ -36,6 +42,7 @@ describe("request browser", () => {
     const active = createSession();
     const createGroup = vi.fn();
     const browser = mount(RequestBrowser, {
+      global: { stubs: { DropdownMenuPortal: { template: "<slot />" } } },
       props: {
         sessions: [active],
         activeId: active.id,
@@ -44,6 +51,9 @@ describe("request browser", () => {
       },
     });
 
+    await browser
+      .get('[aria-label="More actions for Platform"]')
+      .trigger("keydown", { key: "Enter" });
     await browser
       .get('[aria-label="Add group inside Platform"]')
       .trigger("click");

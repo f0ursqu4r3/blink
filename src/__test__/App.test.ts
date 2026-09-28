@@ -35,14 +35,20 @@ describe("compact request console", () => {
     await app.get('[aria-label="Top-level group name"]').setValue("Platform");
     await app.get(".top-level-form").trigger("submit");
     await app
-      .get('[aria-label="Move active request to Platform"]')
-      .trigger("click");
-
-    expect(
-      app
-        .get('[aria-label="Move active request to Platform"]')
-        .attributes("disabled"),
-    ).toBeDefined();
+      .get('[aria-label="More actions for Platform"]')
+      .trigger("keydown", { key: "Enter" });
+    const move = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.trim() === "Move selection here")!;
+    move.click();
+    await flushPromises();
+    await app
+      .get('[aria-label="More actions for Platform"]')
+      .trigger("keydown", { key: "Enter" });
+    const updatedMove = Array.from(
+      document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
+    ).find((item) => item.textContent?.trim() === "Move selection here")!;
+    expect(updatedMove.getAttribute("data-disabled")).not.toBeNull();
   });
 
   it("collapses and restores the request browser", async () => {

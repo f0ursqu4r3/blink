@@ -94,6 +94,22 @@ describe("durable workspace snapshots", () => {
     expect(result.sessions[0].busy).toBe(false);
     expect(result.sessions[0].error).toContain("interrupted");
   });
+  it("round-trips GraphQL drafts and rejects non-string variables", () => {
+    const session = createSession();
+    session.draft.method = "POST";
+    session.draft.bodyMode = "graphql";
+    session.draft.body = "{ viewer { id } }";
+    session.draft.variables = '{"first":10}';
+    const encoded = encodeWorkspace([session], session.id);
+    expect(decodeWorkspace(encoded).sessions[0].draft).toMatchObject({
+      bodyMode: "graphql",
+      body: session.draft.body,
+      variables: session.draft.variables,
+    });
+    const data = JSON.parse(encoded);
+    data.tabs[0].draft.variables = { first: 10 };
+    expect(() => decodeWorkspace(JSON.stringify(data))).toThrow();
+  });
   it("rejects corrupt, future and malformed snapshots instead of partially resetting them", () => {
     for (const content of [
       "{",

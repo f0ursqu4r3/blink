@@ -7,6 +7,9 @@ export type RequestGroup = {
   localAuth?: import("./authorization").AuthorizationConfig | undefined;
   /** Local token definitions for interpolation. */
   localDefinitions?: Record<string, string> | undefined;
+  /** Defaults for new requests in this group. Undefined inherits. */
+  defaultMethod?: import("./request").Method | undefined;
+  defaultUrl?: string | undefined;
 };
 
 export type GroupedSession = {
@@ -44,7 +47,8 @@ export function canNestGroup(
   let cursor: number | null | undefined = parentId;
   const seen = new Set<number>();
   while (cursor !== null && cursor !== undefined) {
-    if (cursor === groupId || seen.has(cursor)) return false;
+    if (cursor === groupId || seen.has(cursor) || !parentById.has(cursor))
+      return false;
     seen.add(cursor);
     cursor = parentById.get(cursor);
   }

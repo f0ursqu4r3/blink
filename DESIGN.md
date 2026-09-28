@@ -17,9 +17,9 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
   and explanatory text. No web font requests.
 - **Layout:** A compact 36-pixel request tab strip and 34-pixel URL control
   sit beside a 244-pixel Browser sidebar. The Browser lists ungrouped requests
-  and nested groups. Request and response panels use the remaining width at
-  42% and 58%. Below 760 pixels, panels stack without hiding core request
-  controls.
+  and nested groups. Request and response panels share the remaining width in
+  a resizable split. Below 900 pixels, panels stack without hiding core request
+  controls. Below 760 pixels, the Browser opens from the header as an overlay.
 - **Shape:** Mostly square surfaces. Use a 2-pixel radius for controls.
 - **Density:** Small icon-and-label controls. No floating toolbars, large
   buttons, repeated summaries, or redundant metadata badges.
@@ -54,3 +54,7 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Make saving and storage failures visible. Preserve corrupt snapshots until
   the user explicitly replaces them. Disclose local plaintext credentials.
 - Explain browser limitations; use native HTTP for unrestricted inspection.
+- Put secondary guidance in keyboard and touch accessible tooltips. Keep errors,
+  effective authorization, and destructive confirmations visible.
+- Apply application and group defaults only when creating a new request. Do not
+  rewrite an existing request or a duplicate.

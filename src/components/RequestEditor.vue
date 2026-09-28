@@ -1,19 +1,21 @@
 <script setup lang="ts">
-import { computed, ref, useId } from 'vue';
-import { TabsRoot, TabsList, TabsTrigger, TabsContent } from 'reka-ui';
-import { Braces, KeyRound } from 'lucide-vue-next';
-import { Button } from '@/components/ui/button';
+import { computed, ref, useId } from "vue";
+import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
+import { Braces, KeyRound } from "lucide-vue-next";
+import HelpTooltip from "./HelpTooltip.vue";
+import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
-} from '@/components/ui/context-menu';
-import KeyValueEditor from './KeyValueEditor.vue';
-import { activePairs, supportsBody, type Draft } from '@/lib/request';
-import type { AuthorizationConfig } from '@/lib/authorization';
-import { formatJson } from '@/lib/json';
+} from "@/components/ui/context-menu";
+import KeyValueEditor from "./KeyValueEditor.vue";
+import { activePairs, supportsBody, type Draft } from "@/lib/request";
+import type { AuthorizationConfig } from "@/lib/authorization";
+import { formatJson } from "@/lib/json";
+import { formatGraphql } from "@/lib/graphql";
 const draft = defineModel<Draft>({ required: true });
 const props = defineProps<{
   busy: boolean;
@@ -21,40 +23,46 @@ const props = defineProps<{
   inheritedSource?: string;
 }>();
 const id = useId();
-const tab = defineModel<string>('tab', { default: 'query' });
-const formatError = ref('');
+const tab = defineModel<string>("tab", { default: "query" });
+const formatError = ref("");
 const bodyPlaceholder = computed(() =>
-  draft.value.bodyMode === 'json' ? '{\n  "key": "value"\n}' : 'Request body'
+  draft.value.bodyMode === "json"
+    ? '{\n  "key": "value"\n}'
+    : draft.value.bodyMode === "graphql"
+      ? "query {\n  viewer {\n    id\n  }\n}"
+      : "Request body",
 );
+const variablesPlaceholder = '{\n  "id": "1"\n}';
 const bodyAllowed = computed(() => supportsBody(draft.value.method));
 
 /** Resolved "what is selected in the auth dropdown" */
 const authSelectValue = computed(() => {
-  if (draft.value.localAuth === undefined) return 'inherit';
-  return draft.value.localAuth.type === 'bearer'
-    ? 'bearer'
-    : draft.value.localAuth.type === 'basic'
-      ? 'basic'
-      : 'none';
+  if (draft.value.localAuth === undefined) return "inherit";
+  return draft.value.localAuth.type === "bearer"
+    ? "bearer"
+    : draft.value.localAuth.type === "basic"
+      ? "basic"
+      : "none";
 });
 
 function setAuthType(value: string) {
-  if (value === 'inherit') {
+  if (props.busy) return;
+  if (value === "inherit") {
     draft.value = { ...draft.value, localAuth: undefined };
-  } else if (value === 'none') {
-    draft.value = { ...draft.value, localAuth: { type: 'none' } };
-  } else if (value === 'bearer') {
+  } else if (value === "none") {
+    draft.value = { ...draft.value, localAuth: { type: "none" } };
+  } else if (value === "bearer") {
     draft.value = {
       ...draft.value,
-      localAuth: { type: 'bearer', token: draft.value.token ?? '' },
+      localAuth: { type: "bearer", token: draft.value.token ?? "" },
     };
-  } else if (value === 'basic') {
+  } else if (value === "basic") {
     draft.value = {
       ...draft.value,
       localAuth: {
-        type: 'basic',
-        username: draft.value.username ?? '',
-        password: draft.value.password ?? '',
+        type: "basic",
+        username: draft.value.username ?? "",
+        password: draft.value.password ?? "",
       },
     };
   }
@@ -63,34 +71,66 @@ function setAuthType(value: string) {
 const authBadgeCount = computed(() => {
   // Show badge if effective auth (inherited or local) is not none
   const effective = draft.value.localAuth ?? props.effectiveAuth;
-  return effective && effective.type !== 'none' ? 1 : 0;
+  return effective && effective.type !== "none" ? 1 : 0;
 });
 
 const tabs = computed(() => [
-  { id: 'query', label: 'Query', count: activePairs(draft.value.query).length },
+  { id: "query", label: "Query", count: activePairs(draft.value.query).length },
   {
-    id: 'headers',
-    label: 'Headers',
+    id: "headers",
+    label: "Headers",
     count: activePairs(draft.value.headers).length,
   },
   {
-    id: 'body',
-    label: 'Body',
-    count: bodyAllowed.value && draft.value.bodyMode !== 'none' ? 1 : 0,
+    id: "body",
+    label: "Body",
+    count: bodyAllowed.value && draft.value.bodyMode !== "none" ? 1 : 0,
   },
-  { id: 'auth', label: 'Auth', count: authBadgeCount.value },
+  { id: "auth", label: "Auth", count: authBadgeCount.value },
 ]);
-function formatBody() {
+const formattable = computed(
+  () => draft.value.bodyMode === "json" || draft.value.bodyMode === "graphql",
+);
+async function formatBody() {
+  if (props.busy) return;
+  if (draft.value.bodyMode === "graphql") return formatGraphqlBody();
   try {
     draft.value.body = formatJson(draft.value.body);
-    formatError.value = '';
+    formatError.value = "";
   } catch {
-    formatError.value = 'Invalid JSON. The body was not changed.';
+    formatError.value = "Invalid JSON. The body was not changed.";
   }
 }
+async function formatGraphqlBody() {
+  const body = draft.value.body;
+  const variables = draft.value.variables ?? "";
+  let formattedVariables = variables;
+  if (variables.trim()) {
+    try {
+      formattedVariables = formatJson(variables);
+    } catch {
+      formatError.value = "Invalid JSON variables. The body was not changed.";
+      return;
+    }
+  }
+  let formattedBody: string;
+  try {
+    formattedBody = await formatGraphql(body);
+  } catch {
+    formatError.value = "Invalid GraphQL. The body was not changed.";
+    return;
+  }
+  // Skip the update if the user edited while the formatter loaded.
+  if (draft.value.body !== body || (draft.value.variables ?? "") !== variables)
+    return;
+  draft.value.body = formattedBody;
+  draft.value.variables = formattedVariables;
+  formatError.value = "";
+}
 function clearBody() {
-  draft.value.body = '';
-  formatError.value = '';
+  if (props.busy) return;
+  draft.value.body = "";
+  formatError.value = "";
 }
 </script>
 
@@ -106,7 +146,7 @@ function clearBody() {
         <span class="text-primary mr-2.5">01</span> Request
       </h2>
       <span class="text-muted-foreground">
-        {{ busy ? 'SENDING' : 'COMPOSE' }}
+        {{ busy ? "SENDING" : "COMPOSE" }}
       </span>
     </header>
     <TabsRoot v-model="tab" class="flex-1 min-h-0 flex flex-col">
@@ -134,11 +174,18 @@ function clearBody() {
         class="flex-1 min-h-0 overflow-auto -outline-offset-2"
       >
         <KeyValueEditor v-model="draft.query" label="Query" :disabled="busy" />
-        <p
-          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-muted-foreground"
-        >
-          Enabled rows are appended to the URL. Duplicate keys are preserved.
-        </p>
+        <div class="px-4 py-2">
+          <HelpTooltip
+            text="Enabled rows are appended to the URL. Duplicate keys are preserved."
+          >
+            <button
+              type="button"
+              class="text-[0.6875rem] text-muted-foreground underline decoration-dotted underline-offset-3"
+            >
+              Query help
+            </button>
+          </HelpTooltip>
+        </div>
       </TabsContent>
       <TabsContent
         value="headers"
@@ -149,11 +196,18 @@ function clearBody() {
           label="Header"
           :disabled="busy"
         />
-        <p
-          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-muted-foreground"
-        >
-          Body mode sets Content-Type unless overridden here.
-        </p>
+        <div class="px-4 py-2">
+          <HelpTooltip
+            text="Body mode sets Content-Type unless a header overrides it."
+          >
+            <button
+              type="button"
+              class="text-[0.6875rem] text-muted-foreground underline decoration-dotted underline-offset-3"
+            >
+              Header help
+            </button>
+          </HelpTooltip>
+        </div>
       </TabsContent>
       <TabsContent
         value="body"
@@ -176,9 +230,10 @@ function clearBody() {
                 <option value="none">None</option>
                 <option value="json">JSON</option>
                 <option value="text">Text</option>
+                <option value="graphql">GraphQL</option>
               </select>
               <Button
-                v-if="draft.bodyMode === 'json'"
+                v-if="formattable"
                 variant="ghost"
                 class="ml-auto"
                 :disabled="busy || !draft.body"
@@ -191,27 +246,44 @@ function clearBody() {
           <ContextMenuContent>
             <ContextMenuItem
               data-testid="body-menu-format"
-              :disabled="draft.bodyMode !== 'json' || !draft.body"
+              :disabled="busy || !formattable || !draft.body"
               @select="formatBody"
             >
-              Format JSON
+              {{
+                draft.bodyMode === "graphql" ? "Format GraphQL" : "Format JSON"
+              }}
             </ContextMenuItem>
             <ContextMenuItem
               data-testid="body-menu-clear"
-              :disabled="!draft.body"
+              :disabled="busy || !draft.body"
               @select="clearBody"
             >
               Clear body
             </ContextMenuItem>
             <ContextMenuSeparator />
-            <ContextMenuItem @select="draft.bodyMode = 'none'">
+            <ContextMenuItem
+              :disabled="busy"
+              @select="!busy && (draft.bodyMode = 'none')"
+            >
               Body: none
             </ContextMenuItem>
-            <ContextMenuItem @select="draft.bodyMode = 'json'">
+            <ContextMenuItem
+              :disabled="busy"
+              @select="!busy && (draft.bodyMode = 'json')"
+            >
               Body: JSON
             </ContextMenuItem>
-            <ContextMenuItem @select="draft.bodyMode = 'text'">
+            <ContextMenuItem
+              :disabled="busy"
+              @select="!busy && (draft.bodyMode = 'text')"
+            >
               Body: text
+            </ContextMenuItem>
+            <ContextMenuItem
+              :disabled="busy"
+              @select="!busy && (draft.bodyMode = 'graphql')"
+            >
+              Body: GraphQL
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
@@ -222,7 +294,9 @@ function clearBody() {
           {{ draft.method }} sends no body. Your draft is retained.
         </p>
         <template v-if="draft.bodyMode !== 'none'">
-          <label class="sr-only" :for="`${id}-body`">Request body</label>
+          <label class="sr-only" :for="`${id}-body`">{{
+            draft.bodyMode === "graphql" ? "GraphQL query" : "Request body"
+          }}</label>
           <textarea
             :id="`${id}-body`"
             v-model="draft.body"
@@ -234,6 +308,25 @@ function clearBody() {
             @input="formatError = ''"
             @contextmenu.stop
           />
+          <template v-if="draft.bodyMode === 'graphql'">
+            <label
+              :for="`${id}-variables`"
+              class="shrink-0 px-3 py-2 border-y border-border text-muted-foreground text-xs"
+            >
+              Variables
+            </label>
+            <textarea
+              :id="`${id}-variables`"
+              v-model="draft.variables"
+              :disabled="busy"
+              @input="formatError = ''"
+              class="h-32 shrink-0 w-full resize-none border-0 rounded-none p-4 font-mono text-[0.8125rem] leading-[1.75] bg-transparent tab-2 pointer-coarse:text-base"
+              spellcheck="false"
+              autocomplete="off"
+              :placeholder="variablesPlaceholder"
+              @contextmenu.stop
+            />
+          </template>
         </template>
         <p
           v-else
@@ -372,16 +465,16 @@ function clearBody() {
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
-            <ContextMenuItem @select="setAuthType('inherit')">
+            <ContextMenuItem :disabled="busy" @select="setAuthType('inherit')">
               Inherit
             </ContextMenuItem>
-            <ContextMenuItem @select="setAuthType('none')">
+            <ContextMenuItem :disabled="busy" @select="setAuthType('none')">
               No auth
             </ContextMenuItem>
-            <ContextMenuItem @select="setAuthType('bearer')">
+            <ContextMenuItem :disabled="busy" @select="setAuthType('bearer')">
               Bearer token
             </ContextMenuItem>
-            <ContextMenuItem @select="setAuthType('basic')">
+            <ContextMenuItem :disabled="busy" @select="setAuthType('basic')">
               Basic auth
             </ContextMenuItem>
             <ContextMenuSeparator />

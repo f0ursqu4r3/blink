@@ -2,8 +2,10 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createSession, type RequestSession } from "@/lib/session";
+import { methods } from "@/lib/request";
 import {
   createGroup,
+  canNestGroup,
   deleteGroupAndPromoteContents,
   type RequestGroup,
 } from "@/lib/groups";
@@ -20,6 +22,11 @@ import {
   writeWorkspace,
   WorkspaceWriter,
 } from "@/lib/workspace-storage";
+import {
+  defaultPreferences,
+  validPreferences,
+  type WorkspacePreferences,
+} from "@/lib/preferences";
 
 export function useWorkspaceState() {
   const sessions = ref<RequestSession[]>([createSession()]);
@@ -31,6 +38,7 @@ export function useWorkspaceState() {
   const exitBlocked = ref(false);
   /** Workspace-global token definitions, shared across all requests. */
   const globalDefinitions = ref<Record<string, string>>({});
+  const preferences = ref<WorkspacePreferences>(defaultPreferences());
   let revision = 0;
   let unlisten: UnlistenFn | undefined;
   const closing = ref(false);
@@ -51,6 +59,7 @@ export function useWorkspaceState() {
       groups.value = restored.groups;
       activeId.value = restored.activeId;
       globalDefinitions.value = restored.globalDefinitions ?? {};
+      preferences.value = restored.preferences ?? defaultPreferences();
     }
     error.value = "";
     ready.value = true;
@@ -87,6 +96,7 @@ export function useWorkspaceState() {
           activeId.value,
           groups.value,
           globalDefinitions.value,
+          preferences.value,
         ),
       );
       if (current === revision) error.value = "";
@@ -107,6 +117,7 @@ export function useWorkspaceState() {
             activeId.value,
             groups.value,
             globalDefinitions.value,
+            preferences.value,
           )
         : null,
     () => {
@@ -116,9 +127,13 @@ export function useWorkspaceState() {
   async function reset() {
     const session = createSession();
     try {
-      await writer.save(encodeWorkspace([session], session.id, [], {}));
+      await writer.save(
+        encodeWorkspace([session], session.id, [], {}, defaultPreferences()),
+      );
       sessions.value = [session];
       groups.value = [];
+      globalDefinitions.value = {};
+      preferences.value = defaultPreferences();
       activeId.value = session.id;
       error.value = "";
       ready.value = true;
@@ -145,6 +160,7 @@ export function useWorkspaceState() {
         activeId.value,
         groups.value,
         globalDefinitions.value,
+        preferences.value,
       );
       if (!(await flush())) {
         exitBlocked.value = true;
@@ -159,6 +175,7 @@ export function useWorkspaceState() {
         activeId.value,
         groups.value,
         globalDefinitions.value,
+        preferences.value,
       )
     );
     await quitWithoutSaving();
@@ -170,6 +187,8 @@ export function useWorkspaceState() {
           sessions.value,
           activeId.value,
           groups.value,
+          globalDefinitions.value,
+          preferences.value,
         );
         validateWorkspace(content);
         localStorage.setItem(WORKSPACE_KEY, content);
@@ -209,8 +228,7 @@ export function useWorkspaceState() {
     return group;
   }
   function renameGroup(id: number, name: string) {
-    const group = groups.value.find((candidate) => candidate.id === id);
-    if (group && name.trim()) group.name = name.trim();
+    setGroupName(id, name);
   }
   function toggleGroup(id: number) {
     const group = groups.value.find((candidate) => candidate.id === id);
@@ -307,7 +325,8 @@ export function useWorkspaceState() {
    */
   function setGroupName(groupId: number, name: string) {
     const group = groups.value.find((g) => g.id === groupId);
-    if (group && name.trim()) group.name = name.trim();
+    const trimmed = name.trim();
+    if (group && trimmed && trimmed.length <= 80) group.name = trimmed;
   }
 
   /**
@@ -343,6 +362,31 @@ export function useWorkspaceState() {
   function setGlobalDefinitions(defs: Record<string, string>) {
     globalDefinitions.value = { ...defs };
   }
+  function setPreferences(next: WorkspacePreferences) {
+    if (!validPreferences(next)) return;
+    preferences.value = { ...next };
+  }
+  function setGroupParent(groupId: number, parentId: number | null) {
+    const group = groups.value.find((g) => g.id === groupId);
+    if (group && canNestGroup(groups.value, groupId, parentId))
+      group.parentId = parentId;
+  }
+  function setGroupNewRequestDefaults(
+    groupId: number,
+    defaultMethod: import("@/lib/request").Method | undefined,
+    defaultUrl: string | undefined,
+  ) {
+    const group = groups.value.find((g) => g.id === groupId);
+    if (!group) return;
+    if (defaultMethod !== undefined && !methods.includes(defaultMethod)) return;
+    if (
+      defaultUrl !== undefined &&
+      (typeof defaultUrl !== "string" || defaultUrl.length > 65536)
+    )
+      return;
+    group.defaultMethod = defaultMethod;
+    group.defaultUrl = defaultUrl;
+  }
 
   return {
     sessions,
@@ -354,6 +398,7 @@ export function useWorkspaceState() {
     status,
     exitBlocked,
     globalDefinitions,
+    preferences,
     restore,
     flush,
     reset,
@@ -370,5 +415,8 @@ export function useWorkspaceState() {
     setGroupLocalAuth,
     setGroupLocalDefinitions,
     setGlobalDefinitions,
+    setPreferences,
+    setGroupParent,
+    setGroupNewRequestDefaults,
   };
 }

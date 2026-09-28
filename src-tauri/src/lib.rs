@@ -155,6 +155,11 @@ mod app_state;
 #[cfg(test)]
 mod request_tests;
 
+fn save_window_state(app: &tauri::AppHandle) {
+    use tauri_plugin_window_state::{AppHandleExt, StateFlags};
+    let _ = app.save_window_state(StateFlags::all());
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     use tauri::Manager;
@@ -165,12 +170,17 @@ pub fn run() {
             app.manage(app_state::AppState::new(app.path().app_data_dir()?));
             Ok(())
         })
-        .on_window_event(|window, event| {
-            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+        .on_window_event(|window, event| match event {
+            tauri::WindowEvent::CloseRequested { api, .. } => {
+                save_window_state(window.app_handle());
                 if app_state::request_exit(window.app_handle()) {
                     api.prevent_close();
                 }
             }
+            // The plugin only writes on a clean exit. Also write on blur so the
+            // layout survives killed processes and `tauri dev` restarts.
+            tauri::WindowEvent::Focused(false) => save_window_state(window.app_handle()),
+            _ => {}
         })
         .invoke_handler(tauri::generate_handler![
             send_request,

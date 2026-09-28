@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue';
+import { computed, ref } from "vue";
+import GroupActionsMenu from "./GroupActionsMenu.vue";
+import HelpTooltip from "./HelpTooltip.vue";
 import {
   ChevronDown,
   ChevronRight,
@@ -9,17 +11,15 @@ import {
   MoveRight,
   PanelLeftClose,
   PanelLeftOpen,
-  Pencil,
   Plus,
   Settings,
-  Trash2,
-} from 'lucide-vue-next';
-import type { RequestGroup } from '@/lib/groups';
-import { sessionLabel, type RequestSession } from '@/lib/session';
+} from "lucide-vue-next";
+import type { RequestGroup } from "@/lib/groups";
+import { sessionLabel, type RequestSession } from "@/lib/session";
 import {
   resolveAuthorization,
   type AuthorizationConfig,
-} from '@/lib/authorization';
+} from "@/lib/authorization";
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -29,13 +29,14 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
-} from '@/components/ui/context-menu/index';
+} from "@/components/ui/context-menu/index";
 
 const props = defineProps<{
   sessions: RequestSession[];
   activeId: number;
   groups: RequestGroup[];
   collapsed?: boolean;
+  mobileOpen?: boolean;
   selectedIds?: number[];
   selectionAnchorId?: number | null;
 }>();
@@ -55,7 +56,7 @@ const emit = defineEmits<{
   deleteGroup: [id: number];
   toggleSidebar: [];
   openGroupSettings: [groupId: number];
-  createRequest: [];
+  createRequest: [groupId: number | null];
   duplicateRequest: [sessionId: number];
   closeRequest: [sessionId: number];
   setRequestLocalAuth: [
@@ -65,21 +66,21 @@ const emit = defineEmits<{
 }>();
 
 type BrowserRow =
-  | { type: 'group'; group: RequestGroup; level: number }
-  | { type: 'request'; session: RequestSession; level: number };
+  | { type: "group"; group: RequestGroup; level: number }
+  | { type: "request"; session: RequestSession; level: number };
 const creatingParent = ref<number | null | undefined>(undefined);
 const editingId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
-const draftName = ref('');
+const draftName = ref("");
 const groupingSelection = ref<number[] | null>(null);
-const requestMime = 'application/x-blink-request-ids';
-const groupMime = 'application/x-blink-group-id';
+const requestMime = "application/x-blink-request-ids";
+const groupMime = "application/x-blink-group-id";
 
 const groupById = computed(
-  () => new Map(props.groups.map((group) => [group.id, group]))
+  () => new Map(props.groups.map((group) => [group.id, group])),
 );
 const active = computed(() =>
-  props.sessions.find((session) => session.id === props.activeId)
+  props.sessions.find((session) => session.id === props.activeId),
 );
 const rows = computed<BrowserRow[]>(() => {
   const children = new Map<number | null, RequestGroup[]>();
@@ -90,15 +91,15 @@ const rows = computed<BrowserRow[]>(() => {
   }
   const items: BrowserRow[] = props.sessions
     .filter((session) => session.groupId === null)
-    .map((session) => ({ type: 'request', session, level: 0 }));
+    .map((session) => ({ type: "request", session, level: 0 }));
   const append = (parentId: number | null, level: number) => {
     for (const group of children.get(parentId) ?? []) {
-      items.push({ type: 'group', group, level });
+      items.push({ type: "group", group, level });
       if (group.collapsed) continue;
       for (const session of props.sessions.filter(
-        (candidate) => candidate.groupId === group.id
+        (candidate) => candidate.groupId === group.id,
       ))
-        items.push({ type: 'request', session, level: level + 1 });
+        items.push({ type: "request", session, level: level + 1 });
       append(group.id, level + 1);
     }
   };
@@ -107,25 +108,25 @@ const rows = computed<BrowserRow[]>(() => {
 });
 const selected = computed(() => new Set(props.selectedIds ?? []));
 const visibleRequestIds = computed(() =>
-  rows.value.flatMap((row) => (row.type === 'request' ? [row.session.id] : []))
+  rows.value.flatMap((row) => (row.type === "request" ? [row.session.id] : [])),
 );
 
 function startCreating(parentId: number | null, sessionIds?: number[]) {
   creatingParent.value = parentId;
   editingId.value = null;
   deletingId.value = null;
-  draftName.value = '';
+  draftName.value = "";
   groupingSelection.value = sessionIds?.length ? sessionIds : null;
 }
 function submitCreate() {
   const name = draftName.value.trim();
   if (!name || creatingParent.value === undefined) return;
   if (groupingSelection.value)
-    emit('createGroup', name, creatingParent.value, groupingSelection.value);
-  else emit('createGroup', name, creatingParent.value);
+    emit("createGroup", name, creatingParent.value, groupingSelection.value);
+  else emit("createGroup", name, creatingParent.value);
   groupingSelection.value = null;
   creatingParent.value = undefined;
-  draftName.value = '';
+  draftName.value = "";
 }
 function startRename(group: RequestGroup) {
   editingId.value = group.id;
@@ -136,9 +137,9 @@ function startRename(group: RequestGroup) {
 function submitRename(group: RequestGroup) {
   const name = draftName.value.trim();
   if (!name) return;
-  emit('renameGroup', group.id, name);
+  emit("renameGroup", group.id, name);
   editingId.value = null;
-  draftName.value = '';
+  draftName.value = "";
 }
 function moveSelection(groupId: number | null) {
   const ids = props.selectedIds?.length
@@ -146,8 +147,8 @@ function moveSelection(groupId: number | null) {
     : active.value
       ? [active.value.id]
       : [];
-  if (ids.length > 1) emit('moveRequests', ids, groupId, null);
-  else if (ids[0] !== undefined) emit('moveRequest', ids[0], groupId);
+  if (ids.length > 1) emit("moveRequests", ids, groupId, null);
+  else if (ids[0] !== undefined) emit("moveRequest", ids[0], groupId);
 }
 function selectionAlreadyIn(groupId: number | null) {
   const ids = props.selectedIds?.length
@@ -159,7 +160,8 @@ function selectionAlreadyIn(groupId: number | null) {
     ids.length > 0 &&
     ids.every(
       (id) =>
-        props.sessions.find((session) => session.id === id)?.groupId === groupId
+        props.sessions.find((session) => session.id === id)?.groupId ===
+        groupId,
     )
   );
 }
@@ -169,8 +171,8 @@ function levelPadding(level: number): string {
 }
 function parentName(parentId: number | null) {
   return parentId === null
-    ? 'Browser'
-    : (groupById.value.get(parentId)?.name ?? 'Browser');
+    ? "Browser"
+    : (groupById.value.get(parentId)?.name ?? "Browser");
 }
 
 function selectRequest(id: number, event: MouseEvent) {
@@ -188,7 +190,7 @@ function selectRequest(id: number, event: MouseEvent) {
         ? [id]
         : visibleRequestIds.value.slice(
             Math.min(start, end),
-            Math.max(start, end) + 1
+            Math.max(start, end) + 1,
           );
     anchorId = props.selectionAnchorId;
   } else if (event.metaKey || event.ctrlKey) {
@@ -198,8 +200,8 @@ function selectRequest(id: number, event: MouseEvent) {
   } else {
     ids = [id];
   }
-  emit('select', id);
-  emit('updateSelection', ids, anchorId);
+  emit("select", id);
+  emit("updateSelection", ids, anchorId);
 }
 
 /** Called when a context menu is opened on a request row. */
@@ -207,8 +209,8 @@ function handleRequestContextMenu(sessionId: number) {
   // If the right-clicked request is already in the multi-selection, keep it.
   if (selected.value.has(sessionId)) return;
   // Otherwise select only this request.
-  emit('select', sessionId);
-  emit('updateSelection', [sessionId], sessionId);
+  emit("select", sessionId);
+  emit("updateSelection", [sessionId], sessionId);
 }
 
 function requestIdsFrom(event: DragEvent) {
@@ -227,10 +229,10 @@ function hasType(event: DragEvent, type: string) {
 
 function startRequestDrag(id: number, event: DragEvent) {
   const ids = selected.value.has(id) ? (props.selectedIds ?? []) : [id];
-  if (!selected.value.has(id)) emit('updateSelection', ids, id);
+  if (!selected.value.has(id)) emit("updateSelection", ids, id);
   event.dataTransfer?.setData(requestMime, JSON.stringify(ids));
-  event.dataTransfer?.setData('text/plain', ids.join(','));
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer?.setData("text/plain", ids.join(","));
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
 }
 
 function allowDrop(event: DragEvent) {
@@ -242,20 +244,20 @@ function dropOnRequest(event: DragEvent, session: RequestSession) {
   const ids = requestIdsFrom(event);
   if (!ids.length) return;
   event.preventDefault();
-  emit('moveRequests', ids, session.groupId, session.id);
+  emit("moveRequests", ids, session.groupId, session.id);
 }
 
 function dropOnGroup(event: DragEvent, group: RequestGroup) {
   const ids = requestIdsFrom(event);
   if (ids.length) {
     event.preventDefault();
-    emit('moveRequests', ids, group.id, null);
+    emit("moveRequests", ids, group.id, null);
     return;
   }
   const source = Number(event.dataTransfer?.getData(groupMime));
   if (Number.isSafeInteger(source)) {
     event.preventDefault();
-    emit('reorderGroup', source, group.id);
+    emit("reorderGroup", source, group.id);
   }
 }
 
@@ -263,13 +265,13 @@ function dropOnUngrouped(event: DragEvent) {
   const ids = requestIdsFrom(event);
   if (!ids.length) return;
   event.preventDefault();
-  emit('moveRequests', ids, null, null);
+  emit("moveRequests", ids, null, null);
 }
 
 function startGroupDrag(id: number, event: DragEvent) {
   event.dataTransfer?.setData(groupMime, String(id));
-  event.dataTransfer?.setData('text/plain', String(id));
-  if (event.dataTransfer) event.dataTransfer.effectAllowed = 'move';
+  event.dataTransfer?.setData("text/plain", String(id));
+  if (event.dataTransfer) event.dataTransfer.effectAllowed = "move";
 }
 
 /** Effective auth for a session (used for lock indicator). */
@@ -277,7 +279,7 @@ function effectiveSessionAuth(session: RequestSession): AuthorizationConfig {
   return resolveAuthorization(
     (session.draft as { localAuth?: AuthorizationConfig }).localAuth,
     session.groupId,
-    props.groups
+    props.groups,
   );
 }
 
@@ -289,7 +291,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
 <template>
   <aside
-    class="flex flex-col border-r border-border bg-muted overflow-hidden w-61 min-w-47 data-[collapsed=true]:w-10.5 data-[collapsed=true]:min-w-10.5 max-[760px]:hidden"
+    id="request-browser"
+    class="flex flex-col border-r border-border bg-muted overflow-hidden w-61 min-w-47 data-[collapsed=true]:w-10.5 data-[collapsed=true]:min-w-10.5 max-[760px]:absolute max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40"
+    :class="{ 'max-[760px]:hidden': !mobileOpen }"
     data-request-browser
     :data-collapsed="Boolean(collapsed)"
     :aria-label="collapsed ? 'Request browser collapsed' : 'Request browser'"
@@ -407,7 +411,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
               <ContextMenuItem @select="moveSelection(null)">
                 Move selection here
               </ContextMenuItem>
-              <ContextMenuItem @select="emit('createRequest')">
+              <ContextMenuItem @select="emit('createRequest', null)">
                 New request in ungrouped
               </ContextMenuItem>
             </ContextMenuContent>
@@ -577,12 +581,16 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         />
                         <ChevronDown v-else :size="13" aria-hidden="true" />
                       </button>
-                      <Folder :size="13" aria-hidden="true" />
+                      <Folder :size="13" class="shrink-0" aria-hidden="true" />
                       <span
                         v-if="editingId !== row.group.id"
                         class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground font-mono text-[11px] flex items-center gap-1"
                       >
-                        {{ row.group.name }}
+                        <span
+                          class="min-w-0 truncate"
+                          :title="row.group.name"
+                          >{{ row.group.name }}</span
+                        >
                         <Lock
                           v-if="effectiveGroupAuth(row.group).type !== 'none'"
                           :size="10"
@@ -629,50 +637,43 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         v-if="editingId !== row.group.id"
                         class="flex opacity-0 group-hover/row:opacity-100 group-focus-within/row:opacity-100 pointer-coarse:opacity-100"
                       >
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
-                          :aria-label="`Group settings for ${row.group.name}`"
-                          :title="`Group settings for ${row.group.name}`"
-                          @click="emit('openGroupSettings', row.group.id)"
-                        >
-                          <Settings :size="12" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
-                          :aria-label="`Add group inside ${row.group.name}`"
-                          :title="`Add group inside ${row.group.name}`"
-                          @click="startCreating(row.group.id)"
-                        >
-                          <FolderPlus :size="13" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent disabled:opacity-30 pointer-coarse:w-8 pointer-coarse:h-8"
-                          :aria-label="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
-                          :title="`Move ${selectedIds?.length ? 'selected requests' : 'active request'} to ${row.group.name}`"
-                          :disabled="selectionAlreadyIn(row.group.id)"
-                          @click="moveSelection(row.group.id)"
-                        >
-                          <MoveRight :size="13" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
-                          :aria-label="`Rename ${row.group.name}`"
-                          @click="startRename(row.group)"
-                        >
-                          <Pencil :size="12" aria-hidden="true" />
-                        </button>
-                        <button
-                          type="button"
-                          class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-destructive hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
-                          :aria-label="`Delete ${row.group.name}`"
-                          @click="deletingId = row.group.id"
-                        >
-                          <Trash2 :size="12" aria-hidden="true" />
-                        </button>
+                        <HelpTooltip
+                          :text="`Group settings for ${row.group.name}`"
+                          :help-only="false"
+                          ><button
+                            type="button"
+                            class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
+                            :aria-label="`Group settings for ${row.group.name}`"
+                            @click="emit('openGroupSettings', row.group.id)"
+                          >
+                            <Settings :size="12" aria-hidden="true" /></button
+                        ></HelpTooltip>
+                        <HelpTooltip
+                          :text="`New request in ${row.group.name}`"
+                          :help-only="false"
+                          ><button
+                            type="button"
+                            class="inline-flex items-center justify-center size-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:size-8"
+                            :aria-label="`New request in ${row.group.name}`"
+                            @click="emit('createRequest', row.group.id)"
+                          >
+                            <Plus :size="12" aria-hidden="true" /></button
+                        ></HelpTooltip>
+                        <GroupActionsMenu
+                          :name="row.group.name"
+                          :can-move="!selectionAlreadyIn(row.group.id)"
+                          @action="
+                            (action) => {
+                              if (action === 'createGroup')
+                                startCreating(row.group.id);
+                              else if (action === 'move')
+                                moveSelection(row.group.id);
+                              else if (action === 'rename')
+                                startRename(row.group);
+                              else deletingId = row.group.id;
+                            }
+                          "
+                        />
                       </div>
                     </div>
                   </ContextMenuTrigger>
@@ -685,13 +686,18 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     <ContextMenuItem @select="startCreating(row.group.id)">
                       New child group
                     </ContextMenuItem>
+                    <ContextMenuItem
+                      @select="emit('createRequest', row.group.id)"
+                    >
+                      New request in {{ row.group.name }}
+                    </ContextMenuItem>
                     <ContextMenuItem @select="startRename(row.group)">
                       Rename
                     </ContextMenuItem>
                     <ContextMenuItem
                       @select="emit('toggleGroup', row.group.id)"
                     >
-                      {{ row.group.collapsed ? 'Expand' : 'Collapse' }}
+                      {{ row.group.collapsed ? "Expand" : "Collapse" }}
                     </ContextMenuItem>
                     <ContextMenuItem @select="moveSelection(row.group.id)">
                       Move selection here
@@ -772,7 +778,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
         <ContextMenuItem @select="startCreating(null)">
           New group
         </ContextMenuItem>
-        <ContextMenuItem @select="emit('createRequest')">
+        <ContextMenuItem @select="emit('createRequest', null)">
           New request
         </ContextMenuItem>
       </ContextMenuContent>

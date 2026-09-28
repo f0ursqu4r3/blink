@@ -14,13 +14,17 @@ export const methods = [
 export type Method = (typeof methods)[number];
 export type Pair = { id: number; key: string; value: string; enabled: boolean };
 export type Header = { key: string; value: string };
+export const bodyModes = ["none", "json", "text", "graphql"] as const;
+export type BodyMode = (typeof bodyModes)[number];
 export type Draft = {
   method: Method;
   url: string;
   query: Pair[];
   headers: Pair[];
-  bodyMode: "none" | "json" | "text";
+  bodyMode: BodyMode;
   body: string;
+  /** GraphQL variables as JSON text. Used only in graphql body mode. */
+  variables?: string;
   auth: "none" | "bearer" | "basic";
   token: string;
   username: string;
@@ -162,6 +166,27 @@ export function buildRequest(
       throw new Error("Invalid JSON body. Fix the JSON or select Text.");
     }
   }
+  if (body !== null && draft.bodyMode === "graphql") {
+    if (!body.trim()) throw new Error("Enter a GraphQL query.");
+    const rawVariables = interp(draft.variables ?? "");
+    let variables: unknown;
+    if (rawVariables.trim()) {
+      try {
+        variables = JSON.parse(rawVariables);
+      } catch {
+        variables = null;
+      }
+      if (
+        !variables ||
+        typeof variables !== "object" ||
+        Array.isArray(variables)
+      )
+        throw new Error("GraphQL variables must be a JSON object.");
+    }
+    body = JSON.stringify(
+      variables === undefined ? { query: body } : { query: body, variables },
+    );
+  }
   if (
     body !== null &&
     !headers.some((h) => h.key.toLowerCase() === "content-type")
@@ -169,7 +194,7 @@ export function buildRequest(
     headers.push({
       key: "Content-Type",
       value:
-        draft.bodyMode === "json"
+        draft.bodyMode === "json" || draft.bodyMode === "graphql"
           ? "application/json"
           : "text/plain; charset=utf-8",
     });

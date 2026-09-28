@@ -69,6 +69,38 @@ describe("request construction", () => {
       ),
     ).toEqual([{ key: "Content-Type", value: "application/xml" }]);
   });
+  it("wraps GraphQL query and variables in a JSON payload", () => {
+    const request = draft();
+    request.method = "POST";
+    request.bodyMode = "graphql";
+    request.body = "query Q($id: ID!) { node(id: $id) { id } }";
+    request.variables = '{"id":"{{id}}"}';
+    const built = buildRequest(request, { definitions: { id: "42" } });
+    expect(JSON.parse(built.body!)).toEqual({
+      query: request.body,
+      variables: { id: "42" },
+    });
+    expect(built.headers).toContainEqual({
+      key: "Content-Type",
+      value: "application/json",
+    });
+    request.variables = "  ";
+    expect(JSON.parse(buildRequest(request).body!)).toEqual({
+      query: request.body,
+    });
+  });
+  it("rejects empty GraphQL queries and invalid variables", () => {
+    const request = draft();
+    request.method = "POST";
+    request.bodyMode = "graphql";
+    request.body = "  ";
+    expect(() => buildRequest(request)).toThrow("GraphQL query");
+    request.body = "{ ok }";
+    request.variables = "{";
+    expect(() => buildRequest(request)).toThrow("GraphQL variables");
+    request.variables = "[1]";
+    expect(() => buildRequest(request)).toThrow("GraphQL variables");
+  });
   it("rejects relative or malformed HTTP URLs", () => {
     for (const url of [
       "https:example.test",

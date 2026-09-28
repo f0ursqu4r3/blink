@@ -7,9 +7,9 @@ import {
   ref,
   useId,
   watch,
-} from 'vue';
-import { createView, type RequestView } from '@/lib/session';
-import { TabsRoot, TabsList, TabsTrigger, TabsContent } from 'reka-ui';
+} from "vue";
+import { createView, type RequestView } from "@/lib/session";
+import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
 import {
   Check,
   Copy,
@@ -17,22 +17,23 @@ import {
   Search,
   WrapText,
   X,
-} from 'lucide-vue-next';
-import { Button } from '@/components/ui/button';
+} from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from '@/components/ui/context-menu';
-import { formatBytes, type ApiResponse, type Header } from '@/lib/request';
-import { useClipboard } from '@/composables/useClipboard';
-import { formatJson } from '@/lib/json';
-import { runJq } from '@/lib/jq';
-import { responseLanguage } from '@/lib/response-content';
-import CodeView from './CodeView.vue';
-import JsonTreeView from './JsonTreeView.vue';
+} from "@/components/ui/context-menu";
+import { formatBytes, type ApiResponse, type Header } from "@/lib/request";
+import { useClipboard } from "@/composables/useClipboard";
+import { formatJson } from "@/lib/json";
+import { runJq } from "@/lib/jq";
+import { responseLanguage } from "@/lib/response-content";
+import CodeView from "./CodeView.vue";
+import JsonTreeView from "./JsonTreeView.vue";
+import HelpTooltip from "./HelpTooltip.vue";
 const props = defineProps<{
   response: ApiResponse | null;
   busy: boolean;
@@ -42,7 +43,7 @@ const props = defineProps<{
   active?: boolean;
 }>();
 const headingId = useId();
-const view = defineModel<RequestView>('view', { default: createView });
+const view = defineModel<RequestView>("view", { default: createView });
 const tab = computed({
   get: () => view.value.responseTab,
   set: (responseTab) => {
@@ -62,12 +63,12 @@ const wrap = computed({
   },
 });
 const { copied, copyError, copy } = useClipboard();
-const search = ref('');
+const search = ref("");
 const inspectorVisible = ref(false);
 const searchInput = ref<HTMLInputElement | null>(null);
-const jqQuery = ref('');
+const jqQuery = ref("");
 const jqOutput = ref<string | null>(null);
-const jqError = ref('');
+const jqError = ref("");
 const sourceParsed = computed(() => {
   if (!props.response) return null;
   try {
@@ -88,90 +89,96 @@ const parsed = computed(() => {
 const text = computed(() =>
   pretty.value && parsed.value
     ? parsed.value.text
-    : (jqOutput.value ?? props.response?.body ?? '')
+    : (jqOutput.value ?? props.response?.body ?? ""),
 );
 const contentType = computed(
   () =>
     props.response?.headers
-      .find((header) => header.key.toLowerCase() === 'content-type')
-      ?.value.split(';')[0] ?? 'No Content-Type'
+      .find((header) => header.key.toLowerCase() === "content-type")
+      ?.value.split(";")[0] ?? "No Content-Type",
 );
 const language = computed(() =>
-  parsed.value ? 'json' : responseLanguage(contentType.value)
+  parsed.value ? "json" : responseLanguage(contentType.value),
 );
 const showJsonTree = computed(() => pretty.value && Boolean(parsed.value));
 const filteredHeaders = computed(() => {
   const query = search.value.trim().toLocaleLowerCase();
   if (!query) return props.response?.headers ?? [];
   return (props.response?.headers ?? []).filter(({ key, value }) =>
-    `${key}: ${value}`.toLocaleLowerCase().includes(query)
+    `${key}: ${value}`.toLocaleLowerCase().includes(query),
   );
 });
 const tone = computed(() =>
   !props.response
-    ? ''
+    ? ""
     : props.response.status >= 400
-      ? 'error'
+      ? "error"
       : props.response.status >= 300
-        ? 'redirect'
-        : 'success'
+        ? "redirect"
+        : "success",
 );
 watch(
   () => props.response,
   () => {
-    tab.value = 'body';
+    tab.value = "body";
     view.value.responseScroll = 0;
-    search.value = '';
+    search.value = "";
     inspectorVisible.value = false;
-    jqQuery.value = '';
+    jqQuery.value = "";
     jqOutput.value = null;
-    jqError.value = '';
-  }
+    jqError.value = "";
+  },
 );
 function copyResult() {
   void copy(
-    tab.value === 'headers'
+    tab.value === "headers"
       ? (props.response?.headers
           .map(({ key, value }) => `${key}: ${value}`)
-          .join('\n') ?? '')
-      : text.value
+          .join("\n") ?? "")
+      : text.value,
   );
 }
 async function executeJq() {
   if (!props.response || !jqQuery.value.trim()) return;
-  jqError.value = '';
+  jqError.value = "";
   try {
     jqOutput.value = await runJq(props.response.body, jqQuery.value);
     view.value.responseScroll = 0;
   } catch (error) {
-    jqError.value = error instanceof Error ? error.message : 'jq query failed.';
+    jqError.value = error instanceof Error ? error.message : "jq query failed.";
   }
 }
 function toggleInspector() {
   inspectorVisible.value = !inspectorVisible.value;
   if (inspectorVisible.value) void nextTick(() => searchInput.value?.focus());
-  else search.value = '';
+  else search.value = "";
 }
 function onKey(event: KeyboardEvent) {
-  if (props.active === false || event.defaultPrevented || event.isComposing)
+  if (
+    props.active === false ||
+    event.defaultPrevented ||
+    event.isComposing ||
+    event.repeat ||
+    document.querySelector('[role="dialog"], [data-surface="context-menu"]')
+  )
     return;
   if (
     (event.metaKey || event.ctrlKey) &&
     !event.shiftKey &&
     !event.altKey &&
-    event.key.toLowerCase() === 'f' &&
-    tab.value === 'body'
+    event.key.toLowerCase() === "f" &&
+    tab.value === "body"
   ) {
     event.preventDefault();
     if (!inspectorVisible.value) toggleInspector();
     else void nextTick(() => searchInput.value?.focus());
-  } else if (event.key === 'Escape' && inspectorVisible.value) {
+  } else if (event.key === "Escape" && inspectorVisible.value) {
     event.preventDefault();
     toggleInspector();
   }
 }
-onMounted(() => window.addEventListener('keydown', onKey));
-onUnmounted(() => window.removeEventListener('keydown', onKey));
+onMounted(() => window.addEventListener("keydown", onKey));
+onUnmounted(() => window.removeEventListener("keydown", onKey));
 
 // ── Header row context menu ────────────────────────────────────────────────
 const contextHeader = ref<Header | null>(null);
@@ -210,12 +217,12 @@ function copyHeaderPair() {
       </h2>
       <span class="text-muted-foreground" role="status">{{
         busy
-          ? 'RECEIVING'
+          ? "RECEIVING"
           : error
-            ? 'FAILED'
+            ? "FAILED"
             : response
-              ? 'RECEIVED'
-              : 'STANDBY'
+              ? "RECEIVED"
+              : "STANDBY"
       }}</span>
     </header>
     <template v-if="response && !busy && !error">
@@ -276,7 +283,7 @@ function copyHeaderPair() {
                   :aria-pressed="pretty"
                   @click="pretty = !pretty"
                 >
-                  {{ pretty ? 'Pretty' : 'Raw' }}
+                  {{ pretty ? "Pretty" : "Raw" }}
                 </Button>
                 <Button
                   v-if="tab === 'body'"
@@ -327,7 +334,7 @@ function copyHeaderPair() {
                 data-testid="ctx-toolbar-pretty"
                 @select="pretty = !pretty"
               >
-                {{ pretty ? 'Pretty' : 'Raw' }}
+                {{ pretty ? "Pretty" : "Raw" }}
               </ContextMenuItem>
               <ContextMenuItem
                 data-testid="ctx-toolbar-wrap"
@@ -556,6 +563,16 @@ function copyHeaderPair() {
       <h3 class="font-mono text-[0.6875rem] tracking-[0.14em] text-foreground">
         AWAITING REQUEST
       </h3>
+      <HelpTooltip
+        text="Browser transport can limit inspection because of browser security rules. Use the desktop native transport for unrestricted inspection."
+      >
+        <button
+          type="button"
+          class="mt-2 text-xs underline decoration-dotted underline-offset-3"
+        >
+          Browser transport help
+        </button>
+      </HelpTooltip>
     </div>
   </section>
 </template>

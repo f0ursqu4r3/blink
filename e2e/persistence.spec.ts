@@ -142,9 +142,9 @@ test("response scroll position survives reload", async ({ page }) => {
     .getByLabel("Request URL", { exact: true })
     .fill("https://example.test/scroll");
   await pane.getByRole("button", { name: /Send/ }).click();
-  const code = pane.locator(".code-view");
-  await expect(code).toBeVisible();
-  await code.evaluate((el) => {
+  const responseScroller = pane.locator("[data-virtual-scroller]");
+  await expect(responseScroller).toBeVisible();
+  await responseScroller.evaluate((el) => {
     el.scrollTop = 320;
   });
   await expect
@@ -157,5 +157,7 @@ test("response scroll position survives reload", async ({ page }) => {
     )
     .toBe(320);
   await page.reload();
-  await expect.poll(() => code.evaluate((el) => el.scrollTop)).toBe(320);
+  await expect
+    .poll(() => responseScroller.evaluate((el) => el.scrollTop))
+    .toBe(320);
 });

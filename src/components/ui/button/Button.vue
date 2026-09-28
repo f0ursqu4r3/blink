@@ -3,6 +3,9 @@ import { computed } from "vue";
 import { Primitive } from "reka-ui";
 import { cva, type VariantProps } from "class-variance-authority";
 import { cn } from "@/lib/utils";
+import HelpTooltip from "@/components/HelpTooltip.vue";
+
+defineOptions({ inheritAttrs: false });
 
 const buttonVariants = cva(
   "inline-flex h-7 shrink-0 items-center justify-center gap-1.5 rounded-xs px-2.5 font-mono text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring disabled:pointer-events-none disabled:opacity-40 [@media(pointer:coarse)]:min-h-11",
@@ -27,6 +30,7 @@ type ButtonVariants = VariantProps<typeof buttonVariants>;
 
 const props = defineProps<{
   class?: string;
+  title?: string;
   disabled?: boolean;
   type?: "button" | "submit" | "reset";
   variant?: ButtonVariants["variant"];
@@ -38,7 +42,21 @@ const buttonClass = computed(() =>
 </script>
 
 <template>
+  <HelpTooltip v-if="title" :text="title" :help-only="false">
+    <Primitive
+      v-bind="$attrs"
+      as="button"
+      :class="buttonClass"
+      :disabled="disabled"
+      :type="type ?? 'button'"
+      :data-variant="variant ?? 'default'"
+    >
+      <slot />
+    </Primitive>
+  </HelpTooltip>
   <Primitive
+    v-else
+    v-bind="$attrs"
     as="button"
     :class="buttonClass"
     :disabled="disabled"

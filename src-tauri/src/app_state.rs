@@ -62,10 +62,42 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
         && value
             .get("globalDefinitions")
             .is_some_and(|v| v.is_object());
+    let valid_method = |value: &serde_json::Value| {
+        value.as_str().is_some_and(|method| {
+            matches!(
+                method,
+                "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
+            )
+        })
+    };
+    let group_defaults_valid =
+        value
+            .get("groups")
+            .and_then(|v| v.as_array())
+            .is_none_or(|groups| {
+                groups.iter().all(|group| {
+                    group.get("defaultMethod").is_none_or(valid_method)
+                        && group.get("defaultUrl").is_none_or(|url| {
+                            url.as_str()
+                                .is_some_and(|url| url.encode_utf16().count() <= 65536)
+                        })
+                })
+            });
+    let preferences_valid = value.get("preferences").is_none_or(|p| {
+        p.get("defaultMethod").is_some_and(valid_method)
+            && p.get("defaultBodyMode")
+                .and_then(|v| v.as_str())
+                .is_some_and(|mode| matches!(mode, "none" | "json" | "text" | "graphql"))
+            && p.get("pretty").is_some_and(|v| v.is_boolean())
+            && p.get("wrap").is_some_and(|v| v.is_boolean())
+            && p.get("confirmCloseDrafts").is_some_and(|v| v.is_boolean())
+    });
     if !matches!(version, Some(1) | Some(2) | Some(3))
         || !value.get("tabs").is_some_and(|v| v.is_array())
         || (matches!(version, Some(2) | Some(3)) && !supports_groups)
         || (version == Some(3) && !supports_global_definitions)
+        || !preferences_valid
+        || !group_defaults_valid
     {
         return Err("Unsupported workspace format.".into());
     }
@@ -151,6 +183,57 @@ mod tests {
     const GROUPED: &str =
         "{\"version\":2,\"activeId\":1,\"groups\":[],\"tabs\":[{\"name\":\"grouped\"}]}";
     const TOKENIZED: &str = "{\"version\":3,\"activeId\":1,\"groups\":[],\"globalDefinitions\":{},\"tabs\":[{\"name\":\"tokenized\"}]}";
+    #[test]
+    fn preference_round_trip_and_invalid_values_preserve_previous_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let mut value: serde_json::Value = serde_json::from_str(TOKENIZED).unwrap();
+        value["preferences"] = serde_json::json!({
+            "defaultMethod": "PATCH", "defaultBodyMode": "json",
+            "pretty": false, "wrap": true, "confirmCloseDrafts": false
+        });
+        let valid = value.to_string();
+        save(&path, &valid).unwrap();
+        assert_eq!(load(&path).unwrap().as_deref(), Some(valid.as_str()));
+        for (field, invalid) in [
+            ("defaultMethod", serde_json::json!("TRACE")),
+            ("defaultBodyMode", serde_json::json!("xml")),
+            ("pretty", serde_json::json!("false")),
+            ("wrap", serde_json::json!(1)),
+            ("confirmCloseDrafts", serde_json::Value::Null),
+        ] {
+            let mut malformed = value.clone();
+            malformed["preferences"][field] = invalid;
+            assert!(save(&path, &malformed.to_string()).is_err(), "{field}");
+            assert_eq!(load(&path).unwrap().as_deref(), Some(valid.as_str()));
+        }
+    }
+
+    #[test]
+    fn group_defaults_round_trip_and_invalid_values_preserve_previous_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join(FILE_NAME);
+        let mut value: serde_json::Value = serde_json::from_str(TOKENIZED).unwrap();
+        value["groups"] = serde_json::json!([{
+            "id": 1, "name": "API", "parentId": null, "collapsed": false,
+            "defaultMethod": "POST", "defaultUrl": "{{host}}/v1"
+        }]);
+        let valid = value.to_string();
+        save(&path, &valid).unwrap();
+        assert_eq!(load(&path).unwrap().as_deref(), Some(valid.as_str()));
+        for (field, invalid) in [
+            ("defaultMethod", serde_json::json!("TRACE")),
+            ("defaultMethod", serde_json::Value::Null),
+            ("defaultUrl", serde_json::json!(false)),
+            ("defaultUrl", serde_json::json!("x".repeat(65537))),
+        ] {
+            let mut malformed = value.clone();
+            malformed["groups"][0][field] = invalid;
+            assert!(save(&path, &malformed.to_string()).is_err(), "{field}");
+            assert_eq!(load(&path).unwrap().as_deref(), Some(valid.as_str()));
+        }
+    }
+
     #[test]
     fn round_trip_and_atomic_replace() {
         let dir = tempfile::tempdir().unwrap();

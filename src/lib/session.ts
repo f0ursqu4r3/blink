@@ -76,6 +76,7 @@ export function createSession(source?: Draft): RequestSession {
     draft: source
       ? {
           ...source,
+          localAuth: source.localAuth ? { ...source.localAuth } : undefined,
           query: cloneRows(source.query),
           headers: cloneRows(source.headers),
         }

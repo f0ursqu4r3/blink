@@ -31,7 +31,11 @@ test("compose, send, inspect and close through real controls", async ({
   await expect(
     page.getByRole("heading", { name: "BLINK", exact: true }),
   ).toBeVisible();
-  await expect(page.locator(".console-header")).toHaveCSS("height", "42px");
+  await expect(
+    page.locator("header").filter({
+      has: page.getByRole("heading", { name: "BLINK", exact: true }),
+    }),
+  ).toHaveCSS("height", "42px");
   await page.screenshot({ path: "artifacts/blink-idle.png" });
   await page
     .getByLabel("Request URL", { exact: true })
