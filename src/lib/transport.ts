@@ -9,8 +9,21 @@ import {
 } from "./transport-options";
 export const nativeTransport = isTauri();
 
+// Per RFC 3629, the byte right after certain lead bytes is restricted beyond
+// the usual continuation-byte range 80–BF. Outside that range the sequence is
+// invalid (not merely incomplete), so from_utf8/TextDecoder reports it as an
+// error over the lead byte alone.
+function validSecondByte(lead: number, second: number) {
+  if (lead === 0xe0) return second >= 0xa0 && second <= 0xbf;
+  if (lead === 0xed) return second >= 0x80 && second <= 0x9f;
+  if (lead === 0xf0) return second >= 0x90 && second <= 0xbf;
+  if (lead === 0xf4) return second >= 0x80 && second <= 0x8f;
+  return second >= 0x80 && second <= 0xbf;
+}
+
 // Bytes of a UTF-8 character that the preview cut in two. 0 when the preview
-// ends on a character boundary.
+// ends on a character boundary (or on an invalid sequence, which the decoder
+// itself reports as binary).
 function incompleteTail(bytes: Uint8Array) {
   for (let cut = 1; cut <= Math.min(3, bytes.length); cut++) {
     const byte = bytes[bytes.length - cut];
@@ -18,7 +31,10 @@ function incompleteTail(bytes: Uint8Array) {
     // Not a lead byte: the decoder reports it as invalid.
     if (byte < 0xc2 || byte > 0xf4) return 0;
     const length = byte >= 0xf0 ? 4 : byte >= 0xe0 ? 3 : byte >= 0xc0 ? 2 : 1;
-    return length > cut ? cut : 0;
+    if (length <= cut) return 0;
+    if (cut >= 2 && !validSecondByte(byte, bytes[bytes.length - cut + 1]))
+      return 0;
+    return cut;
   }
   return 0;
 }

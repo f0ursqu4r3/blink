@@ -136,4 +136,30 @@ describe("decodePreview", () => {
       binary: false,
     });
   });
+
+  it("reports binary for a lead byte whose second byte is out of the allowed range", () => {
+    expect(decodePreview(bytes(0x61, 0xe0, 0x80))).toEqual({
+      text: "",
+      binary: true,
+    });
+    expect(decodePreview(bytes(0x61, 0xed, 0xa0))).toEqual({
+      text: "",
+      binary: true,
+    });
+    expect(decodePreview(bytes(0x61, 0xf0, 0x80))).toEqual({
+      text: "",
+      binary: true,
+    });
+    expect(decodePreview(bytes(0x61, 0xf4, 0x90))).toEqual({
+      text: "",
+      binary: true,
+    });
+  });
+
+  it("keeps a valid but incomplete E0 sequence as a dropped cut character", () => {
+    expect(decodePreview(bytes(0x61, 0xe0, 0xa0))).toEqual({
+      text: "a",
+      binary: false,
+    });
+  });
 });
