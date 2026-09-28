@@ -304,7 +304,7 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
   >
     <header
       class="relative flex h-10 shrink-0 items-center justify-center px-2"
-      :class="{ 'px-21': macOverlay }"
+      :class="{ 'px-18': macOverlay }"
       data-title-bar
       data-tauri-drag-region
     >
