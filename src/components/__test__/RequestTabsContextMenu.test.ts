@@ -116,7 +116,7 @@ describe("RequestTabs tab-cell context menu", () => {
     expect(wrapper.emitted("close")![0]).toEqual([sessions[0].id]);
   });
 
-  it("'Close' is disabled when session is busy", async () => {
+  it("'Close' stays enabled when session is busy", async () => {
     const sessions = [{ ...createSession(), busy: true }, createSession()];
     const wrapper = mount(RequestTabs, {
       props: { sessions, activeId: sessions[0].id },
@@ -129,9 +129,6 @@ describe("RequestTabs tab-cell context menu", () => {
     const closeItem = document.body.querySelector(
       `[data-testid="tab-ctx-close-${sessions[0].id}"]`,
     ) as HTMLElement;
-    expect(
-      closeItem.getAttribute("aria-disabled") ??
-        closeItem.getAttribute("data-disabled"),
-    ).toBeTruthy();
+    expect(closeItem.hasAttribute("data-disabled")).toBe(false);
   });
 });

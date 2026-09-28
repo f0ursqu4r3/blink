@@ -99,14 +99,16 @@ test("compose, send, inspect and close through real controls", async ({
     activePane.getByRole("table", { name: "Response headers" }),
   ).toContainText("local-fixture");
   await page.locator("[data-close-request]").first().click();
-  await page.getByRole("button", { name: "Keep open", exact: true }).click();
-  await expect(requests.getByRole("tab")).toHaveCount(2);
-  await page.locator("[data-close-request]").first().click();
-  await page.getByRole("button", { name: "Discard tab", exact: true }).click();
   await expect(requests.getByRole("tab")).toHaveCount(1);
   await expect(
     activePane.getByLabel("Request URL", { exact: true }),
   ).toHaveValue("");
+  await expect(page.locator("[data-request-id]")).toHaveCount(2);
+  await page.locator("[data-request-id]").first().click();
+  await expect(requests.getByRole("tab")).toHaveCount(2);
+  await expect(
+    activePane.getByLabel("Request URL", { exact: true }),
+  ).toHaveValue("https://example.test/v1/check?existing=1");
   expect(errors).toEqual([]);
 });
 

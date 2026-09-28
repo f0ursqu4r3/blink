@@ -13,7 +13,7 @@ import CommandCenter from "@/components/CommandCenter.vue";
 import { useTheme } from "@/composables/useTheme";
 import { nativeTransport } from "@/lib/transport";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
-import { createSession, hasDraft, sessionLabel } from "@/lib/session";
+import { createSession } from "@/lib/session";
 import type { AuthorizationConfig } from "@/lib/authorization";
 import {
   applyNewRequestDefaults,
@@ -24,6 +24,7 @@ import {
 const {
   sessions,
   groups,
+  openIds,
   activeId,
   ready,
   closing,
@@ -36,6 +37,9 @@ const {
   flush,
   reset,
   quitWithoutSaving,
+  openRequest,
+  closeTab,
+  deleteRequest,
   addGroup,
   renameGroup,
   toggleGroup,
@@ -54,9 +58,14 @@ const {
 } = useWorkspaceState();
 
 const active = computed(() =>
-  sessions.value.find((session) => session.id === activeId.value)!,
+  sessions.value.find((session) => session.id === activeId.value),
 );
-const pendingClose = ref<number | null>(null);
+const openSessions = computed(() =>
+  openIds.value.flatMap((id) => {
+    const session = sessions.value.find((candidate) => candidate.id === id);
+    return session ? [session] : [];
+  }),
+);
 const sidebarCollapsed = ref(false);
 const commandCenter = ref<InstanceType<typeof CommandCenter>>();
 const { name: themeName } = useTheme();
@@ -72,9 +81,6 @@ const browserToggleLabel = computed(() =>
 );
 const selectedRequestIds = ref<number[]>([]);
 const selectionAnchorId = ref<number | null>(null);
-const closeTarget = computed(() =>
-  sessions.value.find((session) => session.id === pendingClose.value),
-);
 const sending = computed(
   () => sessions.value.filter((session) => session.busy).length,
 );
@@ -87,12 +93,6 @@ const dialogOpener = ref<HTMLElement | null>(null);
 const groupSettingsGroup = computed(
   () => groups.value.find((g) => g.id === groupSettingsId.value) ?? null,
 );
-watch(pendingClose, (id) => {
-  if (id !== null)
-    void nextTick(() =>
-      document.querySelector<HTMLButtonElement>("[data-cancel-close]")?.focus(),
-    );
-});
 
 function openGroupSettings(groupId: number) {
   dialogOpener.value = document.activeElement as HTMLElement | null;
@@ -149,8 +149,7 @@ function toggleBrowser() {
 }
 function select(id: number) {
   mobileBrowserOpen.value = false;
-  activeId.value = id;
-  pendingClose.value = null;
+  openRequest(id);
   updateSelection([id], id);
 }
 function selectFromSearch(id: number) {
@@ -171,10 +170,6 @@ function createGroup(
 ) {
   const group = addGroup(name, parentId);
   if (sessionIds?.length) moveRequests(sessionIds, group.id, null);
-}
-function cancelClose() {
-  pendingClose.value = null;
-  document.getElementById(`request-tab-${activeId.value}`)?.focus();
 }
 function create(duplicate = false, inGroupId?: number | null) {
   if (!ready.value) return;
@@ -227,26 +222,17 @@ function duplicate(sessionId?: number) {
   select(session.id);
   updateSelection([session.id], session.id);
 }
-async function close(id: number, confirmed = false) {
-  const index = sessions.value.findIndex((session) => session.id === id);
-  const session = sessions.value[index];
-  if (!session || session.busy) return;
-  if (preferences.value.confirmCloseDrafts && hasDraft(session) && !confirmed) {
-    pendingClose.value = id;
-    return;
-  }
-  pendingClose.value = null;
-  sessions.value.splice(index, 1);
+async function close(id: number) {
+  closeTab(id);
+  await nextTick();
+  document.getElementById(`request-tab-${activeId.value}`)?.focus();
+}
+function remove(id: number) {
+  deleteRequest(id);
   updateSelection(
     selectedRequestIds.value.filter((selectedId) => selectedId !== id),
     selectionAnchorId.value === id ? null : selectionAnchorId.value,
   );
-  if (!sessions.value.length) create();
-  else if (activeId.value === id)
-    activeId.value =
-      sessions.value[Math.min(index, sessions.value.length - 1)].id;
-  await nextTick();
-  document.getElementById(`request-tab-${activeId.value}`)?.focus();
 }
 function onKey(event: KeyboardEvent) {
   if (
@@ -266,19 +252,15 @@ function onKey(event: KeyboardEvent) {
     event.altKey
   )
     return;
-  if (event.key === "Escape" && pendingClose.value !== null) {
-    cancelClose();
-  }
   if (event.ctrlKey && event.key === "Tab") {
     event.preventDefault();
-    const index = sessions.value.findIndex(
-      (session) => session.id === activeId.value,
-    );
+    if (!openIds.value.length) return;
+    const index = openIds.value.indexOf(activeId.value ?? -1);
     select(
-      sessions.value[
-        (index + (event.shiftKey ? -1 : 1) + sessions.value.length) %
-          sessions.value.length
-      ].id,
+      openIds.value[
+        (index + (event.shiftKey ? -1 : 1) + openIds.value.length) %
+          openIds.value.length
+      ],
     );
     void nextTick(() =>
       document.getElementById(`request-tab-${activeId.value}`)?.focus(),
@@ -291,7 +273,7 @@ function onKey(event: KeyboardEvent) {
     }
     if (key === "w" && !event.shiftKey) {
       event.preventDefault();
-      void close(activeId.value);
+      if (activeId.value !== null) void close(activeId.value);
     }
     if (key === "d" && event.shiftKey) {
       event.preventDefault();
@@ -392,8 +374,10 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         v-show="!sidebarCollapsed || mobileBrowserOpen"
         :mobile-open="mobileBrowserOpen"
         :sessions="sessions"
+        :open-ids="openIds"
         :active-id="activeId"
         :groups="groups"
+        :confirm-delete="preferences.confirmCloseDrafts"
         :selected-ids="selectedRequestIds"
         :selection-anchor-id="selectionAnchorId"
         @select="select"
@@ -410,13 +394,14 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         @create-request="(groupId) => create(false, groupId)"
         @duplicate-request="(id) => duplicate(id)"
         @close-request="(id) => close(id)"
+        @delete-request="remove"
         @set-request-local-auth="(id, auth) => setRequestLocalAuth(id, auth)"
       />
       <div
         class="relative flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background max-[760px]:rounded-none max-[760px]:border-x-0"
       >
         <RequestTabs
-          :sessions="sessions"
+          :sessions="openSessions"
           :active-id="activeId"
           @select="select"
           @create="create()"
@@ -424,31 +409,12 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           @duplicate="duplicate()"
         />
         <div
-          v-if="closeTarget"
-          class="flex items-center gap-2 px-3.5 py-1.5 bg-secondary border-b border-primary"
-          role="group"
-          aria-label="Confirm close request"
+          v-if="activeId === null"
+          class="flex flex-1 flex-col items-center justify-center gap-3 text-xs text-muted-foreground"
+          data-no-open-requests
         >
-          <p class="flex gap-1.25 min-w-0 mr-auto text-xs">
-            Discard
-            <strong
-              class="overflow-hidden text-ellipsis whitespace-nowrap text-foreground font-medium"
-            >
-              {{ sessionLabel(closeTarget) }}
-            </strong>
-            ?
-          </p>
-          <Button variant="ghost" data-cancel-close @click="cancelClose">
-            Keep open
-          </Button>
-          <Button
-            variant="secondary"
-            data-confirm-close
-            :disabled="closeTarget.busy"
-            @click="close(closeTarget.id, true)"
-          >
-            Discard tab
-          </Button>
+          <p>No open requests. Select a request in the browser.</p>
+          <Button variant="secondary" @click="create()">New request</Button>
         </div>
         <RequestWorkspace
           v-for="session in sessions"

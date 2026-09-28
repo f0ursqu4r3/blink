@@ -14,7 +14,10 @@ import {
   sessionStatus,
   type RequestSession,
 } from '@/lib/session';
-const props = defineProps<{ sessions: RequestSession[]; activeId: number }>();
+const props = defineProps<{
+  sessions: RequestSession[];
+  activeId: number | null;
+}>();
 const emit = defineEmits<{
   select: [id: number];
   close: [id: number];
@@ -132,15 +135,10 @@ function navigate(event: KeyboardEvent, index: number) {
                 </button>
                 <button
                   type="button"
-                  class="flex items-center justify-center w-6.5 shrink-0 text-muted-foreground cursor-pointer hover:not-disabled:text-foreground hover:not-disabled:bg-accent disabled:opacity-30 disabled:cursor-not-allowed pointer-coarse:w-11"
+                  class="flex items-center justify-center w-6.5 shrink-0 text-muted-foreground cursor-pointer hover:text-foreground hover:bg-accent pointer-coarse:w-11"
                   data-close-request
-                  :disabled="session.busy"
                   :aria-label="`Close ${sessionLabel(session)}`"
-                  :title="
-                    session.busy
-                      ? 'Wait for the request to finish'
-                      : 'Close request'
-                  "
+                  title="Close tab · Cmd/Ctrl+W"
                   @click="emit('close', session.id)"
                 >
                   <X :size="12" aria-hidden="true" />
@@ -168,7 +166,6 @@ function navigate(event: KeyboardEvent, index: number) {
               <ContextMenuSeparator />
               <ContextMenuItem
                 :data-testid="`tab-ctx-close-${session.id}`"
-                :disabled="session.busy"
                 @select="emit('close', session.id)"
               >
                 Close

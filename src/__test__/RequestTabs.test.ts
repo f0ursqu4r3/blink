@@ -79,23 +79,23 @@ describe("independent request tabs", () => {
         .value,
     ).toBe("original");
   });
-  it("confirms edited closes and always retains one usable tab", async () => {
+  it("closing a tab keeps the request in the browser and reopens it intact", async () => {
     const app = render();
     await pane(app).get("[data-request-url]").setValue("https://example.test");
+    const id = Number(
+      app.get("[data-request-id]").attributes("data-request-id"),
+    );
     await app.get("[data-close-request]").trigger("click");
-    expect(app.find("[data-confirm-close]").exists()).toBe(true);
-    await app.get("[data-cancel-close]").trigger("click");
-    expect(
-      pane(app).get<HTMLInputElement>("[data-request-url]").element.value,
-    ).toBe("https://example.test");
-    await app.get("[data-close-request]").trigger("click");
-    await app.get("[data-confirm-close]").trigger("click");
+    expect(requestTabs(app)).toHaveLength(0);
+    expect(app.find("[data-no-open-requests]").exists()).toBe(true);
+    expect(app.find(`[data-request-id="${id}"]`).exists()).toBe(true);
+    await app.get(`[data-request-id="${id}"]`).trigger("click");
     expect(requestTabs(app)).toHaveLength(1);
     expect(
       pane(app).get<HTMLInputElement>("[data-request-url]").element.value,
-    ).toBe("");
+    ).toBe("https://example.test");
   });
-  it("prevents closing an in-flight request", async () => {
+  it("closing an in-flight tab keeps the request running", async () => {
     let resolve!: (response: Response) => void;
     vi.stubGlobal(
       "fetch",
@@ -109,13 +109,11 @@ describe("independent request tabs", () => {
     const app = render();
     await pane(app).get("[data-request-url]").setValue("https://example.test");
     await pane(app).get("[data-send]").trigger("click");
-    expect(
-      app.get("[data-close-request]").attributes("disabled"),
-    ).toBeDefined();
+    await app.get("[data-close-request]").trigger("click");
+    expect(requestTabs(app)).toHaveLength(0);
     resolve(new Response("done"));
     await flushPromises();
-    expect(
-      app.get("[data-close-request]").attributes("disabled"),
-    ).toBeUndefined();
+    await app.get("[data-request-id]").trigger("click");
+    expect(pane(app).get("[data-response-body]").text()).toContain("done");
   });
 });

@@ -31,7 +31,10 @@ import {
 export function useWorkspaceState() {
   const sessions = ref<RequestSession[]>([createSession()]);
   const groups = ref<RequestGroup[]>([]);
-  const activeId = ref(sessions.value[0].id);
+  /** Ids of requests open as tabs, in tab order. The browser tree owns the requests. */
+  const openIds = ref<number[]>([sessions.value[0].id]);
+  /** Null when no tab is open. */
+  const activeId = ref<number | null>(sessions.value[0].id);
   const ready = ref(false);
   const error = ref("");
   const saving = ref(false);
@@ -57,6 +60,7 @@ export function useWorkspaceState() {
       const restored = decodeWorkspace(content);
       sessions.value = restored.sessions;
       groups.value = restored.groups;
+      openIds.value = restored.openIds;
       activeId.value = restored.activeId;
       globalDefinitions.value = restored.globalDefinitions ?? {};
       preferences.value = restored.preferences ?? defaultPreferences();
@@ -97,6 +101,7 @@ export function useWorkspaceState() {
           groups.value,
           globalDefinitions.value,
           preferences.value,
+          openIds.value,
         ),
       );
       if (current === revision) error.value = "";
@@ -118,6 +123,7 @@ export function useWorkspaceState() {
             groups.value,
             globalDefinitions.value,
             preferences.value,
+            openIds.value,
           )
         : null,
     () => {
@@ -131,6 +137,7 @@ export function useWorkspaceState() {
         encodeWorkspace([session], session.id, [], {}, defaultPreferences()),
       );
       sessions.value = [session];
+      openIds.value = [session.id];
       groups.value = [];
       globalDefinitions.value = {};
       preferences.value = defaultPreferences();
@@ -161,6 +168,7 @@ export function useWorkspaceState() {
         groups.value,
         globalDefinitions.value,
         preferences.value,
+        openIds.value,
       );
       if (!(await flush())) {
         exitBlocked.value = true;
@@ -176,6 +184,7 @@ export function useWorkspaceState() {
         groups.value,
         globalDefinitions.value,
         preferences.value,
+        openIds.value,
       )
     );
     await quitWithoutSaving();
@@ -189,6 +198,7 @@ export function useWorkspaceState() {
           groups.value,
           globalDefinitions.value,
           preferences.value,
+          openIds.value,
         );
         validateWorkspace(content);
         localStorage.setItem(WORKSPACE_KEY, content);
@@ -222,6 +232,33 @@ export function useWorkspaceState() {
       void invoke("app_state_ready", { ready: false }).catch(() => {});
     window.removeEventListener("beforeunload", beforeUnload);
   });
+  /** Open a request as a tab, if not open already, and make it active. */
+  function openRequest(id: number) {
+    if (!sessions.value.some((session) => session.id === id)) return;
+    if (!openIds.value.includes(id)) openIds.value.push(id);
+    activeId.value = id;
+  }
+  /** Close a tab. The request stays in the browser tree. */
+  function closeTab(id: number) {
+    const index = openIds.value.indexOf(id);
+    if (index < 0) return;
+    openIds.value.splice(index, 1);
+    if (activeId.value === id)
+      activeId.value =
+        openIds.value[Math.min(index, openIds.value.length - 1)] ?? null;
+  }
+  /** Remove a request from the workspace. The workspace always keeps one request. */
+  function deleteRequest(id: number) {
+    const index = sessions.value.findIndex((session) => session.id === id);
+    if (index < 0 || sessions.value[index].busy) return;
+    closeTab(id);
+    sessions.value.splice(index, 1);
+    if (!sessions.value.length) {
+      const session = createSession();
+      sessions.value.push(session);
+      openRequest(session.id);
+    }
+  }
   function addGroup(name: string, parentId: number | null) {
     const group = createGroup(name, parentId);
     groups.value.push(group);
@@ -391,6 +428,7 @@ export function useWorkspaceState() {
   return {
     sessions,
     groups,
+    openIds,
     activeId,
     ready,
     closing,
@@ -403,6 +441,9 @@ export function useWorkspaceState() {
     flush,
     reset,
     quitWithoutSaving,
+    openRequest,
+    closeTab,
+    deleteRequest,
     addGroup,
     renameGroup,
     toggleGroup,

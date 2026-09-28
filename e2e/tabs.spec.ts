@@ -34,7 +34,7 @@ test("parallel sends stay in their own tabs and duplicates are independent", asy
     .getByLabel("Request URL", { exact: true })
     .fill("https://example.test/v1/systems");
   await pane.getByRole("button", { name: /Send/ }).click();
-  await expect(page.locator("[data-close-request]").first()).toBeDisabled();
+  await expect(page.locator("[data-close-request]").first()).toBeEnabled();
   await page.getByRole("button", { name: "New request", exact: true }).click();
   await pane
     .getByLabel("Request URL", { exact: true })
@@ -119,20 +119,16 @@ test("keyboard new, switch, duplicate and close remain scoped to requests", asyn
     "https://example.test/keyboard",
   );
   await page.keyboard.press("Control+w");
-  await expect(
-    page.getByRole("group", { name: "Confirm close request" }),
-  ).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(
-    page.getByRole("group", { name: "Confirm close request" }),
-  ).toHaveCount(0);
-  await expect(tabs.nth(2)).toBeFocused();
+  await expect(tabs).toHaveCount(2);
+  await expect(page.locator("[data-request-id]")).toHaveCount(3);
+  await expect(tabs.nth(1)).toBeFocused();
   await page.keyboard.press("Home");
   await expect(tabs.first()).toBeFocused();
   await page.keyboard.press("ArrowRight");
   await expect(tabs.nth(1)).toBeFocused();
   await page.keyboard.press("Delete");
-  await expect(tabs).toHaveCount(2);
+  await expect(tabs).toHaveCount(1);
+  await expect(page.locator("[data-request-id]")).toHaveCount(3);
   expect(
     await page.evaluate(() => ({
       local: localStorage.getItem("blink.workspace.v1") !== null,

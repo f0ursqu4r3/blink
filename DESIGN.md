@@ -12,8 +12,7 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - **Color strategy:** Default: near-black warm surfaces, thin graphite
   dividers, off-white text, and an industrial amber accent. Use the accent
   sparingly: active tab, focused field borders, primary buttons,
-  checkboxes, the resize handle, sending/progress indicators, and the
-  close-confirm bar border. Everything else uses neutral or semantic tokens.
+  checkboxes, the resize handle, and sending/progress indicators. Everything else uses neutral or semantic tokens.
   A Ghostty palette can replace the default: surfaces mix
   foreground into background, the accent comes from a chosen palette slot
   (default 4, blue), and semantic colors come from the palette: success slot
@@ -46,9 +45,13 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Validate JSON before sending; preserve large numeric values when formatting.
 - Keep errors close to the request bar or response panel. Never label a
   completed HTTP error response as a transport failure.
-- Disable request edits while sending. Ask before discarding a draft.
-- Give each request tab its own draft, response, error, timer, and editor state.
-  Keep inactive panels mounted but hidden, with unique input and panel IDs.
+- Disable request edits while sending. Ask before deleting a request with
+  content.
+- The Browser tree owns requests; tabs only reference open requests. Closing a
+  tab never deletes a request.
+- Give each request its own draft, response, error, timer, and editor state.
+  Keep inactive and closed panels mounted but hidden, with unique input and
+  panel IDs.
 - Show endpoint paths before hosts so requests to the same API remain distinct.
   Do not include credentials, query strings, or fragments in tab labels.
 - Preserve background sends across tab switches. Never write a completed

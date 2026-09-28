@@ -37,7 +37,14 @@ type SnapshotV3 = {
   globalDefinitions: Record<string, string>;
   preferences?: WorkspacePreferences;
 };
-type Snapshot = SnapshotV1 | SnapshotV2 | SnapshotV3;
+type SnapshotV4 = Omit<SnapshotV3, "version" | "activeId"> & {
+  version: 4;
+  /** Null when no tab is open. */
+  activeId: number | null;
+  /** Ids of requests open as tabs, in tab order. */
+  openIds: number[];
+};
+type Snapshot = SnapshotV1 | SnapshotV2 | SnapshotV3 | SnapshotV4;
 const invalid = () =>
   new Error(
     "Saved workspace is invalid or from an unsupported version. It has not been changed.",
@@ -206,7 +213,7 @@ function parseSnapshot(content: string): Snapshot {
     new TextEncoder().encode(content).byteLength > MAX_STATE_BYTES
   )
     throw new Error(
-      "Workspace exceeds the 64 MiB save limit. Close unused tabs before saving.",
+      "Workspace exceeds the 64 MiB save limit. Delete unused requests before saving.",
     );
   let raw: unknown;
   try {
@@ -215,11 +222,9 @@ function parseSnapshot(content: string): Snapshot {
     throw invalid();
   }
   const data = record(raw);
-  check(
-    (data.version === 1 || data.version === 2 || data.version === 3) &&
-      id(data.activeId),
-  );
+  check([1, 2, 3, 4].includes(data.version as number));
   const version = data.version as number;
+  check(id(data.activeId) || (version >= 4 && data.activeId === null));
   const tabs = array(data.tabs, 128);
   check(tabs.length > 0);
   const ids = new Set();
@@ -246,7 +251,18 @@ function parseSnapshot(content: string): Snapshot {
         numeric(view.responseScroll),
     );
   }
-  check(ids.has(data.activeId));
+  if (version >= 4) {
+    const openIds = array(data.openIds, 128);
+    check(
+      openIds.every((openId) => ids.has(openId)) &&
+        new Set(openIds).size === openIds.length,
+    );
+    check(
+      data.activeId === null
+        ? openIds.length === 0
+        : openIds.includes(data.activeId),
+    );
+  } else check(ids.has(data.activeId));
   if (version >= 2) {
     const groups = validateGroups(data.groups, version);
     const groupIds = new Set(groups.map((group) => group.id));
@@ -289,14 +305,16 @@ function migrateDraftAuth(draft: Record<string, unknown>): AuthorizationConfig {
 
 export function encodeWorkspace(
   sessions: RequestSession[],
-  activeId: number,
+  activeId: number | null,
   groups: RequestGroup[] = [],
   globalDefinitions: Record<string, string> = {},
   preferences: WorkspacePreferences = defaultPreferences(),
+  openIds: number[] = sessions.map((session) => session.id),
 ): string {
   return JSON.stringify({
-    version: 3,
+    version: 4,
     activeId,
+    openIds,
     groups,
     globalDefinitions,
     preferences,
@@ -356,10 +374,11 @@ export function decodeWorkspace(content: string) {
       reservePairId(row.id),
     );
   }
-  const groups = version >= 2 ? (data as SnapshotV2 | SnapshotV3).groups : [];
+  const groups =
+    version >= 2 ? (data as SnapshotV2 | SnapshotV3 | SnapshotV4).groups : [];
   for (const group of groups) reserveGroupId(group.id);
   const globalDefinitions =
-    version >= 3 ? (data as SnapshotV3).globalDefinitions : {};
+    version >= 3 ? (data as SnapshotV3 | SnapshotV4).globalDefinitions : {};
   if (version < 3) {
     for (const session of sessions) {
       if (!session.response) continue;
@@ -380,12 +399,18 @@ export function decodeWorkspace(content: string) {
     }
   }
   const preferences =
-    version >= 3 && (data as SnapshotV3).preferences !== undefined
-      ? (data as SnapshotV3).preferences
+    version >= 3 && (data as SnapshotV3 | SnapshotV4).preferences !== undefined
+      ? (data as SnapshotV3 | SnapshotV4).preferences
       : defaultPreferences();
+  // Before v4 every request was an open tab.
+  const openIds =
+    version >= 4
+      ? (data as SnapshotV4).openIds
+      : sessions.map((session) => session.id);
   return {
     sessions,
     activeId: data.activeId,
+    openIds,
     groups,
     globalDefinitions,
     preferences,

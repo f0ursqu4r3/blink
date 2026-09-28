@@ -201,7 +201,7 @@ function save() {
                   type="checkbox"
                   class="accent-primary"
                 />
-                Confirm before closing drafts</label
+                Confirm before deleting requests with content</label
               >
             </section>
             <ThemeSettings />

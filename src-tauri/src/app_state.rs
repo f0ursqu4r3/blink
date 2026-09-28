@@ -56,12 +56,17 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
     let value: serde_json::Value =
         serde_json::from_str(content).map_err(|_| "Workspace data is not valid JSON.")?;
     let version = value.get("version").and_then(|v| v.as_u64());
-    let supports_groups =
-        matches!(version, Some(2) | Some(3)) && value.get("groups").is_some_and(|v| v.is_array());
-    let supports_global_definitions = version == Some(3)
+    let supports_groups = matches!(version, Some(2) | Some(3) | Some(4))
+        && value.get("groups").is_some_and(|v| v.is_array());
+    let supports_global_definitions = matches!(version, Some(3) | Some(4))
         && value
             .get("globalDefinitions")
             .is_some_and(|v| v.is_object());
+    let supports_open_ids = version == Some(4)
+        && value.get("openIds").is_some_and(|v| v.is_array())
+        && value
+            .get("activeId")
+            .is_some_and(|v| v.is_null() || v.is_u64());
     let valid_method = |value: &serde_json::Value| {
         value.as_str().is_some_and(|method| {
             matches!(
@@ -92,10 +97,11 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
             && p.get("wrap").is_some_and(|v| v.is_boolean())
             && p.get("confirmCloseDrafts").is_some_and(|v| v.is_boolean())
     });
-    if !matches!(version, Some(1) | Some(2) | Some(3))
+    if !matches!(version, Some(1) | Some(2) | Some(3) | Some(4))
         || !value.get("tabs").is_some_and(|v| v.is_array())
-        || (matches!(version, Some(2) | Some(3)) && !supports_groups)
-        || (version == Some(3) && !supports_global_definitions)
+        || (matches!(version, Some(2) | Some(3) | Some(4)) && !supports_groups)
+        || (matches!(version, Some(3) | Some(4)) && !supports_global_definitions)
+        || (version == Some(4) && !supports_open_ids)
         || !preferences_valid
         || !group_defaults_valid
     {
@@ -183,6 +189,7 @@ mod tests {
     const GROUPED: &str =
         "{\"version\":2,\"activeId\":1,\"groups\":[],\"tabs\":[{\"name\":\"grouped\"}]}";
     const TOKENIZED: &str = "{\"version\":3,\"activeId\":1,\"groups\":[],\"globalDefinitions\":{},\"tabs\":[{\"name\":\"tokenized\"}]}";
+    const OPEN_TABS: &str = "{\"version\":4,\"activeId\":null,\"openIds\":[],\"groups\":[],\"globalDefinitions\":{},\"tabs\":[{\"name\":\"closed\"}]}";
     #[test]
     fn preference_round_trip_and_invalid_values_preserve_previous_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -247,6 +254,8 @@ mod tests {
         assert_eq!(load(&path).unwrap().as_deref(), Some(GROUPED));
         save(&path, TOKENIZED).unwrap();
         assert_eq!(load(&path).unwrap().as_deref(), Some(TOKENIZED));
+        save(&path, OPEN_TABS).unwrap();
+        assert_eq!(load(&path).unwrap().as_deref(), Some(OPEN_TABS));
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
@@ -263,6 +272,11 @@ mod tests {
         save(&path, FIRST).unwrap();
         assert!(save(&path, "invalid").is_err());
         assert!(save(&path, "{\"version\":3,\"tabs\":[]}").is_err());
+        assert!(save(
+            &path,
+            "{\"version\":4,\"activeId\":1,\"groups\":[],\"globalDefinitions\":{},\"tabs\":[]}"
+        )
+        .is_err());
         assert_eq!(load(&path).unwrap().as_deref(), Some(FIRST));
     }
     #[test]

@@ -21,7 +21,7 @@ describe("workspace v3 persistence and migration", () => {
     session.groupId = 1;
     const encoded = encodeWorkspace([session], session.id, groups);
     const data = JSON.parse(encoded);
-    expect(data.version).toBe(3);
+    expect(data.version).toBe(4);
     const result = decodeWorkspace(encoded);
     expect(result.groups[0]).toMatchObject({
       localAuth: { type: "bearer", token: "g-tok" },
@@ -101,7 +101,7 @@ describe("workspace v3 persistence and migration", () => {
     session.draft.localAuth = { type: "bearer", token: "d-tok" };
     const encoded = encodeWorkspace([session], session.id);
     const raw = JSON.parse(encoded);
-    expect(raw.version).toBe(3);
+    expect(raw.version).toBe(4);
     expect(raw.tabs[0].draft.localAuth).toEqual({
       type: "bearer",
       token: "d-tok",

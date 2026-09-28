@@ -16,7 +16,7 @@ import {
   Settings,
 } from "lucide-vue-next";
 import type { RequestGroup } from "@/lib/groups";
-import { sessionLabel, type RequestSession } from "@/lib/session";
+import { hasDraft, sessionLabel, type RequestSession } from "@/lib/session";
 import {
   resolveAuthorization,
   type AuthorizationConfig,
@@ -34,8 +34,12 @@ import {
 
 const props = defineProps<{
   sessions: RequestSession[];
-  activeId: number;
+  /** Ids of requests open as tabs. */
+  openIds?: number[];
+  activeId: number | null;
   groups: RequestGroup[];
+  /** Ask before deleting a request that has content. */
+  confirmDelete?: boolean;
   mobileOpen?: boolean;
   selectedIds?: number[];
   selectionAnchorId?: number | null;
@@ -59,6 +63,7 @@ const emit = defineEmits<{
   createRequest: [groupId: number | null];
   duplicateRequest: [sessionId: number];
   closeRequest: [sessionId: number];
+  deleteRequest: [sessionId: number];
   setRequestLocalAuth: [
     sessionId: number,
     auth: AuthorizationConfig | undefined,
@@ -71,6 +76,7 @@ type BrowserRow =
 const creatingParent = ref<number | null | undefined>(undefined);
 const editingId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
+const deletingRequestId = ref<number | null>(null);
 const draftName = ref("");
 const groupingSelection = ref<number[] | null>(null);
 const requestMime = "application/x-blink-request-ids";
@@ -204,12 +210,18 @@ function selectRequest(id: number, event: MouseEvent) {
   emit("updateSelection", ids, anchorId);
 }
 
+function requestDelete(session: RequestSession) {
+  if (session.busy) return;
+  if (props.confirmDelete && hasDraft(session))
+    deletingRequestId.value = session.id;
+  else emit("deleteRequest", session.id);
+}
+
 /** Called when a context menu is opened on a request row. */
 function handleRequestContextMenu(sessionId: number) {
   // If the right-clicked request is already in the multi-selection, keep it.
   if (selected.value.has(sessionId)) return;
-  // Otherwise select only this request.
-  emit("select", sessionId);
+  // Otherwise select only this request. Do not open it as a tab.
   emit("updateSelection", [sessionId], sessionId);
 }
 
@@ -472,7 +484,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 </ContextMenuTrigger>
                 <ContextMenuContent>
                   <ContextMenuItem @select="emit('select', row.session.id)">
-                    Select
+                    Open
                   </ContextMenuItem>
                   <ContextMenuItem
                     @select="emit('duplicateRequest', row.session.id)"
@@ -480,9 +492,10 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     Duplicate
                   </ContextMenuItem>
                   <ContextMenuItem
+                    v-if="openIds?.includes(row.session.id)"
                     @select="emit('closeRequest', row.session.id)"
                   >
-                    Close
+                    Close tab
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuSub>
@@ -544,8 +557,45 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                       </ContextMenuItem>
                     </ContextMenuSubContent>
                   </ContextMenuSub>
+                  <ContextMenuSeparator />
+                  <ContextMenuItem
+                    :disabled="row.session.busy"
+                    @select="requestDelete(row.session)"
+                  >
+                    Delete
+                  </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
+              <div
+                v-if="deletingRequestId === row.session.id"
+                class="flex flex-wrap items-start gap-1.25 px-2 py-1.25 pr-2.25 border-b border-border bg-secondary font-mono text-[9px] text-muted-foreground"
+                :style="levelPadding(row.level + 1)"
+                role="group"
+                aria-label="Confirm delete request"
+              >
+                <p class="w-full leading-[1.45]">
+                  Delete {{ sessionLabel(row.session) }}? Its draft and response
+                  are lost.
+                </p>
+                <!-- prettier-ignore -->
+                <button
+                  type="button"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
+                  data-confirm-delete-request
+                  :disabled="row.session.busy"
+                  @click="emit('deleteRequest', row.session.id); deletingRequestId = null"
+                >
+                  Delete
+                </button>
+                <button
+                  type="button"
+                  class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
+                  data-cancel-delete-request
+                  @click="deletingRequestId = null"
+                >
+                  Cancel
+                </button>
+              </div>
             </div>
 
             <!-- Group row -->

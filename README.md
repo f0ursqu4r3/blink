@@ -34,29 +34,31 @@ response inspector is a UTF-8 text viewer, not a binary file downloader.
 
 ## Request tabs
 
-Tabs save locally. Closing an edited tab asks for confirmation by default.
-An in-flight tab cannot close until its request finishes or times out.
-Closing the final tab opens a new tab using application defaults.
-New tabs never send automatically.
+The Browser tree holds every saved request. Tabs show only the requests that
+are open. Closing a tab does not delete its request: select the request in the
+Browser to open it again. An in-flight request keeps running after its tab
+closes. To remove a request, choose **Delete** in its Browser context menu.
+Deleting a request with content asks for confirmation by default. New tabs
+never send automatically.
 
 | Action                   | Shortcut                      |
 | ------------------------ | ----------------------------- |
 | New request tab          | `Cmd/Ctrl+T`                  |
 | Duplicate active request | `Cmd/Ctrl+Shift+D`            |
-| Close active request     | `Cmd/Ctrl+W`                  |
+| Close active tab         | `Cmd/Ctrl+W`                  |
 | Next or previous request | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Send active request      | `Cmd/Ctrl+Enter`              |
 | Focus URL                | `Cmd/Ctrl+L`                  |
 | Application settings     | `Cmd/Ctrl+,`                  |
 
 In the request tab strip, use Left/Right, Home/End, and Delete to select or
-close tabs. Escape dismisses the close confirmation or cURL preview. Browser
+close tabs. Escape dismisses the cURL preview. Browser
 hosts can reserve shortcuts; the native Tauri app is the primary target.
 
 ## Browser groups
 
-The Browser sidebar is a local tree for the open request tabs. Select a request
-in the tree to make it active. Open a group's overflow menu and choose
+The Browser sidebar is the local tree of all requests. Select a request in the
+tree to open it as a tab and make it active. Open a group's overflow menu and choose
 **Move selection here** to move the selected requests. Use the Ungrouped move
 action to remove group membership. On narrow windows, open the Browser with the
 header's sidebar button.
