@@ -11,10 +11,10 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 
 - **Color strategy:** Default: near-black warm surfaces, thin graphite
   dividers, off-white text, and an industrial amber accent. Use the accent
-  sparingly: active tab and activity markers, focus rings and focused
-  borders, primary buttons, checkboxes, the resize handle, sending/progress
-  indicators, and the close-confirm bar border. Everything else uses neutral
-  or semantic tokens. A Ghostty palette can replace the default: surfaces mix
+  sparingly: active tab, focus rings and focused borders, primary buttons,
+  checkboxes, the resize handle, sending/progress indicators, and the
+  close-confirm bar border. Everything else uses neutral or semantic tokens.
+  A Ghostty palette can replace the default: surfaces mix
   foreground into background, the accent comes from a chosen palette slot
   (default 4, blue), and semantic colors come from the palette: success slot
   2, warning slot 3, errors slot 1, info slot 4, keyword slot 5. HTTP method
@@ -23,15 +23,15 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - **Typography:** Local system fonts only. Monospace for URL, headers, body,
   metrics, and compact uppercase section labels. System sans-serif for tabs
   and explanatory text. No web font requests.
-- **Layout:** A 40-pixel title bar holds the centered command center
-  (`Cmd/Ctrl+P`) and doubles as the window drag area; on macOS the traffic
-  lights sit on its left. Below it, a 44-pixel activity bar toggles the
-  244-pixel Browser card and opens Settings. The editor card holds the
-  request tab strip and the resizable request and response split. Cards sit
-  on a darker frame with 6-pixel gaps. A 24-pixel status bar closes the
-  window. Below 900 pixels, panels stack without hiding core request
-  controls. Below 760 pixels, the activity bar hides; the title bar holds a
-  Browser toggle that opens the Browser as an overlay and a Settings button.
+- **Layout:** A 40-pixel title bar holds the Browser toggle right of the
+  traffic lights, the centered command center (`Cmd/Ctrl+P`), and the
+  Settings cog at the right; it doubles as the window drag area, and on
+  macOS the traffic lights sit on its left. The Browser card and the editor
+  card, which holds the request tab strip and the resizable request and
+  response split, sit on a darker frame with 6-pixel gaps. A 24-pixel status
+  bar closes the window. Below 900 pixels, panels stack without hiding core
+  request controls. Below 760 pixels, the Browser toggle opens the Browser
+  as an overlay.
 - **Shape:** 8-pixel radius for cards, popovers, menus, and dialogs; 4-pixel
   radius for controls and tooltips.
 - **Density:** Small icon-and-label controls. No floating toolbars, large
@@ -54,7 +54,7 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Preserve background sends across tab switches. Never write a completed
   response to whichever tab happens to be active.
 - Duplicate draft values, not object references. Do not duplicate responses.
-- The activity bar can hide the Browser; keep it visible by default. Groups
+- The title bar toggle can hide the Browser; keep it visible by default. Groups
   can nest. Creating or duplicating a request places it in the active
   request's group. Deleting a group moves its requests to the parent and
   promotes direct child groups.

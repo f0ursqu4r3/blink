@@ -52,16 +52,24 @@ describe("compact request console", () => {
     expect(updatedMove.getAttribute("data-disabled")).not.toBeNull();
   });
 
-  it("hides and restores the request browser from the activity bar", async () => {
+  it("hides and restores the request browser from the title bar", async () => {
     const app = render();
-    const toggle = app.get('[data-activity="browser"]');
+    const toggle = app.get("[data-title-browser]");
 
     expect(toggle.attributes("aria-pressed")).toBe("true");
+    expect(toggle.attributes("aria-label")).toBe("Hide request browser");
     await toggle.trigger("click");
     expect(toggle.attributes("aria-pressed")).toBe("false");
+    expect(toggle.attributes("aria-label")).toBe("Show request browser");
     expect(app.get("[data-request-browser]").isVisible()).toBe(false);
     await toggle.trigger("click");
     expect(app.get("[data-request-browser]").isVisible()).toBe(true);
+    expect(toggle.attributes("aria-label")).toBe("Hide request browser");
+  });
+
+  it("does not render the activity bar", () => {
+    const app = render();
+    expect(app.find("[data-activity-bar]").exists()).toBe(false);
   });
 
   it("opens the command center with Cmd+P and selects a request", async () => {
@@ -85,7 +93,7 @@ describe("compact request console", () => {
 
   it("does not open the command center while a dialog is open", async () => {
     const app = render();
-    await app.get('[data-activity="settings"]').trigger("click");
+    await app.get("[data-title-settings]").trigger("click");
     await flushPromises();
     window.dispatchEvent(
       new KeyboardEvent("keydown", { key: "p", metaKey: true }),

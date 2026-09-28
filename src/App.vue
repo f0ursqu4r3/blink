@@ -9,7 +9,6 @@ import GroupSettingsDialog from "@/components/GroupSettingsDialog.vue";
 import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vue";
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import HelpTooltip from "@/components/HelpTooltip.vue";
-import ActivityBar from "@/components/ActivityBar.vue";
 import CommandCenter from "@/components/CommandCenter.vue";
 import { useTheme } from "@/composables/useTheme";
 import { nativeTransport } from "@/lib/transport";
@@ -64,6 +63,13 @@ const { name: themeName } = useTheme();
 // Tauri draws the macOS traffic lights over the title bar.
 const macOverlay = nativeTransport && /Mac/.test(navigator.userAgent);
 const mobileBrowserOpen = ref(false);
+const narrow = ref(false);
+const browserVisible = computed(() =>
+  narrow.value ? mobileBrowserOpen.value : !sidebarCollapsed.value,
+);
+const browserToggleLabel = computed(() =>
+  browserVisible.value ? "Hide request browser" : "Show request browser",
+);
 const selectedRequestIds = ref<number[]>([]);
 const selectionAnchorId = ref<number | null>(null);
 const closeTarget = computed(() =>
@@ -133,6 +139,14 @@ function handleSaveGroupSettings(
   groupSettingsOpen.value = false;
 }
 
+function toggleBrowser() {
+  if (narrow.value) {
+    mobileBrowserOpen.value = !mobileBrowserOpen.value;
+    sidebarCollapsed.value = false;
+  } else {
+    sidebarCollapsed.value = !sidebarCollapsed.value;
+  }
+}
 function select(id: number) {
   mobileBrowserOpen.value = false;
   activeId.value = id;
@@ -295,6 +309,18 @@ function onKey(event: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener("keydown", onKey));
 onUnmounted(() => window.removeEventListener("keydown", onKey));
+
+let narrowQuery: MediaQueryList | undefined;
+function updateNarrow(event: MediaQueryListEvent) {
+  narrow.value = event.matches;
+}
+onMounted(() => {
+  if (typeof window.matchMedia !== "function") return;
+  narrowQuery = window.matchMedia("(max-width: 760px)");
+  narrow.value = narrowQuery.matches;
+  narrowQuery.addEventListener("change", updateNarrow);
+});
+onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
 </script>
 
 <template>
@@ -303,36 +329,27 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
     :inert="closing || undefined"
   >
     <header
-      class="relative flex h-10 shrink-0 items-center justify-center px-2"
-      :class="{ 'px-18': macOverlay }"
+      class="grid h-10 shrink-0 grid-cols-[1fr_auto_1fr] items-center"
       data-title-bar
       data-tauri-drag-region
     >
-      <Button
-        variant="ghost"
-        class="absolute left-2 min-[761px]:hidden"
-        :aria-label="
-          mobileBrowserOpen ? 'Hide request browser' : 'Show request browser'
-        "
-        :aria-expanded="mobileBrowserOpen"
-        aria-controls="request-browser"
-        @click="
-          mobileBrowserOpen = !mobileBrowserOpen;
-          sidebarCollapsed = false;
-        "
+      <div
+        class="flex justify-start pl-2"
+        :class="{ 'pl-18': macOverlay }"
+        data-tauri-drag-region
       >
-        <PanelLeft :size="14" aria-hidden="true" />
-      </Button>
-      <Button
-        variant="ghost"
-        class="absolute right-2 min-[761px]:hidden"
-        aria-label="Application settings"
-        title="Application settings"
-        data-title-settings
-        @click="openApplicationSettings($event)"
-      >
-        <Settings :size="14" aria-hidden="true" />
-      </Button>
+        <Button
+          variant="ghost"
+          :aria-pressed="browserVisible"
+          :aria-label="browserToggleLabel"
+          :title="browserToggleLabel"
+          aria-controls="request-browser"
+          data-title-browser
+          @click="toggleBrowser"
+        >
+          <PanelLeft :size="14" aria-hidden="true" />
+        </Button>
+      </div>
       <CommandCenter
         v-if="ready"
         ref="commandCenter"
@@ -340,6 +357,17 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         :groups="groups"
         @select="selectFromSearch"
       />
+      <div class="flex justify-end pr-2" data-tauri-drag-region>
+        <Button
+          variant="ghost"
+          aria-label="Application settings"
+          title="Application settings · Cmd/Ctrl+,"
+          data-title-settings
+          @click="openApplicationSettings($event)"
+        >
+          <Settings :size="14" aria-hidden="true" />
+        </Button>
+      </div>
     </header>
     <WorkspaceStorageNotice
       :error="storageError"
@@ -351,14 +379,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
     />
     <div
       v-if="ready"
-      class="relative flex min-w-0 min-h-0 flex-1 gap-1.5 pr-1.5 max-[760px]:gap-0 max-[760px]:pr-0"
+      class="relative flex min-w-0 min-h-0 flex-1 gap-1.5 px-1.5 max-[760px]:gap-0 max-[760px]:px-0"
     >
-      <ActivityBar
-        class="max-[760px]:hidden"
-        :browser-open="!sidebarCollapsed"
-        @toggle-browser="sidebarCollapsed = !sidebarCollapsed"
-        @open-settings="openApplicationSettings($event)"
-      />
       <button
         v-if="mobileBrowserOpen"
         type="button"

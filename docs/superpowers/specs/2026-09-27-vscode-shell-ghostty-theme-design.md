@@ -179,3 +179,4 @@ shape (8 px card radius, 4 px control radius), and the theme rule
 4. The default accent slot is Blue (4); stored themes keep their stored accent.
 5. The title bar is 40 px; macOS traffic lights are vertically centered and inset; the command center is truly centered.
 6. Below 761 px, a Settings button in the title bar opens Application Settings.
+7. Activity bar removed; Browser toggle and Settings moved to the title bar.
