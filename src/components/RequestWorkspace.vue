@@ -362,6 +362,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :busy="session.busy"
         :effective-auth="effectiveAuth"
         :inherited-source="inheritedSource"
+        :ctx="resolvedCtx"
       />
       <div
         class="panel-resize relative z-1 -mx-0.75 cursor-col-resize -outline-offset-2 max-[900px]:hidden"

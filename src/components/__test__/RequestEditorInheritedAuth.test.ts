@@ -1,8 +1,10 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import RequestEditor from "../RequestEditor.vue";
 import { createDraft } from "@/lib/request";
+
+vi.mock("../CodeEditor.vue", () => import("./code-editor-stub"));
 
 const wrappers: ReturnType<typeof mount>[] = [];
 afterEach(() => wrappers.splice(0).forEach((w) => w.unmount()));

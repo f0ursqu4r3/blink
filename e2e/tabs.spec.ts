@@ -75,7 +75,7 @@ test("parallel sends stay in their own tabs and duplicates are independent", asy
   await expect(
     pane.getByRole("button", { name: "Wrap lines" }),
   ).toHaveAttribute("aria-pressed", "true");
-  await expect(pane.getByLabel("Request body", { exact: true })).toHaveValue(
+  await expect(pane.getByLabel("Request body", { exact: true })).toHaveText(
     /"depth": 2/,
   );
   await expect(pane.getByLabel("Request URL", { exact: true })).toHaveValue(

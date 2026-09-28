@@ -54,7 +54,7 @@ test("compose, send, inspect and close through real controls", async ({
     .getByLabel("Request body", { exact: true })
     .fill('{"id":9223372036854775807,"operation":"inspect"}');
   await page.getByRole("button", { name: "Format", exact: true }).click();
-  await expect(page.getByLabel("Request body", { exact: true })).toHaveValue(
+  await expect(page.getByLabel("Request body", { exact: true })).toHaveText(
     /9223372036854775807/,
   );
   await requestTabs.getByRole("tab", { name: "Auth" }).click();

@@ -74,7 +74,7 @@ test("a fresh browser process restores tabs, request data, response and view sta
     );
     await tabs.first().click();
     await expect(pane.getByLabel("HTTP method")).toHaveValue("POST");
-    await expect(pane.getByLabel("Request body", { exact: true })).toHaveValue(
+    await expect(pane.getByLabel("Request body", { exact: true })).toHaveText(
       '{"id":9223372036854775807}',
     );
     await expect(pane.locator("[data-response-status]")).toContainText("201");

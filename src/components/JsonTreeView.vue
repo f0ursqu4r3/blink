@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue';
+import { computed, nextTick, ref, watch } from 'vue';
 import { useVirtualizer } from '@tanstack/vue-virtual';
 import { parse } from 'lossless-json';
 import {
@@ -144,8 +144,15 @@ function valueClass(value: unknown) {
     return 'text-primary';
   return 'text-muted-foreground';
 }
+// Vue can call the ref before the row is in the DOM. A detached row measures
+// 0px, and correcting that later scrolls the list down one row at a time.
 function measureRow(node: unknown) {
-  if (node instanceof HTMLElement) virtualizer.value.measureElement(node);
+  if (!(node instanceof HTMLElement)) return;
+  if (node.isConnected) virtualizer.value.measureElement(node);
+  else
+    void nextTick(() => {
+      if (node.isConnected) virtualizer.value.measureElement(node);
+    });
 }
 
 const { copy } = useClipboard();

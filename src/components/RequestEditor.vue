@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, ref, useId } from "vue";
+import { computed, onBeforeUnmount, ref, useId, watch } from "vue";
 import { TabsRoot, TabsList, TabsTrigger, TabsContent } from "reka-ui";
-import { Braces, KeyRound } from "lucide-vue-next";
+import { Braces, KeyRound, LoaderCircle, Network } from "lucide-vue-next";
 import HelpTooltip from "./HelpTooltip.vue";
 import { Button } from "@/components/ui/button";
 import {
@@ -12,15 +12,26 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import KeyValueEditor from "./KeyValueEditor.vue";
+import CodeEditor from "./CodeEditor.vue";
 import { activePairs, supportsBody, type Draft } from "@/lib/request";
-import type { AuthorizationConfig } from "@/lib/authorization";
+import type {
+  AuthorizationConfig,
+  ResolvedRequestContext,
+} from "@/lib/authorization";
 import { formatJson } from "@/lib/json";
 import { formatGraphql } from "@/lib/graphql";
+import {
+  fetchSchema,
+  formatSchemaAge,
+  getCachedSchema,
+  schemaKey,
+} from "@/lib/graphql-schema";
 const draft = defineModel<Draft>({ required: true });
 const props = defineProps<{
   busy: boolean;
   effectiveAuth?: AuthorizationConfig;
   inheritedSource?: string;
+  ctx?: ResolvedRequestContext;
 }>();
 const id = useId();
 const tab = defineModel<string>("tab", { default: "query" });
@@ -34,6 +45,32 @@ const bodyPlaceholder = computed(() =>
 );
 const variablesPlaceholder = '{\n  "id": "1"\n}';
 const bodyAllowed = computed(() => supportsBody(draft.value.method));
+const schemaLoading = ref(false);
+const schemaError = ref("");
+const currentSchemaKey = computed(() =>
+  draft.value.bodyMode === "graphql" ? schemaKey(draft.value, props.ctx) : null,
+);
+const cachedSchema = computed(() =>
+  currentSchemaKey.value ? getCachedSchema(currentSchemaKey.value) : undefined,
+);
+// Tick once a minute so the schema age stays current.
+const now = ref(Date.now());
+const clock = setInterval(() => (now.value = Date.now()), 60_000);
+onBeforeUnmount(() => clearInterval(clock));
+watch(currentSchemaKey, () => (schemaError.value = ""));
+
+async function loadSchema() {
+  if (props.busy || schemaLoading.value) return;
+  schemaLoading.value = true;
+  schemaError.value = "";
+  try {
+    await fetchSchema(draft.value, props.ctx);
+  } catch (cause) {
+    schemaError.value = cause instanceof Error ? cause.message : String(cause);
+  } finally {
+    schemaLoading.value = false;
+  }
+}
 
 /** Resolved "what is selected in the auth dropdown" */
 const authSelectValue = computed(() => {
@@ -125,6 +162,14 @@ async function formatGraphqlBody() {
     return;
   draft.value.body = formattedBody;
   draft.value.variables = formattedVariables;
+  formatError.value = "";
+}
+function setBody(value: string) {
+  draft.value.body = value;
+  formatError.value = "";
+}
+function setVariables(value: string) {
+  draft.value.variables = value;
   formatError.value = "";
 }
 function clearBody() {
@@ -232,6 +277,38 @@ function clearBody() {
                 <option value="text">Text</option>
                 <option value="graphql">GraphQL</option>
               </select>
+              <template v-if="draft.bodyMode === 'graphql'">
+                <Button
+                  variant="ghost"
+                  :disabled="busy || schemaLoading || !draft.url.trim()"
+                  @click="loadSchema"
+                >
+                  <LoaderCircle
+                    v-if="schemaLoading"
+                    :size="13"
+                    class="animate-spin"
+                    aria-hidden="true"
+                  />
+                  <Network v-else :size="13" aria-hidden="true" />Fetch schema
+                </Button>
+                <HelpTooltip
+                  text="Fetch schema sends an introspection query with this request's URL, headers, and auth."
+                >
+                  <button
+                    type="button"
+                    class="text-[0.6875rem] text-muted-foreground underline decoration-dotted underline-offset-3"
+                  >
+                    Schema help
+                  </button>
+                </HelpTooltip>
+                <span
+                  v-if="cachedSchema"
+                  data-testid="schema-status"
+                  class="text-[0.6875rem]"
+                  >Schema loaded ·
+                  {{ formatSchemaAge(cachedSchema.fetchedAt, now) }}</span
+                >
+              </template>
               <Button
                 v-if="formattable"
                 variant="ghost"
@@ -294,10 +371,11 @@ function clearBody() {
           {{ draft.method }} sends no body. Your draft is retained.
         </p>
         <template v-if="draft.bodyMode !== 'none'">
-          <label class="sr-only" :for="`${id}-body`">{{
+          <label :id="`${id}-body-label`" class="sr-only" :for="`${id}-body`">{{
             draft.bodyMode === "graphql" ? "GraphQL query" : "Request body"
           }}</label>
           <textarea
+            v-if="draft.bodyMode === 'text'"
             :id="`${id}-body`"
             v-model="draft.body"
             :disabled="busy"
@@ -308,23 +386,39 @@ function clearBody() {
             @input="formatError = ''"
             @contextmenu.stop
           />
+          <CodeEditor
+            v-else
+            :id="`${id}-body`"
+            :model-value="draft.body"
+            :language="draft.bodyMode === 'graphql' ? 'graphql' : 'json'"
+            :disabled="busy"
+            :placeholder="bodyPlaceholder"
+            :schema="
+              draft.bodyMode === 'graphql' ? cachedSchema?.schema : undefined
+            "
+            :aria-labelledby="`${id}-body-label`"
+            test-id="body-editor"
+            class="flex-1 min-h-45 pointer-coarse:text-base"
+            @update:model-value="setBody"
+          />
           <template v-if="draft.bodyMode === 'graphql'">
             <label
+              :id="`${id}-variables-label`"
               :for="`${id}-variables`"
               class="shrink-0 px-3 py-2 border-y border-border text-muted-foreground text-xs"
             >
               Variables
             </label>
-            <textarea
+            <CodeEditor
               :id="`${id}-variables`"
-              v-model="draft.variables"
+              :model-value="draft.variables ?? ''"
+              language="json"
               :disabled="busy"
-              @input="formatError = ''"
-              class="h-32 shrink-0 w-full resize-none border-0 rounded-none p-4 font-mono text-[0.8125rem] leading-[1.75] bg-transparent tab-2 pointer-coarse:text-base"
-              spellcheck="false"
-              autocomplete="off"
               :placeholder="variablesPlaceholder"
-              @contextmenu.stop
+              :aria-labelledby="`${id}-variables-label`"
+              test-id="variables-editor"
+              class="h-32 shrink-0 pointer-coarse:text-base"
+              @update:model-value="setVariables"
             />
           </template>
         </template>
@@ -340,6 +434,14 @@ function clearBody() {
           class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-destructive"
         >
           {{ formatError }}
+        </p>
+        <p
+          v-if="schemaError && draft.bodyMode === 'graphql'"
+          role="alert"
+          data-testid="schema-error"
+          class="px-4 py-3 text-[0.6875rem] leading-[1.7] text-destructive"
+        >
+          {{ schemaError }}
         </p>
       </TabsContent>
       <TabsContent
