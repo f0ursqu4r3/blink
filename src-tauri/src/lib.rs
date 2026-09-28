@@ -152,6 +152,7 @@ fn network_error(error: reqwest::Error) -> String {
 }
 
 mod app_state;
+mod ghostty_themes;
 #[cfg(test)]
 mod request_tests;
 
@@ -187,7 +188,9 @@ pub fn run() {
             app_state::load_app_state,
             app_state::save_app_state,
             app_state::app_state_ready,
-            app_state::finish_app_exit
+            app_state::finish_app_exit,
+            ghostty_themes::list_ghostty_themes,
+            ghostty_themes::read_ghostty_theme
         ])
         .build(tauri::generate_context!())
         .expect("error while building Blink")
