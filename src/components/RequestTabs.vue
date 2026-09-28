@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref, watch } from 'vue';
-import { Plus, X } from 'lucide-vue-next';
+import { CopyPlus, Plus, X } from 'lucide-vue-next';
 import {
   ContextMenu,
   ContextMenuContent,
@@ -185,6 +185,16 @@ function navigate(event: KeyboardEvent, index: number) {
           @click="emit('create')"
         >
           <Plus :size="15" aria-hidden="true" />
+        </button>
+        <button
+          type="button"
+          class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-primary pointer-coarse:w-11"
+          data-duplicate-request
+          aria-label="Duplicate request"
+          title="Duplicate request · Cmd/Ctrl+Shift+D"
+          @click="emit('duplicate')"
+        >
+          <CopyPlus :size="14" aria-hidden="true" />
         </button>
       </div>
     </ContextMenuTrigger>

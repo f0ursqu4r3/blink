@@ -1,5 +1,6 @@
 import { beforeEach, afterEach, describe, expect, it, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
+import { nextTick } from "vue";
 import App from "../App.vue";
 beforeEach(() => localStorage.clear());
 
@@ -51,17 +52,63 @@ describe("compact request console", () => {
     expect(updatedMove.getAttribute("data-disabled")).not.toBeNull();
   });
 
-  it("collapses and restores the request browser", async () => {
+  it("hides and restores the request browser from the activity bar", async () => {
     const app = render();
-    const toggle = app.get('[aria-label="Collapse request browser"]');
+    const toggle = app.get('[data-activity="browser"]');
 
-    expect(toggle.attributes("aria-expanded")).toBe("true");
+    expect(toggle.attributes("aria-pressed")).toBe("true");
     await toggle.trigger("click");
+    expect(toggle.attributes("aria-pressed")).toBe("false");
+    expect(app.get("[data-request-browser]").isVisible()).toBe(false);
+    await toggle.trigger("click");
+    expect(app.get("[data-request-browser]").isVisible()).toBe(true);
+  });
 
-    expect(app.get('[aria-label="Expand request browser"]')).toBeTruthy();
-    expect(app.get("[data-request-browser]").attributes("data-collapsed")).toBe(
-      "true",
+  it("opens the command center with Cmd+P and selects a request", async () => {
+    const app = render();
+    await app.get("[data-request-url]").setValue("https://example.test/users");
+    await app.get("[data-new-request]").trigger("click");
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "p", metaKey: true }),
     );
+    await flushPromises();
+    const input = app.get('[role="combobox"]');
+    await input.setValue("users");
+    await input.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(app.get('[role="tab"][aria-selected="true"]').text()).toContain(
+      "/users",
+    );
+  });
+
+  it("does not open the command center while a dialog is open", async () => {
+    const app = render();
+    await app.get('[data-activity="settings"]').trigger("click");
+    await flushPromises();
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "p", metaKey: true }),
+    );
+    await nextTick();
+    expect(
+      document.querySelector('[data-surface="command-center"]'),
+    ).toBeNull();
+  });
+
+  it("collapses every group from the browser header", async () => {
+    const app = render();
+    await app.get('[aria-label="Add top-level group"]').trigger("click");
+    await app.get('[aria-label="Top-level group name"]').setValue("Platform");
+    await app.get(".top-level-form").trigger("submit");
+    expect(app.get('[aria-label="Collapse Platform"]')).toBeTruthy();
+    await app.get('[aria-label="Collapse all groups"]').trigger("click");
+    expect(app.get('[aria-label="Expand Platform"]')).toBeTruthy();
+  });
+
+  it("shows the theme name in the status bar", () => {
+    const app = render();
+    expect(app.get("[data-theme-name]").text()).toBe("Blink");
   });
 
   it("keeps the shell free of promotional labels", () => {

@@ -5,12 +5,13 @@ import HelpTooltip from "./HelpTooltip.vue";
 import {
   ChevronDown,
   ChevronRight,
+  FilePlus,
   Folder,
+  FolderInput,
   FolderPlus,
+  ListCollapse,
   Lock,
   MoveRight,
-  PanelLeftClose,
-  PanelLeftOpen,
   Plus,
   Settings,
 } from "lucide-vue-next";
@@ -35,7 +36,6 @@ const props = defineProps<{
   sessions: RequestSession[];
   activeId: number;
   groups: RequestGroup[];
-  collapsed?: boolean;
   mobileOpen?: boolean;
   selectedIds?: number[];
   selectionAnchorId?: number | null;
@@ -54,7 +54,7 @@ const emit = defineEmits<{
   ];
   reorderGroup: [groupId: number, beforeGroupId: number];
   deleteGroup: [id: number];
-  toggleSidebar: [];
+  collapseAllGroups: [];
   openGroupSettings: [groupId: number];
   createRequest: [groupId: number | null];
   duplicateRequest: [sessionId: number];
@@ -292,61 +292,60 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 <template>
   <aside
     id="request-browser"
-    class="flex flex-col border-r border-border bg-muted overflow-hidden w-61 min-w-47 data-[collapsed=true]:w-10.5 data-[collapsed=true]:min-w-10.5 max-[760px]:absolute max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40"
+    class="flex flex-col overflow-hidden rounded-lg border border-border bg-muted w-61 min-w-47 max-[760px]:absolute max-[760px]:inset-y-0 max-[760px]:left-0 max-[760px]:z-40 max-[760px]:rounded-none"
     :class="{ 'max-[760px]:hidden': !mobileOpen }"
     data-request-browser
-    :data-collapsed="Boolean(collapsed)"
-    :aria-label="collapsed ? 'Request browser collapsed' : 'Request browser'"
+    aria-label="Request browser"
   >
     <header
-      class="flex h-10.5 items-center justify-between border-b border-border px-2.5 pl-3 data-[collapsed=true]:justify-center data-[collapsed=true]:px-0"
-      :data-collapsed="Boolean(collapsed)"
+      class="flex h-9 shrink-0 items-center gap-0.5 border-b border-border pl-3 pr-1.5"
     >
-      <div v-if="!collapsed" class="flex items-baseline gap-1.75">
-        <strong class="font-mono text-[11px] font-bold tracking-[0.08em]"
-          >REQUESTS</strong
-        >
-      </div>
+      <strong class="mr-auto font-mono text-[11px] font-bold tracking-[0.08em]"
+        >REQUESTS</strong
+      >
       <button
         type="button"
-        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8 ml-auto data-[collapsed=true]:ml-0"
-        :data-collapsed="Boolean(collapsed)"
-        :aria-label="
-          collapsed ? 'Expand request browser' : 'Collapse request browser'
-        "
-        :aria-expanded="!collapsed"
-        :title="
-          collapsed ? 'Expand request browser' : 'Collapse request browser'
-        "
-        @click="emit('toggleSidebar')"
+        class="browser-action"
+        data-browser-new-request
+        aria-label="Add request"
+        title="Add request · Cmd/Ctrl+T"
+        @click="emit('createRequest', active?.groupId ?? null)"
       >
-        <PanelLeftOpen v-if="collapsed" :size="14" aria-hidden="true" />
-        <PanelLeftClose v-else :size="14" aria-hidden="true" />
+        <FilePlus :size="14" aria-hidden="true" />
       </button>
       <button
-        v-if="!collapsed"
         type="button"
-        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
+        class="browser-action"
         aria-label="Add top-level group"
         title="Add group"
         @click="startCreating(null)"
       >
-        <Plus :size="14" aria-hidden="true" />
+        <FolderPlus :size="14" aria-hidden="true" />
       </button>
       <button
-        v-if="!collapsed && selectedIds?.length"
+        v-if="selectedIds?.length"
         type="button"
-        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-primary hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
+        class="browser-action"
         aria-label="Group selected requests"
         title="Group selected requests"
         @click="startCreating(null, selectedIds)"
       >
-        <FolderPlus :size="14" aria-hidden="true" />
+        <FolderInput :size="14" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="browser-action"
+        aria-label="Collapse all groups"
+        title="Collapse all groups"
+        :disabled="!groups.length"
+        @click="emit('collapseAllGroups')"
+      >
+        <ListCollapse :size="14" aria-hidden="true" />
       </button>
     </header>
 
     <form
-      v-if="!collapsed && creatingParent === null"
+      v-if="creatingParent === null"
       class="top-level-form flex items-center gap-1.25 px-2 py-1.25 border-b border-border bg-secondary"
       @submit.prevent="submitCreate"
     >
@@ -381,7 +380,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
 
     <ContextMenu>
       <ContextMenuTrigger as-child>
-        <div v-if="!collapsed" class="min-h-0 flex-1 overflow-auto py-2">
+        <div class="min-h-0 flex-1 overflow-auto py-2">
           <!-- UNGROUPED row -->
           <ContextMenu>
             <ContextMenuTrigger as-child>
@@ -785,3 +784,10 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
     </ContextMenu>
   </aside>
 </template>
+
+<style scoped>
+@reference "../style.css";
+.browser-action {
+  @apply inline-flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground disabled:opacity-30 pointer-coarse:size-8;
+}
+</style>

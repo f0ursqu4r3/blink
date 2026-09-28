@@ -1,12 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import {
-  CopyPlus,
-  HardDrive,
-  PanelLeft,
-  ScanLine,
-  Settings,
-} from "lucide-vue-next";
+import { HardDrive, PanelLeft } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestTabs from "@/components/RequestTabs.vue";
 import RequestBrowser from "@/components/RequestBrowser.vue";
@@ -15,6 +9,10 @@ import GroupSettingsDialog from "@/components/GroupSettingsDialog.vue";
 import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vue";
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import HelpTooltip from "@/components/HelpTooltip.vue";
+import ActivityBar from "@/components/ActivityBar.vue";
+import CommandCenter from "@/components/CommandCenter.vue";
+import { useTheme } from "@/composables/useTheme";
+import { nativeTransport } from "@/lib/transport";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
 import { createSession, hasDraft, sessionLabel } from "@/lib/session";
 import type { AuthorizationConfig } from "@/lib/authorization";
@@ -61,6 +59,10 @@ const active = computed(() =>
 );
 const pendingClose = ref<number | null>(null);
 const sidebarCollapsed = ref(false);
+const commandCenter = ref<InstanceType<typeof CommandCenter>>();
+const { name: themeName } = useTheme();
+// Tauri draws the macOS traffic lights over the title bar.
+const macOverlay = nativeTransport && /Mac/.test(navigator.userAgent);
 const mobileBrowserOpen = ref(false);
 const selectedRequestIds = ref<number[]>([]);
 const selectionAnchorId = ref<number | null>(null);
@@ -136,6 +138,13 @@ function select(id: number) {
   activeId.value = id;
   pendingClose.value = null;
   updateSelection([id], id);
+}
+function selectFromSearch(id: number) {
+  select(id);
+  void nextTick(() => document.getElementById(`request-tab-${id}`)?.focus());
+}
+function collapseAllGroups() {
+  for (const group of groups.value) group.collapsed = true;
 }
 function updateSelection(ids: number[], anchorId: number | null) {
   selectedRequestIds.value = ids;
@@ -231,7 +240,9 @@ function onKey(event: KeyboardEvent) {
     closing.value ||
     groupSettingsOpen.value ||
     applicationSettingsOpen.value ||
-    document.querySelector('[data-surface="context-menu"]')
+    document.querySelector(
+      '[data-surface="context-menu"], [data-surface="command-center"]',
+    )
   )
     return;
   if (
@@ -276,6 +287,10 @@ function onKey(event: KeyboardEvent) {
       event.preventDefault();
       openApplicationSettings();
     }
+    if (key === "p" && !event.shiftKey) {
+      event.preventDefault();
+      void commandCenter.value?.show();
+    }
   }
 }
 onMounted(() => window.addEventListener("keydown", onKey));
@@ -284,56 +299,37 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
 
 <template>
   <main
-    class="flex flex-col h-full min-h-100 border-t-2 border-primary max-[760px]:h-auto max-[760px]:min-h-dvh"
+    class="flex flex-col h-full min-h-100 bg-frame max-[760px]:h-auto max-[760px]:min-h-dvh"
     :inert="closing || undefined"
   >
     <header
-      class="h-10.5 shrink-0 px-3.5 flex items-center justify-between gap-3 border-b border-border bg-muted"
+      class="relative flex h-9 shrink-0 items-center justify-center px-2"
+      :class="{ 'pl-19.5': macOverlay }"
+      data-title-bar
+      data-tauri-drag-region
     >
-      <div class="flex items-center gap-2.25 whitespace-nowrap">
-        <span
-          class="flex items-center justify-center h-6 w-6.5 text-primary-foreground bg-primary"
-        >
-          <ScanLine :size="19" aria-hidden="true" />
-        </span>
-        <h1 class="text-[0.9375rem] font-extrabold tracking-[0.17em]">BLINK</h1>
-      </div>
-      <div class="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          class="min-[761px]:hidden"
-          :aria-label="
-            mobileBrowserOpen ? 'Hide request browser' : 'Show request browser'
-          "
-          :aria-expanded="mobileBrowserOpen"
-          aria-controls="request-browser"
-          @click="
-            mobileBrowserOpen = !mobileBrowserOpen;
-            sidebarCollapsed = false;
-          "
-        >
-          <PanelLeft :size="14" aria-hidden="true" />
-        </Button>
-        <Button
-          variant="ghost"
-          aria-label="Application settings"
-          title="Application settings"
-          @click="openApplicationSettings($event)"
-        >
-          <Settings :size="14" aria-hidden="true" />
-        </Button>
-        <Button
-          variant="ghost"
-          data-duplicate-request
-          :disabled="!ready"
-          aria-label="Duplicate request"
-          title="Duplicate request · Cmd/Ctrl+Shift+D"
-          @click="duplicate()"
-        >
-          <CopyPlus :size="14" aria-hidden="true" />
-          <span>Duplicate</span>
-        </Button>
-      </div>
+      <Button
+        variant="ghost"
+        class="absolute left-2 min-[761px]:hidden"
+        :aria-label="
+          mobileBrowserOpen ? 'Hide request browser' : 'Show request browser'
+        "
+        :aria-expanded="mobileBrowserOpen"
+        aria-controls="request-browser"
+        @click="
+          mobileBrowserOpen = !mobileBrowserOpen;
+          sidebarCollapsed = false;
+        "
+      >
+        <PanelLeft :size="14" aria-hidden="true" />
+      </Button>
+      <CommandCenter
+        v-if="ready"
+        ref="commandCenter"
+        :sessions="sessions"
+        :groups="groups"
+        @select="selectFromSearch"
+      />
     </header>
     <WorkspaceStorageNotice
       :error="storageError"
@@ -343,7 +339,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       @reset="reset"
       @quit="quitWithoutSaving"
     />
-    <div v-if="ready" class="relative flex min-w-0 min-h-0 flex-1">
+    <div
+      v-if="ready"
+      class="relative flex min-w-0 min-h-0 flex-1 gap-1.5 pr-1.5 max-[760px]:gap-0 max-[760px]:pr-0"
+    >
+      <ActivityBar
+        class="max-[760px]:hidden"
+        :browser-open="!sidebarCollapsed"
+        @toggle-browser="sidebarCollapsed = !sidebarCollapsed"
+        @open-settings="openApplicationSettings($event)"
+      />
       <button
         v-if="mobileBrowserOpen"
         type="button"
@@ -352,11 +357,11 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         @click="mobileBrowserOpen = false"
       />
       <RequestBrowser
+        v-show="!sidebarCollapsed || mobileBrowserOpen"
         :mobile-open="mobileBrowserOpen"
         :sessions="sessions"
         :active-id="activeId"
         :groups="groups"
-        :collapsed="sidebarCollapsed"
         :selected-ids="selectedRequestIds"
         :selection-anchor-id="selectionAnchorId"
         @select="select"
@@ -368,14 +373,16 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
         @move-requests="moveRequests"
         @reorder-group="reorderGroup"
         @delete-group="deleteGroup"
-        @toggle-sidebar="sidebarCollapsed = !sidebarCollapsed"
+        @collapse-all-groups="collapseAllGroups"
         @open-group-settings="openGroupSettings"
         @create-request="(groupId) => create(false, groupId)"
         @duplicate-request="(id) => duplicate(id)"
         @close-request="(id) => close(id)"
         @set-request-local-auth="(id, auth) => setRequestLocalAuth(id, auth)"
       />
-      <div class="relative flex flex-col min-w-0 min-h-0 flex-1">
+      <div
+        class="relative flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background max-[760px]:rounded-none max-[760px]:border-x-0"
+      >
         <RequestTabs
           :sessions="sessions"
           :active-id="activeId"
@@ -422,7 +429,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       </div>
     </div>
     <footer
-      class="flex items-center gap-4.5 min-h-6.5 shrink-0 border-t border-border px-3.5 font-mono text-[0.5625rem] tracking-[0.07em] text-muted-foreground bg-muted max-[760px]:gap-3 max-[760px]:flex-wrap max-[760px]:px-3 max-[760px]:py-2"
+      class="flex items-center gap-4.5 min-h-6 shrink-0 px-3.5 font-mono text-[0.5625rem] tracking-[0.07em] text-muted-foreground bg-frame max-[760px]:gap-3 max-[760px]:flex-wrap max-[760px]:px-3 max-[760px]:py-2"
+      data-status-bar
     >
       <HelpTooltip
         text="Saved on this device, including credentials and response content. Not encrypted."
@@ -444,7 +452,8 @@ onUnmounted(() => window.removeEventListener("keydown", onKey));
       <span v-if="sending" class="text-primary" role="status">
         {{ sending }} SENDING
       </span>
-      <span v-else class="max-[760px]:hidden">30 s TIMEOUT · 4 MiB LIMIT</span>
+      <span class="ml-auto max-[760px]:hidden">30 s TIMEOUT · 4 MiB LIMIT</span>
+      <span data-theme-name>{{ themeName }}</span>
     </footer>
     <GroupSettingsDialog
       :group="groupSettingsGroup"
