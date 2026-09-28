@@ -2627,3 +2627,326 @@ Run: `bun run desktop`. Then:
 git add e2e/response-export.spec.ts README.md
 git commit -m "test: e2e for response export; docs: request settings"
 ```
+
+---
+
+### Task 10: Tab bar overflow without a scrollbar
+
+Added during execution at the user's request (approved in chat 2026-09-28). A horizontal scrollbar in the 36 px tab bar pushes the tabs up and breaks the layout.
+
+**Approved design:**
+1. The strip scrolls, but no scrollbar shows and it takes no layout height.
+2. When tabs are hidden on a side, that edge fades out with a CSS mask. The fade appears only on a side that has hidden tabs.
+3. A vertical mouse wheel scrolls the strip horizontally.
+4. When tabs overflow, a `⌄ N` button appears after the strip, before `+`. N is the number of tabs not fully visible. It opens a menu of all open tabs (method + label). Choosing one selects it; the existing `reveal()` scrolls it into view.
+
+**Files:**
+- Modify: `src/components/RequestTabs.vue`
+- Test: `src/components/__test__/RequestTabsOverflow.test.ts` (create), `e2e/tabs.spec.ts`
+
+**Interfaces:**
+- Consumes: existing `RequestTabs` props (`sessions`, `activeId`) and `select` emit. No prop or emit changes.
+- Produces: test hooks `data-overflow-left` / `data-overflow-right` (`"true"`/`"false"`) on the strip, `[data-tab-overflow]` trigger, `[data-tab-overflow-item]` menu items.
+
+- [ ] **Step 1: Write the failing unit tests**
+
+Create `src/components/__test__/RequestTabsOverflow.test.ts`:
+
+```ts
+import { afterEach, describe, expect, it } from "vitest";
+import { mount } from "@vue/test-utils";
+import { nextTick } from "vue";
+import RequestTabs from "../RequestTabs.vue";
+import { createSession } from "@/lib/session";
+
+const wrappers: ReturnType<typeof mount>[] = [];
+afterEach(() => {
+  wrappers.splice(0).forEach((w) => w.unmount());
+  document.body.innerHTML = "";
+});
+
+const TAB = 210;
+// jsdom has no layout. Give the strip a width and each tab a position.
+function layout(strip: HTMLElement, width: number, scrollLeft = 0) {
+  const cells = strip.querySelectorAll<HTMLElement>("[data-tab-id]");
+  Object.defineProperty(strip, "clientWidth", { configurable: true, value: width });
+  Object.defineProperty(strip, "scrollWidth", {
+    configurable: true,
+    value: cells.length * TAB,
+  });
+  strip.scrollLeft = scrollLeft;
+  cells.forEach((cell, index) => {
+    Object.defineProperty(cell, "offsetLeft", { configurable: true, value: index * TAB });
+    Object.defineProperty(cell, "offsetWidth", { configurable: true, value: TAB });
+  });
+  strip.dispatchEvent(new Event("scroll"));
+}
+
+function render(count: number) {
+  const sessions = Array.from({ length: count }, () => createSession());
+  const wrapper = mount(RequestTabs, {
+    props: { sessions, activeId: sessions[0].id },
+    attachTo: document.body,
+  });
+  wrappers.push(wrapper);
+  const strip = wrapper.get('[role="tablist"]').element as HTMLElement;
+  return { wrapper, sessions, strip };
+}
+
+describe("tab bar overflow", () => {
+  it("shows no fade and no overflow button when every tab fits", async () => {
+    const { wrapper, strip } = render(2);
+    layout(strip, 1000);
+    await nextTick();
+    expect(strip.dataset.overflowLeft).toBe("false");
+    expect(strip.dataset.overflowRight).toBe("false");
+    expect(wrapper.find("[data-tab-overflow]").exists()).toBe(false);
+  });
+
+  it("fades the sides that have hidden tabs and counts them", async () => {
+    const { wrapper, strip } = render(6);
+    layout(strip, 500, 0);
+    await nextTick();
+    expect(strip.dataset.overflowLeft).toBe("false");
+    expect(strip.dataset.overflowRight).toBe("true");
+    // Tabs 0 and 1 fit fully in 500 px; tabs 2..5 are hidden or cut.
+    expect(wrapper.get("[data-tab-overflow]").text()).toContain("4");
+    layout(strip, 500, 420);
+    await nextTick();
+    expect(strip.dataset.overflowLeft).toBe("true");
+    expect(strip.dataset.overflowRight).toBe("true");
+  });
+
+  it("scrolls horizontally with a vertical wheel", async () => {
+    const { strip } = render(6);
+    layout(strip, 500, 0);
+    const event = new WheelEvent("wheel", { deltaY: 120, cancelable: true });
+    strip.dispatchEvent(event);
+    expect(strip.scrollLeft).toBe(120);
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  it("leaves a horizontal wheel to the browser", async () => {
+    const { strip } = render(6);
+    layout(strip, 500, 0);
+    const event = new WheelEvent("wheel", { deltaX: 80, deltaY: 10, cancelable: true });
+    strip.dispatchEvent(event);
+    expect(event.defaultPrevented).toBe(false);
+  });
+
+  it("selects a tab from the overflow menu", async () => {
+    const { wrapper, sessions, strip } = render(6);
+    layout(strip, 500, 0);
+    await nextTick();
+    const trigger = wrapper.get("[data-tab-overflow]");
+    // reka DropdownMenu opens on pointerdown (button 0) or Enter.
+    await trigger.trigger("keydown", { key: "Enter" });
+    await nextTick();
+    const items = document.body.querySelectorAll<HTMLElement>(
+      "[data-tab-overflow-item]",
+    );
+    expect(items).toHaveLength(6);
+    items[5].click();
+    await nextTick();
+    expect(wrapper.emitted("select")).toContainEqual([sessions[5].id]);
+  });
+});
+```
+
+If the reka `DropdownMenu` does not open from `keydown Enter` in jsdom, open it the way `src/components/__test__/RequestBrowser.test.ts` opens `GroupActionsMenu`, and select the item the way that test does.
+
+- [ ] **Step 2: Run the tests to verify they fail**
+
+Run: `bun run test src/components/__test__/RequestTabsOverflow.test.ts`
+Expected: FAIL. `data-overflow-left` is undefined and `[data-tab-overflow]` is not found.
+
+- [ ] **Step 3: Implement the script**
+
+In `src/components/RequestTabs.vue`:
+
+1. Change the `vue` import to `import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from "vue";`.
+2. Add `ChevronDown` to the `lucide-vue-next` import.
+3. Add the reka import:
+
+```ts
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+} from "reka-ui";
+```
+
+4. After `const strip = ref<HTMLElement>();`, add:
+
+```ts
+// Overflow state. The strip has no scrollbar, so fades and a count show
+// that more tabs exist.
+const overflow = reactive({ left: false, right: false, hidden: 0 });
+function measure() {
+  const el = strip.value;
+  if (!el) return;
+  const start = el.scrollLeft;
+  const end = start + el.clientWidth;
+  overflow.left = start > 1;
+  overflow.right = end < el.scrollWidth - 1;
+  overflow.hidden = Array.from(
+    el.querySelectorAll<HTMLElement>("[data-tab-id]"),
+  ).filter(
+    (cell) =>
+      cell.offsetLeft < start - 1 ||
+      cell.offsetLeft + cell.offsetWidth > end + 1,
+  ).length;
+}
+const fadeMask = computed(() => {
+  const left = overflow.left ? "transparent, #000 24px" : "#000, #000";
+  const right = overflow.right
+    ? "#000 calc(100% - 24px), transparent"
+    : "#000, #000";
+  return overflow.left || overflow.right
+    ? { maskImage: `linear-gradient(to right, ${left}, ${right})` }
+    : {};
+});
+// A vertical wheel scrolls the strip sideways. A horizontal gesture is left
+// to the browser.
+function wheel(event: WheelEvent) {
+  const el = strip.value;
+  if (!el || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  if (el.scrollWidth <= el.clientWidth) return;
+  event.preventDefault();
+  el.scrollLeft += event.deltaY;
+  measure();
+}
+let resize: ResizeObserver | undefined;
+onMounted(() => {
+  measure();
+  // jsdom has no ResizeObserver.
+  if (typeof ResizeObserver === "undefined" || !strip.value) return;
+  resize = new ResizeObserver(measure);
+  resize.observe(strip.value);
+});
+onUnmounted(() => resize?.disconnect());
+watch(
+  () => props.sessions.length,
+  () => void nextTick(measure),
+);
+```
+
+5. In `reveal()`, after the `scrollIntoView` call, add `measure();`.
+
+- [ ] **Step 4: Implement the template**
+
+1. Replace the strip's opening tag:
+
+```vue
+        <div
+          ref="strip"
+          class="relative flex min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+          role="tablist"
+          aria-label="Requests"
+          :data-overflow-left="overflow.left"
+          :data-overflow-right="overflow.right"
+          :style="fadeMask"
+          @scroll.passive="measure"
+          @wheel="wheel"
+        >
+```
+
+`relative` makes the strip the `offsetParent` of the tab cells, so `offsetLeft` is measured from the strip.
+
+2. Insert this between the strip's closing `</div>` and the New request `<button>`:
+
+```vue
+        <DropdownMenuRoot v-if="overflow.hidden > 0">
+          <DropdownMenuTrigger
+            class="flex items-center justify-center gap-0.5 shrink-0 px-2 font-mono text-[0.625rem] text-muted-foreground border-x border-border cursor-pointer hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground pointer-coarse:min-w-11"
+            data-tab-overflow
+            :aria-label="`${overflow.hidden} more tabs`"
+            title="Show all open tabs"
+          >
+            <ChevronDown :size="13" aria-hidden="true" />
+            {{ overflow.hidden }}
+          </DropdownMenuTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuContent
+              align="end"
+              :side-offset="4"
+              class="z-50 max-h-[60dvh] min-w-56 max-w-80 overflow-y-auto rounded border border-border bg-secondary p-1 font-mono text-xs text-foreground shadow-sm"
+              data-surface="context-menu"
+            >
+              <DropdownMenuItem
+                v-for="session in sessions"
+                :key="session.id"
+                data-tab-overflow-item
+                class="flex items-center gap-2 cursor-default select-none rounded-sm px-2 py-1.5 outline-none data-highlighted:bg-accent data-[active=true]:text-foreground pointer-coarse:py-3"
+                :class="session.id === activeId ? '' : 'text-muted-foreground'"
+                @select="emit('select', session.id)"
+              >
+                <span
+                  class="method w-11 shrink-0 text-[0.5625rem] font-bold tracking-[0.04em]"
+                  :data-method="session.draft.method"
+                  >{{ session.draft.method }}</span
+                >
+                <span class="truncate">{{ sessionLabel(session) }}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
+```
+
+The `method` class and `data-method` attribute reuse the method colors the tab cells already use. If those colors come from a scoped style in another component and do not apply here, check how `.method[data-method]` is styled (`grep -rn "data-method" src/style.css src/components`) and follow that.
+
+3. Remove the `border-r` from the New request button only if the overflow trigger's `border-x` makes a double border. Check visually with the e2e screenshot in Step 6, or leave it.
+
+- [ ] **Step 5: Run the unit tests**
+
+Run: `bun run test src/components/__test__/`
+Expected: PASS, including `RequestTabsContextMenu.test.ts` and `RequestTabsDrag.test.ts`.
+
+- [ ] **Step 6: Add the E2E test**
+
+Append to `e2e/tabs.spec.ts`:
+
+```ts
+test("many tabs keep the bar height and show an overflow menu", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto("/");
+  const add = page.locator("[data-new-request]");
+  for (let i = 0; i < 11; i++) await add.click();
+  const bar = page.locator("[data-tab-bar]");
+  const strip = bar.getByRole("tablist");
+  await expect(strip.getByRole("tab")).toHaveCount(12);
+  expect((await bar.boundingBox())!.height).toBeCloseTo(36, 0);
+  // A visible horizontal scrollbar makes offsetHeight larger than clientHeight.
+  const gap = await strip.evaluate((el) => el.offsetHeight - el.clientHeight);
+  expect(gap).toBe(0);
+  await expect(strip).toHaveAttribute("data-overflow-left", "true");
+  const overflow = page.locator("[data-tab-overflow]");
+  await expect(overflow).toBeVisible();
+  await overflow.click();
+  await page.locator("[data-tab-overflow-item]").first().click();
+  await expect(strip.getByRole("tab").first()).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(strip).toHaveAttribute("data-overflow-left", "false");
+});
+```
+
+New tabs open at the end and become active, so after 11 clicks the strip is scrolled to the right end. If the tab role or `aria-selected` lives on a different element than `getByRole("tab")` finds, match the selectors used by the existing tests in this file.
+
+Run: `bun run test:e2e e2e/tabs.spec.ts`
+Expected: PASS.
+
+- [ ] **Step 7: Lint, build, and commit**
+
+Run: `bun run build && bunx prettier --check src/components/RequestTabs.vue src/components/__test__/RequestTabsOverflow.test.ts e2e/tabs.spec.ts && bunx oxlint src`
+Expected: no errors.
+
+```bash
+git add src/components/RequestTabs.vue src/components/__test__/RequestTabsOverflow.test.ts e2e/tabs.spec.ts
+git commit -m "feat: tab bar overflow fades and menu without a scrollbar"
+```
