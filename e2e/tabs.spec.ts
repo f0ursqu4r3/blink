@@ -243,3 +243,29 @@ for (const width of [1180, 390]) {
     });
   });
 }
+
+test("many tabs keep the bar height and show an overflow menu", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1000, height: 700 });
+  await page.goto("/");
+  const add = page.locator("[data-new-request]");
+  for (let i = 0; i < 11; i++) await add.click();
+  const bar = page.locator("[data-tab-bar]");
+  const strip = bar.getByRole("tablist");
+  await expect(strip.getByRole("tab")).toHaveCount(12);
+  expect((await bar.boundingBox())!.height).toBeCloseTo(36, 0);
+  // A visible horizontal scrollbar makes offsetHeight larger than clientHeight.
+  const gap = await strip.evaluate((el) => el.offsetHeight - el.clientHeight);
+  expect(gap).toBe(0);
+  await expect(strip).toHaveAttribute("data-overflow-left", "true");
+  const overflow = page.locator("[data-tab-overflow]");
+  await expect(overflow).toBeVisible();
+  await overflow.click();
+  await page.locator("[data-tab-overflow-item]").first().click();
+  await expect(strip.getByRole("tab").first()).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await expect(strip).toHaveAttribute("data-overflow-left", "false");
+});

@@ -1,6 +1,14 @@
 <script setup lang="ts">
-import { nextTick, ref, watch } from "vue";
-import { CopyPlus, Plus, X } from "lucide-vue-next";
+import {
+  computed,
+  nextTick,
+  onMounted,
+  onUnmounted,
+  reactive,
+  ref,
+  watch,
+} from "vue";
+import { ChevronDown, CopyPlus, Plus, X } from "lucide-vue-next";
 import {
   ContextMenu,
   ContextMenuContent,
@@ -8,6 +16,13 @@ import {
   ContextMenuSeparator,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import {
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuPortal,
+  DropdownMenuRoot,
+  DropdownMenuTrigger,
+} from "reka-ui";
 import {
   sessionLabel,
   sessionHost,
@@ -34,6 +49,56 @@ const emit = defineEmits<{
   openRequests: [ids: number[], beforeId: number | null];
 }>();
 const strip = ref<HTMLElement>();
+// Overflow state. The strip has no scrollbar, so fades and a count show
+// that more tabs exist.
+const overflow = reactive({ left: false, right: false, hidden: 0 });
+function measure() {
+  const el = strip.value;
+  if (!el) return;
+  const start = el.scrollLeft;
+  const end = start + el.clientWidth;
+  overflow.left = start > 1;
+  overflow.right = end < el.scrollWidth - 1;
+  overflow.hidden = Array.from(
+    el.querySelectorAll<HTMLElement>("[data-tab-id]"),
+  ).filter(
+    (cell) =>
+      cell.offsetLeft < start - 1 ||
+      cell.offsetLeft + cell.offsetWidth > end + 1,
+  ).length;
+}
+const fadeMask = computed(() => {
+  const left = overflow.left ? "transparent, #000 24px" : "#000, #000";
+  const right = overflow.right
+    ? "#000 calc(100% - 24px), transparent"
+    : "#000, #000";
+  return overflow.left || overflow.right
+    ? { maskImage: `linear-gradient(to right, ${left}, ${right})` }
+    : {};
+});
+// A vertical wheel scrolls the strip sideways. A horizontal gesture is left
+// to the browser.
+function wheel(event: WheelEvent) {
+  const el = strip.value;
+  if (!el || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+  if (el.scrollWidth <= el.clientWidth) return;
+  event.preventDefault();
+  el.scrollLeft += event.deltaY;
+  measure();
+}
+let resize: ResizeObserver | undefined;
+onMounted(() => {
+  measure();
+  // jsdom has no ResizeObserver.
+  if (typeof ResizeObserver === "undefined" || !strip.value) return;
+  resize = new ResizeObserver(measure);
+  resize.observe(strip.value);
+});
+onUnmounted(() => resize?.disconnect());
+watch(
+  () => props.sessions.length,
+  () => void nextTick(measure),
+);
 const drag = useDragDrop();
 // The bar is a reka `as-child` trigger, whose template ref binds only on the
 // first mount. Reach it through the strip instead.
@@ -88,6 +153,7 @@ async function reveal() {
   strip.value
     ?.querySelector('[aria-selected="true"]')
     ?.scrollIntoView?.({ block: "nearest", inline: "nearest" });
+  measure();
 }
 watch(() => props.activeId, reveal);
 function navigate(event: KeyboardEvent, index: number) {
@@ -135,9 +201,14 @@ function navigate(event: KeyboardEvent, index: number) {
       >
         <div
           ref="strip"
-          class="flex min-w-0 overflow-x-auto scrollbar-thin"
+          class="relative flex min-w-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
           role="tablist"
           aria-label="Requests"
+          :data-overflow-left="overflow.left"
+          :data-overflow-right="overflow.right"
+          :style="fadeMask"
+          @scroll.passive="measure"
+          @wheel="wheel"
         >
           <ContextMenu v-for="(session, index) in sessions" :key="session.id">
             <ContextMenuTrigger
@@ -264,6 +335,41 @@ function navigate(event: KeyboardEvent, index: number) {
             </ContextMenuContent>
           </ContextMenu>
         </div>
+        <DropdownMenuRoot v-if="overflow.hidden > 0">
+          <DropdownMenuTrigger
+            class="flex items-center justify-center gap-0.5 shrink-0 px-2 font-mono text-[0.625rem] text-muted-foreground border-x border-border cursor-pointer hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground pointer-coarse:min-w-11"
+            data-tab-overflow
+            :aria-label="`${overflow.hidden} more tabs`"
+            title="Show all open tabs"
+          >
+            <ChevronDown :size="13" aria-hidden="true" />
+            {{ overflow.hidden }}
+          </DropdownMenuTrigger>
+          <DropdownMenuPortal>
+            <DropdownMenuContent
+              align="end"
+              :side-offset="4"
+              class="z-50 max-h-[60dvh] min-w-56 max-w-80 overflow-y-auto rounded border border-border bg-secondary p-1 font-mono text-xs text-foreground shadow-sm"
+              data-surface="context-menu"
+            >
+              <DropdownMenuItem
+                v-for="session in sessions"
+                :key="session.id"
+                data-tab-overflow-item
+                class="flex items-center gap-2 cursor-default select-none rounded-sm px-2 py-1.5 outline-none data-highlighted:bg-accent data-[active=true]:text-foreground pointer-coarse:py-3"
+                :class="session.id === activeId ? '' : 'text-muted-foreground'"
+                @select="emit('select', session.id)"
+              >
+                <span
+                  class="method w-11 shrink-0 text-[0.5625rem] font-bold tracking-[0.04em]"
+                  :data-method="session.draft.method"
+                  >{{ session.draft.method }}</span
+                >
+                <span class="truncate">{{ sessionLabel(session) }}</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenuPortal>
+        </DropdownMenuRoot>
         <button
           type="button"
           class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-foreground pointer-coarse:w-11"
