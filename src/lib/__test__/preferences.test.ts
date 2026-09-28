@@ -6,7 +6,9 @@ import type { RequestGroup } from "../groups";
 import {
   applyNewRequestDefaults,
   defaultPreferences,
+  normalizePreferences,
   resolveNewRequestDefaults,
+  transportOptions,
   validPreferences,
 } from "../preferences";
 
@@ -195,5 +197,76 @@ describe("new request preferences", () => {
       url: "https://api.test",
     });
     expect(draft).toMatchObject({ method: "GET", url: "" });
+  });
+});
+
+describe("transport preferences", () => {
+  it("fills missing transport fields from defaults", () => {
+    expect(
+      normalizePreferences({
+        defaultMethod: "POST",
+        defaultBodyMode: "json",
+        pretty: false,
+        wrap: true,
+        confirmCloseDrafts: false,
+      }),
+    ).toEqual({
+      ...defaultPreferences(),
+      defaultMethod: "POST",
+      defaultBodyMode: "json",
+      pretty: false,
+      wrap: true,
+      confirmCloseDrafts: false,
+    });
+  });
+  it("rejects wrong types and out-of-range values", () => {
+    expect(normalizePreferences(null)).toBeNull();
+    expect(normalizePreferences([])).toBeNull();
+    expect(
+      normalizePreferences({ ...defaultPreferences(), timeoutSeconds: "30" }),
+    ).toBeNull();
+    expect(
+      normalizePreferences({ ...defaultPreferences(), maxRedirects: 21 }),
+    ).toBeNull();
+    expect(
+      normalizePreferences({ ...defaultPreferences(), followRedirects: 1 }),
+    ).toBeNull();
+  });
+  it("drops unknown keys", () => {
+    expect(
+      normalizePreferences({ ...defaultPreferences(), extra: true }),
+    ).toEqual(defaultPreferences());
+  });
+  it("strict validation needs every field", () => {
+    const partial: Record<string, unknown> = { ...defaultPreferences() };
+    delete partial.timeoutSeconds;
+    expect(validPreferences(partial)).toBe(false);
+    expect(validPreferences(defaultPreferences())).toBe(true);
+  });
+  it("extracts transport options", () => {
+    expect(transportOptions(defaultPreferences())).toEqual({
+      timeoutSeconds: 30,
+      connectTimeoutSeconds: 10,
+      followRedirects: false,
+      maxRedirects: 10,
+      inspectionLimitMiB: 4,
+    });
+  });
+  it("loads a v4 workspace saved before the transport fields", () => {
+    const session = createSession(createDraft());
+    const encoded = JSON.parse(
+      encodeWorkspace([session], session.id, [], {}, defaultPreferences()),
+    );
+    for (const key of [
+      "timeoutSeconds",
+      "connectTimeoutSeconds",
+      "followRedirects",
+      "maxRedirects",
+      "inspectionLimitMiB",
+    ])
+      delete encoded.preferences[key];
+    expect(decodeWorkspace(JSON.stringify(encoded)).preferences).toEqual(
+      defaultPreferences(),
+    );
   });
 });

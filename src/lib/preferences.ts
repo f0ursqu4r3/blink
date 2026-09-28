@@ -1,6 +1,11 @@
 import { bodyModes, methods, type BodyMode, type Method } from "./request";
 import type { RequestSession } from "./session";
 import type { RequestGroup } from "./groups";
+import {
+  defaultTransportOptions,
+  transportFieldErrors,
+  type TransportOptions,
+} from "./transport-options";
 
 export type WorkspacePreferences = {
   defaultMethod: Method;
@@ -8,7 +13,7 @@ export type WorkspacePreferences = {
   pretty: boolean;
   wrap: boolean;
   confirmCloseDrafts: boolean;
-};
+} & TransportOptions;
 
 export const defaultPreferences = (): WorkspacePreferences => ({
   defaultMethod: "GET",
@@ -16,6 +21,7 @@ export const defaultPreferences = (): WorkspacePreferences => ({
   pretty: true,
   wrap: false,
   confirmCloseDrafts: true,
+  ...defaultTransportOptions(),
 });
 
 export function validPreferences(
@@ -28,9 +34,59 @@ export function validPreferences(
     bodyModes.includes(p.defaultBodyMode as BodyMode) &&
     typeof p.pretty === "boolean" &&
     typeof p.wrap === "boolean" &&
-    typeof p.confirmCloseDrafts === "boolean"
+    typeof p.confirmCloseDrafts === "boolean" &&
+    typeof p.followRedirects === "boolean" &&
+    Object.keys(transportFieldErrors(p as TransportOptions)).length === 0
   );
 }
+
+/**
+ * Fill fields added after a workspace was saved with their defaults. Returns
+ * null for a wrong type or an out-of-range value. Unknown keys are dropped.
+ */
+export function normalizePreferences(
+  value: unknown,
+): WorkspacePreferences | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const input = value as Record<string, unknown>;
+
+  // Check that all non-transport fields are present and valid
+  if (
+    !methods.includes(input.defaultMethod as Method) ||
+    !bodyModes.includes(input.defaultBodyMode as BodyMode) ||
+    typeof input.pretty !== "boolean" ||
+    typeof input.wrap !== "boolean" ||
+    typeof input.confirmCloseDrafts !== "boolean"
+  )
+    return null;
+
+  // Fill in missing transport fields from defaults
+  const defaults = defaultTransportOptions();
+  const merged: Record<string, unknown> = {
+    defaultMethod: input.defaultMethod,
+    defaultBodyMode: input.defaultBodyMode,
+    pretty: input.pretty,
+    wrap: input.wrap,
+    confirmCloseDrafts: input.confirmCloseDrafts,
+  };
+
+  // Add transport fields (use provided values, or defaults)
+  for (const key of Object.keys(defaults) as (keyof typeof defaults)[])
+    merged[key] = key in input ? input[key] : defaults[key];
+
+  // Validate the complete object
+  return validPreferences(merged) ? (merged as WorkspacePreferences) : null;
+}
+
+export const transportOptions = (
+  preferences: WorkspacePreferences,
+): TransportOptions => ({
+  timeoutSeconds: preferences.timeoutSeconds,
+  connectTimeoutSeconds: preferences.connectTimeoutSeconds,
+  followRedirects: preferences.followRedirects,
+  maxRedirects: preferences.maxRedirects,
+  inspectionLimitMiB: preferences.inspectionLimitMiB,
+});
 
 export function resolveNewRequestDefaults(
   groups: RequestGroup[],

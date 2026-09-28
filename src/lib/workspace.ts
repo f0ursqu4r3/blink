@@ -11,7 +11,7 @@ import {
 import { reserveGroupId, type RequestGroup } from "./groups";
 import {
   defaultPreferences,
-  validPreferences,
+  normalizePreferences,
   type WorkspacePreferences,
 } from "./preferences";
 
@@ -278,7 +278,7 @@ function parseSnapshot(content: string): Snapshot {
         validateDefinitions(data.globalDefinitions),
     );
     if (data.preferences !== undefined)
-      check(validPreferences(data.preferences));
+      check(normalizePreferences(data.preferences) !== null);
   }
   return raw as Snapshot;
 }
@@ -398,10 +398,12 @@ export function decodeWorkspace(content: string) {
       }
     }
   }
+  const saved =
+    version >= 3 ? (data as SnapshotV3 | SnapshotV4).preferences : undefined;
   const preferences =
-    version >= 3 && (data as SnapshotV3 | SnapshotV4).preferences !== undefined
-      ? (data as SnapshotV3 | SnapshotV4).preferences
-      : defaultPreferences();
+    saved === undefined
+      ? defaultPreferences()
+      : (normalizePreferences(saved) ?? defaultPreferences());
   // Before v4 every request was an open tab.
   const openIds =
     version >= 4
