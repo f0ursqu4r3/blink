@@ -1,6 +1,10 @@
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 use std::time::{Duration, Instant};
 
-use reqwest::{header::HeaderName, header::HeaderValue, Client, Method};
+use reqwest::{header::HeaderName, header::HeaderValue, redirect::Policy, Client, Method};
 use serde::{Deserialize, Serialize};
 
 const RESPONSE_LIMIT: usize = 4 * 1024 * 1024;
@@ -29,10 +33,91 @@ struct ResponseOutput {
     headers: Vec<HeaderInput>,
     body: String,
     size_bytes: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    final_url: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    redirect_count: Option<usize>,
+}
+
+#[derive(Debug, Clone, Copy, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct TransportOptions {
+    timeout_seconds: u64,
+    connect_timeout_seconds: u64,
+    follow_redirects: bool,
+    max_redirects: usize,
+    #[serde(rename = "inspectionLimitMiB")]
+    inspection_limit_mib: usize,
+}
+
+impl Default for TransportOptions {
+    fn default() -> Self {
+        Self {
+            timeout_seconds: 30,
+            connect_timeout_seconds: 10,
+            follow_redirects: false,
+            max_redirects: 10,
+            inspection_limit_mib: 4,
+        }
+    }
+}
+
+impl TransportOptions {
+    /// The frontend checks the same ranges. Rust checks again because the
+    /// webview is not the trust boundary for limits.
+    fn validate(&self) -> Result<(), String> {
+        let valid = (1..=600).contains(&self.timeout_seconds)
+            && (1..=self.timeout_seconds).contains(&self.connect_timeout_seconds)
+            && (1..=20).contains(&self.max_redirects)
+            && (1..=16).contains(&self.inspection_limit_mib);
+        if valid {
+            Ok(())
+        } else {
+            Err("Invalid transport settings.".to_string())
+        }
+    }
+}
+
+/// Build a client for one request. `redirects` receives the hop count, so the
+/// client must not be shared between requests.
+fn build_client(options: &TransportOptions, redirects: Arc<AtomicUsize>) -> Result<Client, String> {
+    let policy = if options.follow_redirects {
+        let max = options.max_redirects;
+        Policy::custom(move |attempt| {
+            // `previous` holds every URL already requested, so its length is
+            // the number of this hop.
+            let hops = attempt.previous().len();
+            if hops > max {
+                attempt.error(format!("Stopped after {max} redirects."))
+            } else {
+                redirects.store(hops, Ordering::Relaxed);
+                attempt.follow()
+            }
+        })
+    } else {
+        Policy::none()
+    };
+    Client::builder()
+        .timeout(Duration::from_secs(options.timeout_seconds))
+        .connect_timeout(Duration::from_secs(options.connect_timeout_seconds))
+        .redirect(policy)
+        .build()
+        .map_err(|error| error.without_url().to_string())
 }
 
 #[tauri::command]
-async fn send_request(mut request: RequestInput) -> Result<ResponseOutput, String> {
+async fn send_request(
+    request: RequestInput,
+    options: TransportOptions,
+) -> Result<ResponseOutput, String> {
+    execute(request, options).await
+}
+
+async fn execute(
+    mut request: RequestInput,
+    options: TransportOptions,
+) -> Result<ResponseOutput, String> {
+    options.validate()?;
     request.url = resolve_environment_references(&request.url)?;
     for header in &mut request.headers {
         header.value = resolve_environment_references(&header.value)?;
@@ -57,12 +142,8 @@ async fn send_request(mut request: RequestInput) -> Result<ResponseOutput, Strin
     let method = Method::from_bytes(request.method.as_bytes())
         .map_err(|_| format!("Unsupported HTTP method: {}", request.method))?;
     let has_body = method != Method::GET && method != Method::HEAD;
-    let client = Client::builder()
-        .timeout(Duration::from_secs(30))
-        .connect_timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|error| error.without_url().to_string())?;
+    let redirects = Arc::new(AtomicUsize::new(0));
+    let client = build_client(&options, redirects.clone())?;
     let mut builder = client.request(method, url);
 
     for header in request.headers {
@@ -84,7 +165,13 @@ async fn send_request(mut request: RequestInput) -> Result<ResponseOutput, Strin
     }
 
     let started_at = Instant::now();
-    let mut response = builder.send().await.map_err(network_error)?;
+    let mut response = builder
+        .send()
+        .await
+        .map_err(|error| network_error(error, &options))?;
+    // The policy has run for every hop once `send` returns.
+    let redirect_count = redirects.load(Ordering::Relaxed);
+    let final_url = (redirect_count > 0).then(|| response.url().to_string());
     let status = response.status();
     let headers = response
         .headers()
@@ -95,7 +182,11 @@ async fn send_request(mut request: RequestInput) -> Result<ResponseOutput, Strin
         })
         .collect();
     let mut bytes = Vec::new();
-    while let Some(chunk) = response.chunk().await.map_err(network_error)? {
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| network_error(error, &options))?
+    {
         if bytes.len() + chunk.len() > RESPONSE_LIMIT {
             return Err("Response exceeds the 4 MiB inspection limit.".to_string());
         }
@@ -112,6 +203,8 @@ async fn send_request(mut request: RequestInput) -> Result<ResponseOutput, Strin
         headers,
         body,
         size_bytes,
+        final_url,
+        redirect_count: (redirect_count > 0).then_some(redirect_count),
     })
 }
 
@@ -143,9 +236,17 @@ fn resolve_environment_references(value: &str) -> Result<String, String> {
     Ok(output)
 }
 
-fn network_error(error: reqwest::Error) -> String {
+fn network_error(error: reqwest::Error, options: &TransportOptions) -> String {
     if error.is_timeout() {
-        "Request timed out (10 s connection / 30 s total limit).".to_string()
+        format!(
+            "Request timed out ({} s connection / {} s total limit).",
+            options.connect_timeout_seconds, options.timeout_seconds
+        )
+    } else if error.is_redirect() {
+        // The policy's own message, such as "Stopped after N redirects."
+        std::error::Error::source(&error)
+            .map(|source| source.to_string())
+            .unwrap_or_else(|| format!("Network request failed: {}", error.without_url()))
     } else {
         format!("Network request failed: {}", error.without_url())
     }
