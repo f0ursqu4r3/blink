@@ -1,4 +1,10 @@
-import { computed, toValue, onScopeDispose, type MaybeRefOrGetter } from "vue";
+import {
+  computed,
+  ref,
+  toValue,
+  onScopeDispose,
+  type MaybeRefOrGetter,
+} from "vue";
 import { buildRequest, toCurl } from "@/lib/request";
 import type { ResolvedRequestContext } from "@/lib/authorization";
 import { requestFingerprint, type RequestSession } from "@/lib/session";
@@ -36,6 +42,10 @@ export function useRequestRunner(
 ) {
   let alive = true;
   let clock: ReturnType<typeof setInterval> | undefined;
+  // The URL actually sent, captured at send time so a later edit to the
+  // draft (or an unresolved token placeholder) does not change the name
+  // suggested for a saved response body.
+  const sentUrl = ref("");
 
   const prepared = computed(() => {
     // toValue(undefined) → undefined; toValue(ref(ctx)) → ctx; toValue(() => ctx) → ctx
@@ -80,6 +90,7 @@ export function useRequestRunner(
     releaseResponse(session.response);
     session.response = null;
     session.elapsed = 0;
+    sentUrl.value = request.url;
     // Persist the resolved-request fingerprint so stale can compare accurately.
     session.sentFingerprint = requestFingerprint(request, authType);
     const start = performance.now();
@@ -106,5 +117,5 @@ export function useRequestRunner(
     clearInterval(clock);
   });
 
-  return { prepared, curl, stale, send };
+  return { prepared, curl, stale, send, sentUrl };
 }

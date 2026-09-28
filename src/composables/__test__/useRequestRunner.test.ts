@@ -201,6 +201,26 @@ describe("useRequestRunner – reactive context source", () => {
   });
 });
 
+describe("sentUrl", () => {
+  it("captures the resolved request URL when a send starts", async () => {
+    const session = createSession();
+    session.draft.url = "https://example.test/{{path}}";
+    const ctxRef = ref<ResolvedRequestContext>({
+      auth: { type: "none" },
+      definitions: { path: "widgets" },
+      workspaceDefinitions: {},
+    });
+    let runner: ReturnType<typeof useRequestRunner>;
+    scope.run(() => {
+      runner = useRequestRunner(session, ctxRef);
+    });
+    expect(runner!.sentUrl.value).toBe("");
+    await runner!.send();
+    expect(runner!.sentUrl.value).toBe(runner!.prepared.value.request!.url);
+    expect(runner!.sentUrl.value).toBe("https://example.test/widgets");
+  });
+});
+
 describe("transport options and body release", () => {
   it("sends with the given options and releases the previous body", async () => {
     const session = createSession();

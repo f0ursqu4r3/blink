@@ -72,7 +72,7 @@ const inheritedSource = computed(() => {
   return undefined;
 });
 
-const { prepared, curl, stale, send } = useRequestRunner(
+const { prepared, curl, stale, send, sentUrl } = useRequestRunner(
   props.session,
   resolvedCtx,
   () => props.transport,
@@ -389,7 +389,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :error="session.error"
         :elapsed="session.elapsed"
         :stale="stale"
-        :request-url="session.draft.url"
+        :request-url="sentUrl || session.draft.url"
         :timeout-seconds="transport?.timeoutSeconds"
       />
     </div>
