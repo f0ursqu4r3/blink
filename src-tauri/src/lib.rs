@@ -310,6 +310,7 @@ pub fn run() {
     use tauri::Manager;
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             app.manage(app_state::AppState::new(app.path().app_data_dir()?));
@@ -338,7 +339,9 @@ pub fn run() {
             app_state::finish_app_exit,
             ghostty_themes::list_ghostty_themes,
             ghostty_themes::read_ghostty_theme,
-            response_store::release_response
+            response_store::release_response,
+            response_store::save_response,
+            response_store::save_response_text
         ])
         .build(tauri::generate_context!())
         .expect("error while building Blink")

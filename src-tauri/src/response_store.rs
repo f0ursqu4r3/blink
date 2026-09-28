@@ -50,9 +50,6 @@ impl ResponseStore {
         self.files.lock().unwrap().remove(id);
     }
 
-    // The response-export command (a later task) will call this from
-    // production code; for now only tests exercise it.
-    #[allow(dead_code)]
     pub fn copy_body(&self, id: &str, dest: &Path) -> Result<(), String> {
         // Do not hold the lock while copying a large file.
         let source = self
@@ -80,6 +77,46 @@ impl ResponseStore {
 #[tauri::command]
 pub fn release_response(store: tauri::State<'_, ResponseStore>, body_id: String) {
     store.release(&body_id);
+}
+
+/// Rust opens the dialog, so the webview never supplies a file path.
+/// `blocking_save_file` must not run on the main thread. Async commands run
+/// on the async runtime, not the main thread.
+fn pick_save_path(app: &tauri::AppHandle, suggested_name: &str) -> Option<PathBuf> {
+    use tauri_plugin_dialog::DialogExt;
+    app.dialog()
+        .file()
+        .set_file_name(suggested_name)
+        .blocking_save_file()?
+        .into_path()
+        .ok()
+}
+
+#[tauri::command]
+pub async fn save_response(
+    app: tauri::AppHandle,
+    store: tauri::State<'_, ResponseStore>,
+    body_id: String,
+    suggested_name: String,
+) -> Result<bool, String> {
+    let Some(dest) = pick_save_path(&app, &suggested_name) else {
+        return Ok(false);
+    };
+    store.copy_body(&body_id, &dest)?;
+    Ok(true)
+}
+
+#[tauri::command]
+pub async fn save_response_text(
+    app: tauri::AppHandle,
+    text: String,
+    suggested_name: String,
+) -> Result<bool, String> {
+    let Some(dest) = pick_save_path(&app, &suggested_name) else {
+        return Ok(false);
+    };
+    fs::write(dest, text).map_err(|error| error.to_string())?;
+    Ok(true)
 }
 
 #[cfg(test)]
