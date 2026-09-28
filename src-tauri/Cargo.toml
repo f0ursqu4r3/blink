@@ -3,6 +3,7 @@ name = "blink"
 version = "0.1.0"
 description = "A fast, private REST API client for one-off requests"
 authors = ["Kyle Dougan"]
+license = "MIT"
 edition = "2021"
 
 [lib]
