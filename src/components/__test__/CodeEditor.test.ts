@@ -135,4 +135,23 @@ describe("CodeEditor", () => {
     await wrapper.setProps({ placeholder: "graphql example" });
     expect(wrapper.find(".cm-placeholder").text()).toBe("graphql example");
   });
+  it("marks an error line and moves the cursor to it", async () => {
+    const { wrapper, view } = await mountEditor({ modelValue: "a\nbcd\ne" });
+    (wrapper.vm as unknown as { markError(offset: number): void }).markError(4);
+    await flushPromises();
+    expect(view.state.selection.main.head).toBe(4);
+    expect(view.hasFocus || document.activeElement === view.contentDOM).toBe(
+      true,
+    );
+    const marked = wrapper.findAll(".cm-errorLine");
+    expect(marked).toHaveLength(1);
+    expect(marked[0].text()).toBe("bcd");
+  });
+  it("clears the error line on the next edit", async () => {
+    const { wrapper, view } = await mountEditor({ modelValue: "a\nbcd" });
+    (wrapper.vm as unknown as { markError(offset: number): void }).markError(3);
+    await flushPromises();
+    view.dispatch({ changes: { from: 0, insert: "x" } });
+    expect(wrapper.findAll(".cm-errorLine")).toHaveLength(0);
+  });
 });

@@ -1,9 +1,17 @@
-import { Annotation, Compartment, EditorState } from "@codemirror/state";
 import {
+  Annotation,
+  Compartment,
+  EditorState,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
+import {
+  Decoration,
   EditorView,
   drawSelection,
   keymap,
   placeholder,
+  type DecorationSet,
 } from "@codemirror/view";
 import {
   defaultKeymap,
@@ -48,12 +56,30 @@ export type CodeEditorHandle = {
   setLanguage(language: CodeLanguage, schema?: GraphQLSchema): void;
   setDisabled(disabled: boolean): void;
   setPlaceholder(text?: string): void;
+  markError(offset: number): void;
   destroy(): void;
 };
 
 /** App shortcuts (send, focus URL) that CodeMirror must not consume. */
 const reservedKeys = new Set(["Mod-Enter", "Mod-l"]);
 const external = Annotation.define<boolean>();
+
+/** Line mark for a format error. Any edit clears it. */
+const setErrorLine = StateEffect.define<number>();
+const errorLineMark = Decoration.line({ class: "cm-errorLine" });
+const errorLine = StateField.define<DecorationSet>({
+  create: () => Decoration.none,
+  update(marks, tr) {
+    if (tr.docChanged) marks = Decoration.none;
+    for (const effect of tr.effects)
+      if (effect.is(setErrorLine))
+        marks = Decoration.set([
+          errorLineMark.range(tr.state.doc.lineAt(effect.value).from),
+        ]);
+    return marks;
+  },
+  provide: (field) => EditorView.decorations.from(field),
+});
 
 // Mirrors the response CodeView highlight colors.
 const highlight = HighlightStyle.define([
@@ -98,6 +124,10 @@ const theme = EditorView.theme(
       backgroundColor: "oklch(0.82 0.145 85 / 25%)",
     },
     ".cm-matchingBracket": { outline: "1px solid var(--border)" },
+    ".cm-errorLine": {
+      backgroundColor:
+        "color-mix(in oklch, var(--destructive) 18%, transparent)",
+    },
     ".cm-tooltip": {
       backgroundColor: "var(--muted)",
       border: "1px solid var(--border)",
@@ -140,6 +170,7 @@ export function createCodeEditor(options: CodeEditorOptions): CodeEditorHandle {
         EditorState.tabSize.of(2),
         syntaxHighlighting(highlight),
         theme,
+        errorLine,
         placeholderSlot.of(placeholderExtension(options.placeholder)),
         keymap.of([
           ...closeBracketsKeymap,
@@ -179,6 +210,17 @@ export function createCodeEditor(options: CodeEditorOptions): CodeEditorHandle {
       view.dispatch({
         effects: placeholderSlot.reconfigure(placeholderExtension(text)),
       });
+    },
+    markError(offset) {
+      const pos = Math.max(0, Math.min(offset, view.state.doc.length));
+      view.dispatch({
+        selection: { anchor: pos },
+        effects: [
+          setErrorLine.of(pos),
+          EditorView.scrollIntoView(pos, { y: "center" }),
+        ],
+      });
+      view.focus();
     },
     setDisabled(disabled) {
       view.dispatch({ effects: editableSlot.reconfigure(editable(!disabled)) });

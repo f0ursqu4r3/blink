@@ -294,4 +294,66 @@ describe("RequestEditor – GraphQL body", () => {
     expect(badge.find("svg").exists()).toBe(true);
     expect(badge.find(".sr-only").text()).toBe("Schema loaded · just now");
   });
+  it("shows the JSON error line and marks it in the body editor", async () => {
+    const { wrapper } = mountEditor("json");
+    await wrapper.setProps({
+      modelValue: {
+        ...wrapper.props("modelValue"),
+        body: '{\n  "a": 1,\n  "b": }',
+      },
+    });
+    await formatButton(wrapper).trigger("click");
+    expect(wrapper.find("[role='alert']").text()).toBe(
+      "Invalid JSON at line 3, column 8: Object value expected after ':'. The body was not changed.",
+    );
+    expect(
+      wrapper
+        .find("[data-testid='body-editor']")
+        .attributes("data-error-offset"),
+    ).toBe("19");
+  });
+  it("shows the GraphQL error line and marks it in the query editor", async () => {
+    const { wrapper } = mountEditor("graphql");
+    await wrapper.setProps({
+      modelValue: {
+        ...wrapper.props("modelValue"),
+        body: "query {\n  viewer(id: ) {\n    id\n  }\n}",
+      },
+    });
+    await formatButton(wrapper).trigger("click");
+    await vi.waitFor(() =>
+      expect(wrapper.find("[role='alert']").text()).toMatch(
+        /^Invalid GraphQL at line 2, column 14: .+\. The body was not changed\.$/,
+      ),
+    );
+    expect(
+      wrapper
+        .find("[data-testid='body-editor']")
+        .attributes("data-error-offset"),
+    ).toBe("21");
+  });
+  it("shows the variables error line and marks it in the variables editor", async () => {
+    const { wrapper } = mountEditor("graphql");
+    await wrapper.setProps({
+      modelValue: {
+        ...wrapper.props("modelValue"),
+        body: "{ a }",
+        variables: '{\n  "id":\n}',
+      },
+    });
+    await formatButton(wrapper).trigger("click");
+    expect(wrapper.find("[role='alert']").text()).toMatch(
+      /^Invalid JSON variables at line 3, column 1: .+\. The variables were not changed\.$/,
+    );
+    expect(
+      wrapper
+        .find("[data-testid='variables-editor']")
+        .attributes("data-error-offset"),
+    ).toBe("10");
+    expect(
+      wrapper
+        .find("[data-testid='body-editor']")
+        .attributes("data-error-offset"),
+    ).toBeUndefined();
+  });
 });

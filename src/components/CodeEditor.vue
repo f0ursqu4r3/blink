@@ -49,6 +49,10 @@ watch(
   () => !!props.disabled,
   (disabled) => handle?.setDisabled(disabled),
 );
+defineExpose({
+  /** Move the cursor to `offset` and mark its line until the next edit. */
+  markError: (offset: number) => handle?.markError(offset),
+});
 watch(
   () => props.placeholder,
   (text) => handle?.setPlaceholder(text),

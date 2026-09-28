@@ -48,3 +48,26 @@ test("fetch schema enables GraphQL completion; JSON is highlighted", async ({
   );
   expect(errors).toEqual([]);
 });
+
+test("format error names the line and marks it in the editor", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByLabel("HTTP method").selectOption("POST");
+  const requestTabs = page.getByRole("tablist", { name: "Request options" });
+  await requestTabs.getByRole("tab", { name: "Body" }).click();
+  await page
+    .getByRole("combobox", { name: "Body", exact: true })
+    .selectOption("json");
+  const body = page.getByLabel("Request body", { exact: true });
+  await body.click();
+  await page.keyboard.insertText('{\n"a": 1,\n"b": }');
+  await page.getByRole("button", { name: "Format body", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText(
+    "Invalid JSON at line 3, column 6",
+  );
+  await expect(page.locator(".cm-errorLine")).toHaveText('"b": }');
+  await expect(body).toBeFocused();
+  await page.keyboard.type("1");
+  await expect(page.locator(".cm-errorLine")).toHaveCount(0);
+});

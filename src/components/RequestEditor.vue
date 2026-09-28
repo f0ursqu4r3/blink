@@ -24,8 +24,9 @@ import type {
   AuthorizationConfig,
   ResolvedRequestContext,
 } from "@/lib/authorization";
-import { formatJson } from "@/lib/json";
-import { formatGraphql } from "@/lib/graphql";
+import { formatJson, jsonErrorLocation } from "@/lib/json";
+import { formatGraphql, graphqlErrorLocation } from "@/lib/graphql";
+import { describeLocation, type TextLocation } from "@/lib/text-location";
 import {
   fetchSchema,
   formatSchemaAge,
@@ -42,6 +43,8 @@ const props = defineProps<{
 const id = useId();
 const tab = defineModel<string>("tab", { default: "query" });
 const formatError = ref("");
+const bodyEditor = ref<InstanceType<typeof CodeEditor>>();
+const variablesEditor = ref<InstanceType<typeof CodeEditor>>();
 const bodyPlaceholder = computed(() =>
   draft.value.bodyMode === "json"
     ? '{\n  "key": "value"\n}'
@@ -142,12 +145,33 @@ const formattable = computed(
 async function formatBody() {
   if (props.busy) return;
   if (draft.value.bodyMode === "graphql") return formatGraphqlBody();
+  const body = draft.value.body;
   try {
-    draft.value.body = formatJson(draft.value.body);
+    draft.value.body = formatJson(body);
     formatError.value = "";
-  } catch {
-    formatError.value = "Invalid JSON. The body was not changed.";
+  } catch (error) {
+    showFormatError(
+      "Invalid JSON",
+      "The body was not changed.",
+      jsonErrorLocation(body, error),
+      bodyEditor.value,
+    );
   }
+}
+/** Show where formatting failed and move the cursor to that line. */
+function showFormatError(
+  label: string,
+  outcome: string,
+  location: TextLocation | null,
+  editor: InstanceType<typeof CodeEditor> | undefined,
+) {
+  if (!location) {
+    formatError.value = `${label}. ${outcome}`;
+    return;
+  }
+  const reason = location.reason.replace(/\.?$/, ".");
+  formatError.value = `${label} at ${describeLocation(location)}: ${reason} ${outcome}`;
+  editor?.markError(location.offset);
 }
 async function formatGraphqlBody() {
   const body = draft.value.body;
@@ -156,16 +180,26 @@ async function formatGraphqlBody() {
   if (variables.trim()) {
     try {
       formattedVariables = formatJson(variables);
-    } catch {
-      formatError.value = "Invalid JSON variables. The body was not changed.";
+    } catch (error) {
+      showFormatError(
+        "Invalid JSON variables",
+        "The variables were not changed.",
+        jsonErrorLocation(variables, error),
+        variablesEditor.value,
+      );
       return;
     }
   }
   let formattedBody: string;
   try {
     formattedBody = await formatGraphql(body);
-  } catch {
-    formatError.value = "Invalid GraphQL. The body was not changed.";
+  } catch (error) {
+    showFormatError(
+      "Invalid GraphQL",
+      "The body was not changed.",
+      graphqlErrorLocation(body, error),
+      bodyEditor.value,
+    );
     return;
   }
   // Skip the update if the user edited while the formatter loaded.
@@ -405,6 +439,7 @@ function clearBody() {
           />
           <CodeEditor
             v-else
+            ref="bodyEditor"
             :id="`${id}-body`"
             :model-value="draft.body"
             :language="draft.bodyMode === 'graphql' ? 'graphql' : 'json'"
@@ -427,6 +462,7 @@ function clearBody() {
               Variables
             </label>
             <CodeEditor
+              ref="variablesEditor"
               :id="`${id}-variables`"
               :model-value="draft.variables ?? ''"
               language="json"
