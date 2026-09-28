@@ -13,6 +13,9 @@ const names = ref<string[]>([]);
 const readError = ref("");
 const accent = computed(() => draft.value?.accent ?? 3);
 const message = computed(() => error.value || saveError.value);
+// Guards against a slow readGhosttyTheme() overwriting a newer edit, reset,
+// theme choice, or accent change made while the read was in flight.
+let request = 0;
 
 onMounted(async () => {
   if (!canReadGhosttyThemes) return;
@@ -25,20 +28,29 @@ onMounted(async () => {
 
 async function choose(name: string) {
   readError.value = "";
+  const current = ++request;
   if (!name) return preview(null);
   try {
     const text = await readGhosttyTheme(name);
+    if (current !== request) return;
     preview({ name, text, accent: accent.value });
   } catch (reason) {
+    if (current !== request) return;
     readError.value = String(reason);
   }
 }
 function edit(text: string) {
+  request++;
   if (!text.trim()) return preview(null);
   preview({ name: "Custom", text, accent: accent.value });
 }
 function setAccent(value: AccentSlot) {
+  request++;
   if (draft.value) preview({ ...draft.value, accent: value });
+}
+function reset() {
+  request++;
+  preview(null);
 }
 </script>
 
@@ -122,7 +134,7 @@ function setAccent(value: AccentSlot) {
         class="h-8 px-3 border border-border rounded-sm bg-background font-mono text-xs disabled:opacity-50"
         data-theme-reset
         :disabled="!draft"
-        @click="preview(null)"
+        @click="reset"
       >
         Reset to default
       </button>

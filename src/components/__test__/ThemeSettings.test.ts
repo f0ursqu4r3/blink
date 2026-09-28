@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import ThemeSettings from "../ThemeSettings.vue";
 import { useTheme } from "@/composables/useTheme";
+import { readGhosttyTheme } from "@/lib/ghostty-themes";
 
 vi.mock("@/lib/ghostty-themes", () => ({
   canReadGhosttyThemes: true,
@@ -67,6 +68,32 @@ describe("ThemeSettings", () => {
     await wrapper.get("[data-theme-colors]").setValue("");
     expect(useTheme().draft.value).toBeNull();
     expect(wrapper.find("[data-theme-error]").exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("keeps a newer edit when a slower theme read resolves late", async () => {
+    const wrapper = mount(ThemeSettings, { attachTo: document.body });
+    await flushPromises();
+    let resolveRead!: (text: string) => void;
+    const pending = new Promise<string>((resolve) => {
+      resolveRead = resolve;
+    });
+    vi.mocked(readGhosttyTheme).mockImplementationOnce(() => pending);
+
+    await wrapper.get("#app-theme").setValue("Monokai Pro");
+    await wrapper
+      .get("[data-theme-colors]")
+      .setValue("background = #101010\npalette = 5=#ff00ff");
+
+    resolveRead(
+      "background = #262427\nforeground = #fcfcfa\npalette = 5=#a392e8\n",
+    );
+    await flushPromises();
+
+    expect(useTheme().draft.value).toMatchObject({
+      name: "Custom",
+      text: "background = #101010\npalette = 5=#ff00ff",
+    });
     wrapper.unmount();
   });
 });
