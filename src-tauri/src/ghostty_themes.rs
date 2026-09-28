@@ -28,9 +28,8 @@ fn list(dirs: &[PathBuf]) -> Vec<String> {
             continue;
         };
         for entry in entries.flatten() {
-            let is_file = entry
-                .file_type()
-                .map(|kind| kind.is_file())
+            let is_file = fs::metadata(entry.path())
+                .map(|meta| meta.is_file())
                 .unwrap_or(false);
             let Ok(name) = entry.file_name().into_string() else {
                 continue;
@@ -116,5 +115,20 @@ mod tests {
             Err("Theme file is larger than 64 KiB.".into())
         );
         assert_eq!(read(&paths, "Nope"), Err("Theme Nope not found.".into()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn follows_symlinks_and_skips_broken_ones() {
+        use std::os::unix::fs::symlink;
+
+        let (user, _bundled, paths) = dirs();
+        let outside = tempfile::tempdir().unwrap();
+        fs::write(outside.path().join("Real"), "background = #123456").unwrap();
+        symlink(outside.path().join("Real"), user.path().join("Linked")).unwrap();
+        symlink(outside.path().join("Missing"), user.path().join("Broken")).unwrap();
+
+        assert_eq!(list(&paths), vec!["Linked"]);
+        assert_eq!(read(&paths, "Linked").unwrap(), "background = #123456");
     }
 }
