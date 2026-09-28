@@ -65,8 +65,15 @@ const numberFields: {
 ];
 // Errors show only after a save attempt, so typing does not flash errors.
 const submitted = ref(false);
+// Max redirects is disabled (and reset on save) while redirects are off, so
+// an invalid value in it must not block the save or show as an error.
+function relevantErrors(prefs: WorkspacePreferences) {
+  const errors = transportFieldErrors(prefs);
+  if (!prefs.followRedirects) delete errors.maxRedirects;
+  return errors;
+}
 const fieldErrors = computed(() =>
-  submitted.value ? transportFieldErrors(preferences.value) : {},
+  submitted.value ? relevantErrors(preferences.value) : {},
 );
 watch(
   () => props.open,
@@ -124,9 +131,14 @@ function save() {
   if (
     !definitions ||
     theme.error.value ||
-    Object.keys(transportFieldErrors(preferences.value)).length
+    Object.keys(relevantErrors(preferences.value)).length
   )
     return;
+  if (
+    !preferences.value.followRedirects &&
+    transportFieldErrors(preferences.value).maxRedirects
+  )
+    preferences.value.maxRedirects = defaultPreferences().maxRedirects;
   emit("save", definitions, { ...preferences.value });
   if (theme.commit()) return;
   committed = true;

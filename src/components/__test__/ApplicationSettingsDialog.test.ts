@@ -158,6 +158,22 @@ describe("ApplicationSettingsDialog", () => {
       wrapper.unmount();
     });
 
+    it("resets an invalid max redirects to the default when redirects are off", async () => {
+      const wrapper = renderOpen();
+      await nextTick();
+      await wrapper.get("#app-follow-redirects").setValue(true);
+      await wrapper.get("#app-max-redirects").setValue("0");
+      await wrapper.get("#app-follow-redirects").setValue(false);
+      await wrapper.get("form").trigger("submit");
+      const [, preferences] = wrapper.emitted("save")![0] as [unknown, object];
+      expect(preferences).toMatchObject({
+        followRedirects: false,
+        maxRedirects: 10,
+      });
+      expect(wrapper.find("#app-max-redirects-error").exists()).toBe(false);
+      wrapper.unmount();
+    });
+
     it.each(["", "2.5", "0", "601"])(
       "blocks the save for timeout %j",
       async (value) => {
