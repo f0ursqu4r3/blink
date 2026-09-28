@@ -28,9 +28,13 @@ Browser sidebar organizes the request tabs in the current session.
   you press Send.
 - Distinguish a previous response from an edited, unsent draft.
 
-Requests have a 30-second timeout and a 4 MiB response limit. Redirects are
-not followed, so the desktop app shows the original 3xx response. The
-response inspector is a UTF-8 text viewer, not a binary file downloader.
+Application Settings → Requests controls the timeout (default 30 s total,
+10 s to connect), whether redirects are followed (default off; up to 20 hops),
+and the inspection limit (default 4 MiB, up to 16 MiB). A body larger than the
+inspection limit shows a truncated preview. Binary bodies show a summary in
+place of the text. Use **Save response body…** to write the full body to a
+file, up to 1 GiB. Stored bodies do not survive a restart. After a restart,
+only complete text responses can be saved.
 
 ## Request tabs
 
@@ -157,8 +161,9 @@ bun run dev
 
 Browser preview uses `fetch`, sends no ambient cookies, and remains subject
 to CORS. Browser response headers can be restricted by CORS, and browsers
-cannot expose manual redirect responses. Use the desktop app for full HTTP
-inspection. Requests never use a relay or cloud proxy.
+cannot expose manual redirect responses. With Follow redirects on, the
+browser preview shows the final URL but not the hop count. Use the desktop
+app for full HTTP inspection. Requests never use a relay or cloud proxy.
 
 ## Verify
 
