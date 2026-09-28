@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { mount, flushPromises } from "@vue/test-utils";
+import { nextTick } from "vue";
 import ResponsePanel from "../ResponsePanel.vue";
 vi.mock("@/lib/response-body", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/lib/response-body")>()),
@@ -206,6 +207,33 @@ describe("stored bodies", () => {
     );
     expect(panel.find("[data-response-body]").exists()).toBe(false);
     expect(panel.find('[aria-label="Wrap lines"]').exists()).toBe(false);
+    panel.unmount();
+  });
+
+  it("hides body controls the spec does not support for a truncated binary response", async () => {
+    const panel = render(
+      response({
+        binary: true,
+        truncated: true,
+        body: "",
+        sizeBytes: 8 * 1024 * 1024,
+        bodyId: "b",
+      }),
+    );
+    expect(panel.get("[data-response-binary]").text()).toContain(
+      "Binary response",
+    );
+    expect(
+      panel.findAll("button").some((b) => ["Pretty", "Raw"].includes(b.text())),
+    ).toBe(false);
+    expect(panel.find("[data-response-jq]").exists()).toBe(false);
+    expect(panel.find('[aria-label="Wrap lines"]').exists()).toBe(false);
+    expect(panel.find('[aria-label="Find response"]').exists()).toBe(false);
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "f", metaKey: true }),
+    );
+    await nextTick();
+    expect(panel.find("[data-response-search]").exists()).toBe(false);
     panel.unmount();
   });
 

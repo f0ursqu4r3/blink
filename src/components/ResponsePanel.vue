@@ -217,7 +217,8 @@ function onKey(event: KeyboardEvent) {
     !event.shiftKey &&
     !event.altKey &&
     event.key.toLowerCase() === "f" &&
-    tab.value === "body"
+    tab.value === "body" &&
+    !props.response?.binary
   ) {
     event.preventDefault();
     if (!inspectorVisible.value) toggleInspector();
@@ -335,7 +336,11 @@ function copyHeaderPair() {
               </TabsList>
               <div class="flex items-center">
                 <Button
-                  v-if="tab === 'body' && (parsed || response.truncated)"
+                  v-if="
+                    tab === 'body' &&
+                    (parsed || response.truncated) &&
+                    !response.binary
+                  "
                   variant="ghost"
                   :aria-pressed="pretty && !response.truncated"
                   :disabled="response.truncated"
@@ -452,7 +457,7 @@ function copyHeaderPair() {
             />
           </label>
           <form
-            v-if="sourceParsed || response.truncated"
+            v-if="(sourceParsed || response.truncated) && !response.binary"
             class="flex flex-[1_1_260px] min-w-0 items-center gap-1.5 rounded border border-input bg-background focus-within:border-primary max-[680px]:basis-8.5"
             aria-label="jq query"
             @submit.prevent="executeJq"
