@@ -28,14 +28,7 @@ test("compose, send, inspect and close through real controls", async ({
     });
   });
   await page.goto("/");
-  await expect(
-    page.getByRole("heading", { name: "BLINK", exact: true }),
-  ).toBeVisible();
-  await expect(
-    page.locator("header").filter({
-      has: page.getByRole("heading", { name: "BLINK", exact: true }),
-    }),
-  ).toHaveCSS("height", "42px");
+  await expect(page.locator("[data-title-bar]")).toHaveCSS("height", "36px");
   await page.screenshot({ path: "artifacts/blink-idle.png" });
   await page
     .getByLabel("Request URL", { exact: true })

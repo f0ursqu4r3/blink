@@ -9,18 +9,27 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 
 ## Visual system
 
-- **Color strategy:** Near-black warm surfaces, thin graphite dividers,
-  off-white text, and industrial amber for primary actions and active tabs.
-  Reserve muted green for successful responses and coral for errors.
+- **Color strategy:** Default: near-black warm surfaces, thin graphite
+  dividers, off-white text, and industrial amber for primary actions and
+  active tabs. Reserve muted green for successful responses and coral for
+  errors. A Ghostty palette can replace the default: surfaces mix foreground
+  into background, the accent comes from a chosen palette slot (default 3),
+  success from slot 2, errors from slot 1, and info from slot 4. Components
+  use tokens only; never hardcode colors.
 - **Typography:** Local system fonts only. Monospace for URL, headers, body,
   metrics, and compact uppercase section labels. System sans-serif for tabs
   and explanatory text. No web font requests.
-- **Layout:** A compact 36-pixel request tab strip and 34-pixel URL control
-  sit beside a 244-pixel Browser sidebar. The Browser lists ungrouped requests
-  and nested groups. Request and response panels share the remaining width in
-  a resizable split. Below 900 pixels, panels stack without hiding core request
-  controls. Below 760 pixels, the Browser opens from the header as an overlay.
-- **Shape:** Mostly square surfaces. Use a 2-pixel radius for controls.
+- **Layout:** A 36-pixel title bar holds the centered command center
+  (`Cmd/Ctrl+P`) and doubles as the window drag area; on macOS the traffic
+  lights sit on its left. Below it, a 44-pixel activity bar toggles the
+  244-pixel Browser card and opens Settings. The editor card holds the
+  request tab strip and the resizable request and response split. Cards sit
+  on a darker frame with 6-pixel gaps. A 24-pixel status bar closes the
+  window. Below 900 pixels, panels stack without hiding core request
+  controls. Below 760 pixels, the activity bar hides and the Browser opens
+  from the title bar as an overlay.
+- **Shape:** 8-pixel radius for cards and popovers, 4-pixel radius for
+  controls.
 - **Density:** Small icon-and-label controls. No floating toolbars, large
   buttons, repeated summaries, or redundant metadata badges.
 - **Motion:** Short opacity and color transitions only. Respect reduced motion.
@@ -41,9 +50,10 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Preserve background sends across tab switches. Never write a completed
   response to whichever tab happens to be active.
 - Duplicate draft values, not object references. Do not duplicate responses.
-- Keep the Browser sidebar visible. Groups can nest. Creating or duplicating a
-  request places it in the active request's group. Deleting a group moves its
-  requests to the parent and promotes direct child groups.
+- The activity bar can hide the Browser; keep it visible by default. Groups
+  can nest. Creating or duplicating a request places it in the active
+  request's group. Deleting a group moves its requests to the parent and
+  promotes direct child groups.
 - Keep the add-tab action visible when the tab strip overflows. Support
   keyboard selection, protected closing, and a usable final blank tab.
 - Mark responses as previous when their request draft changes after sending.
