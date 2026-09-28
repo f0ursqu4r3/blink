@@ -8,6 +8,8 @@ import {
   DialogTitle,
 } from "reka-ui";
 import HelpTooltip from "./HelpTooltip.vue";
+import ThemeSettings from "./ThemeSettings.vue";
+import { useTheme } from "../composables/useTheme";
 import {
   defaultPreferences,
   type WorkspacePreferences,
@@ -32,6 +34,19 @@ const methodInput = ref<HTMLSelectElement | null>(null);
 const source = ref("{}");
 const error = ref("");
 const preferences = ref(defaultPreferences());
+const theme = useTheme();
+// Theme edits preview live. Closing without a successful save restores the
+// saved theme.
+let committed = false;
+watch(
+  () => props.open,
+  (open, wasOpen) => {
+    if (open && !wasOpen) {
+      committed = false;
+      theme.revert();
+    } else if (!open && wasOpen && !committed) theme.revert();
+  },
+);
 
 function formatDefinitions(definitions: Record<string, string>) {
   return JSON.stringify(definitions, null, 2);
@@ -74,8 +89,10 @@ function parseDefinitions(): Record<string, string> | null {
 
 function save() {
   const definitions = parseDefinitions();
-  if (!definitions) return;
+  if (!definitions || theme.error.value) return;
   emit("save", definitions, { ...preferences.value });
+  if (theme.commit()) return;
+  committed = true;
   emit("update:open", false);
 }
 </script>
@@ -187,6 +204,7 @@ function save() {
                 Confirm before closing drafts</label
               >
             </section>
+            <ThemeSettings />
             <section class="grid gap-2 border-t border-border pt-3">
               <div class="flex items-center gap-1.5">
                 <label
