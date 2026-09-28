@@ -21,6 +21,9 @@ const matches = computed(() =>
   matchRequests(props.sessions, props.groups, query.value),
 );
 watch(query, () => (index.value = 0));
+watch(matches, (list) => {
+  if (index.value >= list.length) index.value = Math.max(0, list.length - 1);
+});
 
 async function show() {
   opener = document.activeElement as HTMLElement | null;
@@ -56,8 +59,11 @@ function onKey(event: KeyboardEvent) {
     event.preventDefault();
     index.value = (index.value - 1 + count) % count;
   } else if (event.key === "Enter" && count) {
-    event.preventDefault();
-    choose(matches.value[index.value].id);
+    const match = matches.value[index.value];
+    if (match) {
+      event.preventDefault();
+      choose(match.id);
+    }
   }
 }
 defineExpose({ show });
@@ -100,7 +106,7 @@ defineExpose({ show });
           aria-expanded="true"
           aria-controls="command-center-list"
           :aria-activedescendant="
-            matches.length
+            matches[index]
               ? `command-center-option-${matches[index].id}`
               : undefined
           "

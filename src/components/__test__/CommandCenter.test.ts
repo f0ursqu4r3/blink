@@ -53,6 +53,25 @@ describe("CommandCenter", () => {
     wrapper.unmount();
   });
 
+  it("keeps the active index in range when sessions change while open", async () => {
+    const { wrapper, list } = render();
+    await (wrapper.vm as unknown as { show(): Promise<void> }).show();
+    const input = wrapper.get('[role="combobox"]');
+    await input.trigger("keydown", { key: "ArrowDown" });
+    expect(input.attributes("aria-activedescendant")).toBe(
+      `command-center-option-${list[1].id}`,
+    );
+    await expect(
+      wrapper.setProps({ sessions: [list[0]] }),
+    ).resolves.toBeUndefined();
+    expect(input.attributes("aria-activedescendant")).toBe(
+      `command-center-option-${list[0].id}`,
+    );
+    await input.trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("select")).toEqual([[list[0].id]]);
+    wrapper.unmount();
+  });
+
   it("filters by group, shows an empty result, and closes on Escape", async () => {
     const { wrapper, list } = render();
     await wrapper.get("[data-command-center-trigger]").trigger("click");
