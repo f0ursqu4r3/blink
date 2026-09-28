@@ -154,6 +154,14 @@ function validateResponse(input: unknown) {
       numeric(response.durationMs) &&
       numeric(response.sizeBytes),
   );
+  check(
+    (response.bodyId === undefined || text(response.bodyId)) &&
+      (response.truncated === undefined ||
+        typeof response.truncated === "boolean") &&
+      (response.binary === undefined || typeof response.binary === "boolean") &&
+      (response.finalUrl === undefined || text(response.finalUrl)) &&
+      (response.redirectCount === undefined || numeric(response.redirectCount)),
+  );
   for (const item of array(response.headers, 10_000)) {
     const header = record(item);
     check(text(header.key) && text(header.value));
@@ -332,7 +340,8 @@ export function encodeWorkspace(
         id,
         groupId,
         draft,
-        response,
+        // The body file does not survive a restart.
+        response: response && { ...response, bodyId: undefined },
         error,
         sentFingerprint,
         view,
@@ -373,6 +382,7 @@ export function decodeWorkspace(content: string) {
     [...session.draft.query, ...session.draft.headers].forEach((row) =>
       reservePairId(row.id),
     );
+    if (session.response) delete session.response.bodyId;
   }
   const groups =
     version >= 2 ? (data as SnapshotV2 | SnapshotV3 | SnapshotV4).groups : [];

@@ -10,7 +10,10 @@ import { describe, expect, it, afterEach, vi, beforeEach } from "vitest";
 import { effectScope, type EffectScope } from "vue";
 
 // Mock Tauri and storage so the composable can be instantiated outside a component.
-vi.mock("@tauri-apps/api/core", () => ({ invoke: vi.fn() }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: vi.fn(),
+  isTauri: () => false,
+}));
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(() => Promise.resolve(() => {})),
 }));

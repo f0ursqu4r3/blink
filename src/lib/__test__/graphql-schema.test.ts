@@ -4,7 +4,9 @@ import { createDraft, type Draft } from "../request";
 import type { ResolvedRequestContext } from "../authorization";
 
 vi.mock("../transport", () => ({ sendRequest: vi.fn() }));
+vi.mock("../response-body", () => ({ releaseResponse: vi.fn() }));
 import { sendRequest } from "../transport";
+import { releaseResponse } from "../response-body";
 import {
   clearSchemaCache,
   fetchSchema,
@@ -158,6 +160,23 @@ describe("fetchSchema", () => {
     respond("nope", 401, "Unauthorized");
     await fetchSchema(draft(), ctx).catch(() => {});
     expect(getCachedSchema(url)).toBeUndefined();
+  });
+
+  it("rejects a truncated schema response and releases it", async () => {
+    send.mockResolvedValueOnce({
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 10,
+      headers: [],
+      body: "{",
+      truncated: true,
+      bodyId: "b",
+    });
+    await expect(fetchSchema(draft(), ctx)).rejects.toThrow(
+      "Schema response exceeds the inspection limit.",
+    );
+    expect(vi.mocked(releaseResponse)).toHaveBeenCalled();
   });
 });
 

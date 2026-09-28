@@ -3,6 +3,8 @@ import type { GraphQLSchema, IntrospectionQuery } from "graphql";
 import { buildRequest, type Draft } from "./request";
 import type { ResolvedRequestContext } from "./authorization";
 import { sendRequest } from "./transport";
+import { releaseResponse } from "./response-body";
+import type { TransportOptions } from "./transport-options";
 
 export type CachedSchema = { schema: GraphQLSchema; fetchedAt: number };
 
@@ -38,20 +40,29 @@ export const clearSchemaCache = () => cache.clear();
 export async function fetchSchema(
   draft: Draft,
   ctx?: ResolvedRequestContext,
+  options?: TransportOptions,
 ): Promise<GraphQLSchema> {
   const { buildClientSchema, getIntrospectionQuery } = await import("graphql");
   const request = buildRequest(
     introspectionDraft(draft, getIntrospectionQuery()),
     ctx,
   );
-  const response = await sendRequest(request);
-  if (response.status < 200 || response.status >= 300)
-    throw new Error(
-      `Schema request failed: ${response.status} ${response.statusText}`.trim(),
+  const response = await sendRequest(request, options);
+  try {
+    if (response.status < 200 || response.status >= 300)
+      throw new Error(
+        `Schema request failed: ${response.status} ${response.statusText}`.trim(),
+      );
+    if (response.truncated)
+      throw new Error("Schema response exceeds the inspection limit.");
+    const schema = markRaw(
+      parseIntrospection(response.body, buildClientSchema),
     );
-  const schema = markRaw(parseIntrospection(response.body, buildClientSchema));
-  cache.set(request.url, { schema, fetchedAt: Date.now() });
-  return schema;
+    cache.set(request.url, { schema, fetchedAt: Date.now() });
+    return schema;
+  } finally {
+    releaseResponse(response);
+  }
 }
 
 type IntrospectionPayload = {

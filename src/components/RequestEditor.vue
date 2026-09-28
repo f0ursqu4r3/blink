@@ -30,6 +30,7 @@ import type {
   AuthorizationConfig,
   ResolvedRequestContext,
 } from "@/lib/authorization";
+import type { TransportOptions } from "@/lib/transport-options";
 import { formatJson, jsonErrorLocation } from "@/lib/json";
 import { formatGraphql, graphqlErrorLocation } from "@/lib/graphql";
 import { describeLocation, type TextLocation } from "@/lib/text-location";
@@ -45,6 +46,7 @@ const props = defineProps<{
   effectiveAuth?: AuthorizationConfig;
   inheritedSource?: string;
   ctx?: ResolvedRequestContext;
+  transport?: TransportOptions;
 }>();
 const id = useId();
 const tab = defineModel<string>("tab", { default: "query" });
@@ -129,7 +131,7 @@ async function loadSchema() {
   schemaLoading.value = true;
   schemaError.value = "";
   try {
-    await fetchSchema(draft.value, props.ctx);
+    await fetchSchema(draft.value, props.ctx, props.transport);
   } catch (cause) {
     schemaError.value = cause instanceof Error ? cause.message : String(cause);
   } finally {

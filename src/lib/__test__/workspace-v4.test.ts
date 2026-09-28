@@ -61,4 +61,48 @@ describe("workspace v4 open tabs", () => {
       decodeWorkspace(encode([session], null, [session.id])),
     ).toThrow();
   });
+
+  it("keeps optional response fields but never saves the body id", () => {
+    const session = createSession();
+    session.response = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 9,
+      headers: [],
+      body: "",
+      bodyId: "body-1",
+      truncated: true,
+      binary: true,
+      finalUrl: "https://final.test/",
+      redirectCount: 2,
+    };
+    const encoded = encodeWorkspace([session], session.id);
+    expect(encoded).not.toContain("body-1");
+    const restored = decodeWorkspace(encoded).sessions[0].response!;
+    expect(restored).toMatchObject({
+      truncated: true,
+      binary: true,
+      finalUrl: "https://final.test/",
+      redirectCount: 2,
+    });
+    expect(restored.bodyId).toBeUndefined();
+  });
+
+  it("drops a body id found in a saved workspace", () => {
+    const session = createSession();
+    session.response = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 0,
+      headers: [],
+      body: "",
+    };
+    const data = JSON.parse(encodeWorkspace([session], session.id));
+    data.tabs[0].response.bodyId = "stale";
+    expect(
+      decodeWorkspace(JSON.stringify(data)).sessions[0].response!.bodyId,
+    ).toBeUndefined();
+  });
 });

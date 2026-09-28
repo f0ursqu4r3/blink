@@ -2,6 +2,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createSession, type RequestSession } from "@/lib/session";
+import { releaseResponse } from "@/lib/response-body";
 import { methods } from "@/lib/request";
 import {
   createGroup,
@@ -274,6 +275,7 @@ export function useWorkspaceState() {
     const index = sessions.value.findIndex((session) => session.id === id);
     if (index < 0 || sessions.value[index].busy) return;
     closeTab(id);
+    releaseResponse(sessions.value[index].response);
     sessions.value.splice(index, 1);
     if (!sessions.value.length) {
       const session = createSession();

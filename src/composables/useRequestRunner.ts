@@ -3,6 +3,11 @@ import { buildRequest, toCurl } from "@/lib/request";
 import type { ResolvedRequestContext } from "@/lib/authorization";
 import { requestFingerprint, type RequestSession } from "@/lib/session";
 import { sendRequest } from "@/lib/transport";
+import { releaseResponse } from "@/lib/response-body";
+import {
+  defaultTransportOptions,
+  type TransportOptions,
+} from "@/lib/transport-options";
 
 export type { MaybeRefOrGetter };
 
@@ -21,10 +26,13 @@ export type { MaybeRefOrGetter };
  *
  *   When omitted, buildRequest falls back to the draft's flat auth fields
  *   (backward-compatible with callers that pass no context).
+ * @param optionsSource  Optional reactive source for the transport settings.
+ *   Defaults apply when omitted.
  */
 export function useRequestRunner(
   session: RequestSession,
   contextSource?: MaybeRefOrGetter<ResolvedRequestContext | undefined>,
+  optionsSource?: MaybeRefOrGetter<TransportOptions | undefined>,
 ) {
   let alive = true;
   let clock: ReturnType<typeof setInterval> | undefined;
@@ -69,6 +77,7 @@ export function useRequestRunner(
     const authType = ctx?.auth?.type;
     session.busy = true;
     session.error = "";
+    releaseResponse(session.response);
     session.response = null;
     session.elapsed = 0;
     // Persist the resolved-request fingerprint so stale can compare accurately.
@@ -78,8 +87,11 @@ export function useRequestRunner(
       session.elapsed = performance.now() - start;
     }, 100);
     try {
-      const result = await sendRequest(request);
+      const options = toValue(optionsSource) ?? defaultTransportOptions();
+      const result = await sendRequest(request, options);
+      // A result for an unmounted view has no owner, so free its body.
       if (alive) session.response = result;
+      else releaseResponse(result);
     } catch (cause) {
       if (alive)
         session.error = cause instanceof Error ? cause.message : String(cause);

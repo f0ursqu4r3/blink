@@ -11,6 +11,9 @@ import { ref, computed, effectScope, nextTick, type EffectScope } from "vue";
 import { useRequestRunner } from "@/composables/useRequestRunner";
 import { createSession, requestFingerprint } from "@/lib/session";
 import type { ResolvedRequestContext } from "@/lib/authorization";
+import { sendRequest } from "@/lib/transport";
+import { releaseResponse } from "@/lib/response-body";
+import { defaultTransportOptions } from "@/lib/transport-options";
 
 // Mock transport so send() doesn't make real network calls
 vi.mock("@/lib/transport", () => ({
@@ -26,6 +29,7 @@ vi.mock("@/lib/transport", () => ({
   ),
   nativeTransport: false,
 }));
+vi.mock("@/lib/response-body", () => ({ releaseResponse: vi.fn() }));
 
 let scope: EffectScope;
 beforeEach(() => {
@@ -194,5 +198,56 @@ describe("useRequestRunner – reactive context source", () => {
     // And must not equal just the draft fingerprint (which has no Authorization)
     const { draftFingerprint } = await import("@/lib/session");
     expect(session.sentFingerprint).not.toBe(draftFingerprint(session.draft));
+  });
+});
+
+describe("transport options and body release", () => {
+  it("sends with the given options and releases the previous body", async () => {
+    const session = createSession();
+    session.draft.url = "https://example.test/";
+    const previous = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 0,
+      headers: [],
+      body: "",
+      bodyId: "old",
+    };
+    session.response = previous;
+    const options = { ...defaultTransportOptions(), timeoutSeconds: 7 };
+    const { send } = scope.run(() =>
+      useRequestRunner(session, undefined, () => options),
+    )!;
+    await send();
+    expect(vi.mocked(releaseResponse)).toHaveBeenCalledWith(previous);
+    const calls = vi.mocked(sendRequest).mock.calls;
+    expect(calls[calls.length - 1][1]).toEqual(options);
+  });
+
+  it("releases a result that arrives after the scope stops", async () => {
+    let resolve!: (value: unknown) => void;
+    vi.mocked(sendRequest).mockImplementationOnce(
+      () => new Promise((done) => (resolve = done)) as never,
+    );
+    const session = createSession();
+    session.draft.url = "https://example.test/";
+    const local = effectScope();
+    const { send } = local.run(() => useRequestRunner(session))!;
+    const pending = send();
+    local.stop();
+    const late = {
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 0,
+      headers: [],
+      body: "",
+      bodyId: "late",
+    };
+    resolve(late);
+    await pending;
+    expect(vi.mocked(releaseResponse)).toHaveBeenCalledWith(late);
+    expect(session.response).toBeNull();
   });
 });

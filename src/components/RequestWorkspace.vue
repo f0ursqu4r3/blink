@@ -14,6 +14,7 @@ import ResponsePanel from "./ResponsePanel.vue";
 import { methods } from "@/lib/request";
 import type { RequestSession } from "@/lib/session";
 import type { RequestGroup } from "@/lib/groups";
+import type { TransportOptions } from "@/lib/transport-options";
 import {
   buildResolvedRequestContext,
   resolveAuthorization,
@@ -26,6 +27,7 @@ const props = defineProps<{
   active: boolean;
   groups?: RequestGroup[];
   globalDefinitions?: Record<string, string>;
+  transport?: TransportOptions;
 }>();
 
 const resolvedCtx = computed(() =>
@@ -73,6 +75,7 @@ const inheritedSource = computed(() => {
 const { prepared, curl, stale, send } = useRequestRunner(
   props.session,
   resolvedCtx,
+  () => props.transport,
 );
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
@@ -363,6 +366,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :effective-auth="effectiveAuth"
         :inherited-source="inheritedSource"
         :ctx="resolvedCtx"
+        :transport="transport"
       />
       <div
         class="panel-resize relative z-1 -mx-0.75 cursor-col-resize -outline-offset-2 max-[900px]:hidden"
@@ -385,6 +389,8 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :error="session.error"
         :elapsed="session.elapsed"
         :stale="stale"
+        :request-url="session.draft.url"
+        :timeout-seconds="transport?.timeoutSeconds"
       />
     </div>
   </section>

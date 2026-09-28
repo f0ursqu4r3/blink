@@ -7,7 +7,10 @@ const native = vi.hoisted(() => ({
   beforeExit: () => {},
   stop: vi.fn(),
 }));
-vi.mock("@tauri-apps/api/core", () => ({ invoke: native.invoke }));
+vi.mock("@tauri-apps/api/core", () => ({
+  invoke: native.invoke,
+  isTauri: () => true,
+}));
 vi.mock("@/lib/transport", () => ({
   nativeTransport: true,
   sendRequest: vi.fn(),

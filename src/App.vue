@@ -19,6 +19,7 @@ import type { AuthorizationConfig } from "@/lib/authorization";
 import {
   applyNewRequestDefaults,
   resolveNewRequestDefaults,
+  transportOptions,
   type WorkspacePreferences,
 } from "@/lib/preferences";
 
@@ -86,6 +87,7 @@ const selectionAnchorId = ref<number | null>(null);
 const sending = computed(
   () => sessions.value.filter((session) => session.busy).length,
 );
+const transport = computed(() => transportOptions(preferences.value));
 
 // Group settings dialog state
 const groupSettingsOpen = ref(false);
@@ -431,6 +433,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           :active="session.id === activeId"
           :groups="groups"
           :global-definitions="globalDefinitions"
+          :transport="transport"
         />
       </div>
     </div>
@@ -458,7 +461,10 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       <span v-if="sending" class="text-primary" role="status">
         {{ sending }} SENDING
       </span>
-      <span class="ml-auto max-[760px]:hidden">30 s TIMEOUT · 4 MiB LIMIT</span>
+      <span class="ml-auto max-[760px]:hidden">
+        {{ transport.timeoutSeconds }} s TIMEOUT ·
+        {{ transport.inspectionLimitMiB }} MiB LIMIT
+      </span>
       <span data-theme-name>{{ themeName }}</span>
     </footer>
     <GroupSettingsDialog
