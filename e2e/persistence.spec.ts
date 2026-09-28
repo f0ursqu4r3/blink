@@ -148,14 +148,9 @@ test("response scroll position survives reload", async ({ page }) => {
     el.scrollTop = 320;
   });
   await expect
-    .poll(() =>
-      page.evaluate(
-        () =>
-          JSON.parse(localStorage.getItem("blink.workspace.v1")!).tabs[0].view
-            .responseScroll,
-      ),
-    )
+    .poll(() => responseScroller.evaluate((el) => el.scrollTop))
     .toBe(320);
+  // Scrolling alone does not autosave; the unload handler saves the offset.
   await page.reload();
   await expect
     .poll(() => responseScroller.evaluate((el) => el.scrollTop))

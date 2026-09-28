@@ -172,6 +172,17 @@ test("tab switches preserve response scrolling and send only the active request"
     (element) => element.scrollTop,
   );
   expect(scroll).toBeGreaterThan(0);
+  await page.getByRole("button", { name: "New request", exact: true }).click();
+  await pane
+    .getByLabel("Request URL", { exact: true })
+    .fill("https://example.test/second");
+  await pane.getByLabel("Request URL", { exact: true }).press("Control+Enter");
+  await expect(pane.locator("[data-response-status]")).toBeVisible();
+  expect(sent).toEqual([
+    "https://example.test/first",
+    "https://example.test/second",
+  ]);
+  // The next real change saves the first tab's scroll offset.
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -185,16 +196,6 @@ test("tab switches preserve response scrolling and send only the active request"
       }),
     )
     .toBe(scroll);
-  await page.getByRole("button", { name: "New request", exact: true }).click();
-  await pane
-    .getByLabel("Request URL", { exact: true })
-    .fill("https://example.test/second");
-  await pane.getByLabel("Request URL", { exact: true }).press("Control+Enter");
-  await expect(pane.locator("[data-response-status]")).toBeVisible();
-  expect(sent).toEqual([
-    "https://example.test/first",
-    "https://example.test/second",
-  ]);
   await tabs.first().click();
   await expect
     .poll(() =>

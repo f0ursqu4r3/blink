@@ -115,11 +115,16 @@ export function useWorkspaceState() {
     }
   }
   // Do not observe elapsed time. A running request must not cause timer-driven disk writes.
+  // Do not observe the response scroll offset either: it changes on every
+  // scroll event. The next real change or quit saves the latest offset.
   watch(
     () =>
       ready.value
         ? encodeWorkspace(
-            sessions.value,
+            sessions.value.map((session) => ({
+              ...session,
+              view: { ...session.view, responseScroll: 0 },
+            })),
             activeId.value,
             groups.value,
             globalDefinitions.value,
