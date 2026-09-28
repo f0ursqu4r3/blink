@@ -55,6 +55,71 @@ export function canNestGroup(
   return true;
 }
 
+/**
+ * Order of `sessions` after moving `ids` into `groupId`, before `beforeId`
+ * or after the last session of that group. Returns the same objects; the
+ * caller assigns `groupId`.
+ */
+export function sessionsAfterMove<T extends GroupedSession>(
+  sessions: T[],
+  ids: number[],
+  groupId: number | null,
+  beforeId: number | null,
+): T[] {
+  const moving = new Set(ids);
+  const moved = sessions.filter((session) => moving.has(session.id));
+  const remaining = sessions.filter((session) => !moving.has(session.id));
+  let insertAt =
+    beforeId === null
+      ? -1
+      : remaining.findIndex(
+          (session) => session.id === beforeId && session.groupId === groupId,
+        );
+  if (insertAt < 0) {
+    const last = remaining.reduce(
+      (index, session, current) =>
+        session.groupId === groupId ? current : index,
+      -1,
+    );
+    insertAt = last < 0 ? remaining.length : last + 1;
+  }
+  remaining.splice(insertAt, 0, ...moved);
+  return remaining;
+}
+
+/**
+ * Order of `groups` after moving `groupId` under `parentId`, before
+ * `beforeGroupId` or after its last new sibling. Returns the same objects;
+ * the caller assigns `parentId`. Null when the move names an unknown group
+ * or would nest a group inside itself.
+ */
+export function groupsAfterMove(
+  groups: RequestGroup[],
+  groupId: number,
+  parentId: number | null,
+  beforeGroupId: number | null,
+): RequestGroup[] | null {
+  const source = groups.find((group) => group.id === groupId);
+  if (!source || !canNestGroup(groups, groupId, parentId)) return null;
+  const remaining = groups.filter((group) => group.id !== groupId);
+  let insertAt =
+    beforeGroupId === null
+      ? -1
+      : remaining.findIndex(
+          (group) => group.id === beforeGroupId && group.parentId === parentId,
+        );
+  if (insertAt < 0) {
+    const last = remaining.reduce(
+      (index, group, current) =>
+        group.parentId === parentId ? current : index,
+      -1,
+    );
+    insertAt = last < 0 ? remaining.length : last + 1;
+  }
+  remaining.splice(insertAt, 0, source);
+  return remaining;
+}
+
 export function deleteGroupAndPromoteContents<T extends GroupedSession>(
   groups: RequestGroup[],
   sessions: T[],
