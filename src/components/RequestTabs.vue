@@ -339,7 +339,7 @@ function navigate(event: KeyboardEvent, index: number) {
           <DropdownMenuTrigger
             class="flex items-center justify-center gap-0.5 shrink-0 px-2 font-mono text-[0.625rem] text-muted-foreground border-x border-border cursor-pointer hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground pointer-coarse:min-w-11"
             data-tab-overflow
-            :aria-label="`${overflow.hidden} more tabs`"
+            :aria-label="`${overflow.hidden} more ${overflow.hidden === 1 ? 'tab' : 'tabs'}`"
             title="Show all open tabs"
           >
             <ChevronDown :size="13" aria-hidden="true" />

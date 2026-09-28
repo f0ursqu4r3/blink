@@ -65,10 +65,24 @@ describe("tab bar overflow", () => {
     expect(strip.dataset.overflowRight).toBe("true");
     // Tabs 0 and 1 fit fully in 500 px; tabs 2..5 are hidden or cut.
     expect(wrapper.get("[data-tab-overflow]").text()).toContain("4");
+    expect(wrapper.get("[data-tab-overflow]").attributes("aria-label")).toBe(
+      "4 more tabs",
+    );
     layout(strip, 500, 420);
     await nextTick();
     expect(strip.dataset.overflowLeft).toBe("true");
     expect(strip.dataset.overflowRight).toBe("true");
+  });
+
+  it("uses the singular label for exactly one hidden tab", async () => {
+    const { wrapper, strip } = render(3);
+    // Tabs 0 and 1 fit fully in 420 px; tab 2 is hidden.
+    layout(strip, 420, 0);
+    await nextTick();
+    expect(wrapper.get("[data-tab-overflow]").text()).toContain("1");
+    expect(wrapper.get("[data-tab-overflow]").attributes("aria-label")).toBe(
+      "1 more tab",
+    );
   });
 
   it("scrolls horizontally with a vertical wheel", async () => {
