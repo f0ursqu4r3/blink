@@ -414,6 +414,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         :confirm-delete="preferences.confirmCloseDrafts"
         :selected-ids="selectedRequestIds"
         :selection-anchor-id="selectionAnchorId"
+        :curl-for="curlFor"
         @select="select"
         @update-selection="updateSelection"
         @create-group="createGroup"
@@ -430,6 +431,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         @close-request="(id) => close(id)"
         @delete-request="remove"
         @set-request-local-auth="(id, auth) => setRequestLocalAuth(id, auth)"
+        @copy="copyText"
       />
       <div
         class="relative flex flex-col min-w-0 min-h-0 flex-1 overflow-hidden rounded-lg border border-border bg-background max-[760px]:rounded-none max-[760px]:border-x-0"

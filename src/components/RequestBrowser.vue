@@ -30,7 +30,12 @@ import {
   ContextMenuSub,
   ContextMenuSubTrigger,
   ContextMenuSubContent,
-} from "@/components/ui/context-menu/index";
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuShortcut,
+} from "@/components/ui/context-menu";
+import GroupMenuTree from "./GroupMenuTree.vue";
+import { shortcutLabel } from "@/lib/shortcut";
 import { useDragDrop, type DropHit } from "@/composables/useDragDrop";
 import {
   hitZone,
@@ -48,6 +53,8 @@ const props = defineProps<{
   openIds?: number[];
   activeId: number | null;
   groups: RequestGroup[];
+  /** cURL text for a request; empty when its draft does not build. */
+  curlFor?: (id: number) => string;
   /** Ask before deleting a request that has content. */
   confirmDelete?: boolean;
   mobileOpen?: boolean;
@@ -78,6 +85,7 @@ const emit = defineEmits<{
   duplicateRequest: [sessionId: number];
   closeRequest: [sessionId: number];
   deleteRequest: [sessionId: number];
+  copy: [text: string];
   setRequestLocalAuth: [
     sessionId: number,
     auth: AuthorizationConfig | undefined,
@@ -91,6 +99,8 @@ const creatingParent = ref<number | null | undefined>(undefined);
 const editingId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
 const deletingRequestId = ref<number | null>(null);
+/** The requests that the open delete confirmation removes. */
+const deletingRequestIds = ref<number[]>([]);
 const draftName = ref("");
 const groupingSelection = ref<number[] | null>(null);
 
@@ -230,11 +240,65 @@ function selectRequest(id: number, event: MouseEvent) {
   emit("updateSelection", ids, anchorId);
 }
 
+type AuthMode = "inherit" | "none" | "bearer" | "basic";
+const sessionById = computed(
+  () => new Map(props.sessions.map((session) => [session.id, session])),
+);
+/** The requests a request-row menu acts on: the selection when the target is in it. */
+function menuTargets(sessionId: number) {
+  const ids = props.selectedIds ?? [];
+  return ids.length > 1 && selected.value.has(sessionId)
+    ? [...ids]
+    : [sessionId];
+}
+function countLabel(verb: string, ids: number[], suffix = "") {
+  return ids.length > 1
+    ? `${verb} ${ids.length} requests${suffix}`
+    : `${verb}${suffix}`;
+}
+function anyBusy(ids: number[]) {
+  return ids.some((id) => sessionById.value.get(id)?.busy);
+}
+function authModeOf(id: number): AuthMode {
+  return sessionById.value.get(id)?.draft.localAuth?.type ?? "inherit";
+}
+/** The shared mode of the targets, or undefined when they differ. */
+function authMode(ids: number[]) {
+  const modes = new Set(ids.map(authModeOf));
+  return modes.size === 1 ? [...modes][0] : undefined;
+}
+function authConfig(mode: AuthMode): AuthorizationConfig | undefined {
+  if (mode === "inherit") return undefined;
+  if (mode === "none") return { type: "none" };
+  if (mode === "bearer") return { type: "bearer", token: "" };
+  return { type: "basic", username: "", password: "" };
+}
+/** Set the mode on each target. A target that already has it keeps its credentials. */
+function setAuthMode(ids: number[], mode: AuthMode) {
+  for (const id of ids)
+    if (authModeOf(id) !== mode)
+      emit("setRequestLocalAuth", id, authConfig(mode));
+}
+function moveTargets(ids: number[], groupId: number | null) {
+  if (ids.length > 1) emit("moveRequests", ids, groupId, null);
+  else emit("moveRequest", ids[0], groupId);
+}
+
 function requestDelete(session: RequestSession) {
-  if (session.busy) return;
-  if (props.confirmDelete && hasDraft(session))
+  const ids = menuTargets(session.id);
+  if (anyBusy(ids)) return;
+  if (ids.length > 1 || (props.confirmDelete && hasDraft(session))) {
     deletingRequestId.value = session.id;
-  else emit("deleteRequest", session.id);
+    deletingRequestIds.value = ids;
+  } else emit("deleteRequest", session.id);
+}
+function confirmDeleteRequests() {
+  for (const id of deletingRequestIds.value) emit("deleteRequest", id);
+  cancelDeleteRequests();
+}
+function cancelDeleteRequests() {
+  deletingRequestId.value = null;
+  deletingRequestIds.value = [];
 }
 
 /** Called when a context menu is opened on a request row. */
@@ -621,6 +685,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     @select="emit('duplicateRequest', row.session.id)"
                   >
                     Duplicate
+                    <ContextMenuShortcut>{{
+                      shortcutLabel(["mod", "shift", "d"])
+                    }}</ContextMenuShortcut>
                   </ContextMenuItem>
                   <ContextMenuItem
                     v-if="openIds?.includes(row.session.id)"
@@ -628,72 +695,96 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                   >
                     Close tab
                   </ContextMenuItem>
+                  <template v-if="menuTargets(row.session.id).length === 1">
+                    <ContextMenuSeparator />
+                    <ContextMenuItem
+                      data-request-copy-url
+                      :disabled="!row.session.draft.url"
+                      @select="emit('copy', row.session.draft.url)"
+                    >
+                      Copy URL
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                      data-request-copy-curl
+                      :disabled="!curlFor?.(row.session.id)"
+                      @select="emit('copy', curlFor?.(row.session.id) ?? '')"
+                    >
+                      Copy as cURL
+                    </ContextMenuItem>
+                  </template>
                   <ContextMenuSeparator />
                   <ContextMenuSub>
-                    <ContextMenuSubTrigger>Set auth</ContextMenuSubTrigger>
+                    <ContextMenuSubTrigger data-auth-menu>
+                      Authorization
+                    </ContextMenuSubTrigger>
                     <ContextMenuSubContent>
-                      <ContextMenuItem
-                        @select="
-                          emit('setRequestLocalAuth', row.session.id, undefined)
+                      <ContextMenuRadioGroup
+                        :model-value="authMode(menuTargets(row.session.id))"
+                        @update:model-value="
+                          (mode) =>
+                            setAuthMode(
+                              menuTargets(row.session.id),
+                              mode as AuthMode,
+                            )
                         "
                       >
-                        Inherit
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        @select="
-                          emit('setRequestLocalAuth', row.session.id, {
-                            type: 'none',
-                          })
-                        "
-                      >
-                        No auth
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        @select="
-                          emit('setRequestLocalAuth', row.session.id, {
-                            type: 'bearer',
-                            token: '',
-                          })
-                        "
-                      >
-                        Bearer
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        @select="
-                          emit('setRequestLocalAuth', row.session.id, {
-                            type: 'basic',
-                            username: '',
-                            password: '',
-                          })
-                        "
-                        >Basic</ContextMenuItem
-                      >
+                        <ContextMenuRadioItem
+                          value="inherit"
+                          data-auth-mode="inherit"
+                        >
+                          Inherit
+                        </ContextMenuRadioItem>
+                        <ContextMenuRadioItem
+                          value="none"
+                          data-auth-mode="none"
+                        >
+                          No auth
+                        </ContextMenuRadioItem>
+                        <ContextMenuRadioItem
+                          value="bearer"
+                          data-auth-mode="bearer"
+                        >
+                          Bearer
+                        </ContextMenuRadioItem>
+                        <ContextMenuRadioItem
+                          value="basic"
+                          data-auth-mode="basic"
+                        >
+                          Basic
+                        </ContextMenuRadioItem>
+                      </ContextMenuRadioGroup>
                     </ContextMenuSubContent>
                   </ContextMenuSub>
-                  <ContextMenuSeparator />
                   <ContextMenuSub>
-                    <ContextMenuSubTrigger>Move to group</ContextMenuSubTrigger>
+                    <ContextMenuSubTrigger data-move-menu>
+                      {{
+                        countLabel("Move", menuTargets(row.session.id), " to")
+                      }}
+                    </ContextMenuSubTrigger>
                     <ContextMenuSubContent>
-                      <ContextMenuItem
-                        v-for="group in groups"
-                        :key="group.id"
-                        @select="emit('moveRequest', row.session.id, group.id)"
-                      >
-                        {{ group.name }}
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        @select="emit('moveRequest', row.session.id, null)"
-                      >
-                        Ungrouped
-                      </ContextMenuItem>
+                      <GroupMenuTree
+                        :groups="groups"
+                        root-label="Ungrouped"
+                        :current-id="
+                          menuTargets(row.session.id).length === 1
+                            ? row.session.groupId
+                            : undefined
+                        "
+                        @pick="
+                          (groupId) =>
+                            moveTargets(menuTargets(row.session.id), groupId)
+                        "
+                      />
                     </ContextMenuSubContent>
                   </ContextMenuSub>
                   <ContextMenuSeparator />
                   <ContextMenuItem
-                    :disabled="row.session.busy"
+                    data-request-delete
+                    variant="destructive"
+                    :disabled="anyBusy(menuTargets(row.session.id))"
                     @select="requestDelete(row.session)"
                   >
-                    Delete
+                    {{ countLabel("Delete", menuTargets(row.session.id)) }}
                   </ContextMenuItem>
                 </ContextMenuContent>
               </ContextMenu>
@@ -705,16 +796,22 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                 aria-label="Confirm delete request"
               >
                 <p class="w-full leading-[1.45]">
-                  Delete {{ sessionLabel(row.session) }}? Its draft and response
-                  are lost.
+                  <template v-if="deletingRequestIds.length > 1">
+                    Delete {{ deletingRequestIds.length }} requests? Their
+                    drafts and responses are lost.
+                  </template>
+                  <template v-else>
+                    Delete {{ sessionLabel(row.session) }}? Its draft and
+                    response are lost.
+                  </template>
                 </p>
                 <!-- prettier-ignore -->
                 <button
                   type="button"
                   class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                   data-confirm-delete-request
-                  :disabled="row.session.busy"
-                  @click="emit('deleteRequest', row.session.id); deletingRequestId = null"
+                  :disabled="anyBusy(deletingRequestIds)"
+                  @click="confirmDeleteRequests"
                 >
                   Delete
                 </button>
@@ -722,7 +819,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                   type="button"
                   class="text-muted-foreground font-mono text-[9px] hover:text-foreground"
                   data-cancel-delete-request
-                  @click="deletingRequestId = null"
+                  @click="cancelDeleteRequests"
                 >
                   Cancel
                 </button>

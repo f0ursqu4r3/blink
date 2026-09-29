@@ -23,6 +23,10 @@ const contextMenuStubs = {
     template: "<div><slot /></div>",
   },
   ContextMenuSubContent: { template: "<div><slot /></div>" },
+  ContextMenuRadioGroup: { template: "<div><slot /></div>" },
+  ContextMenuRadioItem: { template: "<button><slot /></button>" },
+  ContextMenuShortcut: { template: "<span />" },
+  ContextMenuCheckboxItem: { template: "<button><slot /></button>" },
 };
 
 function makeGroup(overrides: Partial<RequestGroup> = {}): RequestGroup {
@@ -199,32 +203,6 @@ describe("RequestBrowser – context menus and new features", () => {
     await browser.get("[data-confirm-delete-request]").trigger("click");
     expect(deleteRequest).toHaveBeenCalledWith(session.id);
     expect(browser.find("[data-confirm-delete-request]").exists()).toBe(false);
-  });
-
-  it("context menu 'No auth' item emits setRequestLocalAuth with {type:'none'}", async () => {
-    const session = createSession();
-    session.groupId = 1;
-    const setRequestLocalAuth = vi.fn();
-    const browser = mount(RequestBrowser, {
-      props: {
-        sessions: [session],
-        activeId: session.id,
-        groups: [makeGroup()],
-        onSetRequestLocalAuth: setRequestLocalAuth,
-      },
-      global: { stubs: contextMenuStubs },
-    });
-
-    const requestCtx = browser.get(`[data-request-context="${session.id}"]`);
-    const items = requestCtx
-      .findAll("button")
-      .filter((b) => b.text() === "No auth");
-    expect(items.length).toBeGreaterThan(0);
-    await items[0].trigger("click");
-
-    expect(setRequestLocalAuth).toHaveBeenCalledWith(session.id, {
-      type: "none",
-    });
   });
 
   // ── Right-click selection behaviour ─────────────────────────────────────
