@@ -17,12 +17,11 @@ import {
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
 import {
+  DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
-  DropdownMenuPortal,
-  DropdownMenuRoot,
   DropdownMenuTrigger,
-} from "reka-ui";
+} from "@/components/ui/dropdown-menu";
 import {
   sessionLabel,
   sessionHost,
@@ -335,7 +334,7 @@ function navigate(event: KeyboardEvent, index: number) {
             </ContextMenuContent>
           </ContextMenu>
         </div>
-        <DropdownMenuRoot v-if="overflow.hidden > 0">
+        <DropdownMenu v-if="overflow.hidden > 0">
           <DropdownMenuTrigger
             class="flex items-center justify-center gap-0.5 shrink-0 px-2 font-mono text-[0.625rem] text-muted-foreground border-x border-border cursor-pointer hover:bg-accent hover:text-foreground data-[state=open]:bg-accent data-[state=open]:text-foreground pointer-coarse:min-w-11"
             data-tab-overflow
@@ -345,31 +344,27 @@ function navigate(event: KeyboardEvent, index: number) {
             <ChevronDown :size="13" aria-hidden="true" />
             {{ overflow.hidden }}
           </DropdownMenuTrigger>
-          <DropdownMenuPortal>
-            <DropdownMenuContent
-              align="end"
-              :side-offset="4"
-              class="z-50 max-h-[60dvh] min-w-56 max-w-80 overflow-y-auto rounded border border-border bg-secondary p-1 font-mono text-xs text-foreground shadow-sm"
-              data-surface="context-menu"
+          <DropdownMenuContent
+            align="end"
+            :side-offset="4"
+            class="max-h-[60dvh] min-w-56 max-w-80"
+          >
+            <DropdownMenuItem
+              v-for="session in sessions"
+              :key="session.id"
+              data-tab-overflow-item
+              :class="session.id === activeId ? '' : 'text-muted-foreground'"
+              @select="emit('select', session.id)"
             >
-              <DropdownMenuItem
-                v-for="session in sessions"
-                :key="session.id"
-                data-tab-overflow-item
-                class="flex items-center gap-2 cursor-default select-none rounded-sm px-2 py-1.5 outline-none data-highlighted:bg-accent data-[active=true]:text-foreground pointer-coarse:py-3"
-                :class="session.id === activeId ? '' : 'text-muted-foreground'"
-                @select="emit('select', session.id)"
+              <span
+                class="method w-11 shrink-0 font-mono text-[0.5625rem] font-bold tracking-[0.04em]"
+                :data-method="session.draft.method"
+                >{{ session.draft.method }}</span
               >
-                <span
-                  class="method w-11 shrink-0 text-[0.5625rem] font-bold tracking-[0.04em]"
-                  :data-method="session.draft.method"
-                  >{{ session.draft.method }}</span
-                >
-                <span class="truncate">{{ sessionLabel(session) }}</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenuPortal>
-        </DropdownMenuRoot>
+              <span class="truncate">{{ sessionLabel(session) }}</span>
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <button
           type="button"
           class="flex items-center justify-center shrink-0 w-9.5 text-muted-foreground border-r border-border cursor-pointer hover:bg-accent hover:text-foreground pointer-coarse:w-11"
