@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { ref } from "vue";
 import KeyValueEditor from "../KeyValueEditor.vue";
@@ -98,39 +98,6 @@ describe("KeyValueEditor row context menu", () => {
     ).not.toBeNull();
   });
 
-  it("shows 'Disable' when row is enabled", async () => {
-    const p = { ...pair(), enabled: true };
-    const { wrapper } = render([p]);
-    await wrapper
-      .get(`[data-testid="kv-row-ctx-trigger-${p.id}"]`)
-      .trigger("contextmenu");
-    expect(
-      document.body.querySelector('[data-testid="kv-row-ctx-toggle"]'),
-    ).not.toBeNull();
-    expect(
-      (
-        document.body.querySelector(
-          '[data-testid="kv-row-ctx-toggle"]',
-        ) as HTMLElement
-      ).textContent,
-    ).toContain("Disable");
-  });
-
-  it("shows 'Enable' when row is disabled", async () => {
-    const p = { ...pair(), enabled: false };
-    const { wrapper } = render([p]);
-    await wrapper
-      .get(`[data-testid="kv-row-ctx-trigger-${p.id}"]`)
-      .trigger("contextmenu");
-    expect(
-      (
-        document.body.querySelector(
-          '[data-testid="kv-row-ctx-toggle"]',
-        ) as HTMLElement
-      ).textContent,
-    ).toContain("Enable");
-  });
-
   it("toggle enabled updates that row", async () => {
     const p = { ...pair(), enabled: true };
     const { wrapper, modelValue } = render([p]);
@@ -176,5 +143,44 @@ describe("KeyValueEditor row context menu", () => {
     ).click();
     expect(modelValue.value.length).toBe(1);
     expect(modelValue.value[0].id).toBe(p2.id);
+  });
+});
+
+describe("KeyValueEditor row menu items", () => {
+  async function openRow(wrapper: ReturnType<typeof mount>, id: number) {
+    await wrapper
+      .get(`[data-testid="kv-row-ctx-trigger-${id}"]`)
+      .trigger("contextmenu");
+  }
+
+  it("shows Enabled as a checked checkbox item and a destructive Delete row", async () => {
+    const row = pair("a", "1");
+    const { wrapper } = render([row]);
+    await openRow(wrapper, row.id);
+    const toggle = document.body.querySelector(
+      '[data-testid="kv-row-ctx-toggle"]',
+    )!;
+    expect(toggle.getAttribute("role")).toBe("menuitemcheckbox");
+    expect(toggle.getAttribute("aria-checked")).toBe("true");
+    const remove = document.body.querySelector(
+      '[data-testid="kv-row-ctx-remove"]',
+    )!;
+    expect(remove.getAttribute("data-variant")).toBe("destructive");
+    expect(remove.textContent?.trim()).toBe("Delete row");
+  });
+
+  it("Copy name copies the row key", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const row = pair("X-Id", "7");
+    const { wrapper } = render([row]);
+    await openRow(wrapper, row.id);
+    (
+      document.body.querySelector(
+        '[data-testid="kv-row-ctx-copy-name"]',
+      ) as HTMLElement
+    ).click();
+    expect(writeText).toHaveBeenCalledWith("X-Id");
+    vi.unstubAllGlobals();
   });
 });

@@ -8,11 +8,14 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuCheckboxItem,
 } from "@/components/ui/context-menu";
+import { useClipboard } from "@/composables/useClipboard";
 import { pair, type Pair } from "@/lib/request";
 const rows = defineModel<Pair[]>({ required: true });
 const props = defineProps<{ label: string; disabled?: boolean }>();
 const editor = ref<HTMLElement | null>(null);
+const { copyError, copy } = useClipboard();
 function focusRow(index: number) {
   void nextTick(() => {
     const inputs =
@@ -176,27 +179,44 @@ function addRow() {
                 </tr>
               </ContextMenuTrigger>
               <ContextMenuContent>
-                <ContextMenuItem
+                <ContextMenuCheckboxItem
                   data-testid="kv-row-ctx-toggle"
+                  :model-value="row.enabled"
                   :disabled="disabled"
                   @select="toggleRow(row.id)"
                 >
-                  {{ row.enabled ? "Disable" : "Enable" }}
-                </ContextMenuItem>
+                  Enabled
+                </ContextMenuCheckboxItem>
                 <ContextMenuItem
                   data-testid="kv-row-ctx-duplicate"
                   :disabled="disabled"
                   @select="duplicateRow(row.id)"
                 >
-                  Duplicate
+                  Duplicate row
+                </ContextMenuItem>
+                <ContextMenuSeparator />
+                <ContextMenuItem
+                  data-testid="kv-row-ctx-copy-name"
+                  :disabled="!row.key"
+                  @select="copy(row.key)"
+                >
+                  Copy name
+                </ContextMenuItem>
+                <ContextMenuItem
+                  data-testid="kv-row-ctx-copy-value"
+                  :disabled="!row.value"
+                  @select="copy(row.value)"
+                >
+                  Copy value
                 </ContextMenuItem>
                 <ContextMenuSeparator />
                 <ContextMenuItem
                   data-testid="kv-row-ctx-remove"
+                  variant="destructive"
                   :disabled="disabled"
                   @select="removeRow(row.id)"
                 >
-                  Remove
+                  Delete row
                 </ContextMenuItem>
               </ContextMenuContent>
             </ContextMenu>
@@ -228,6 +248,9 @@ function addRow() {
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
+    <p v-if="copyError" class="px-3 py-1 text-xs text-destructive" role="alert">
+      {{ copyError }}
+    </p>
     <Button
       variant="ghost"
       class="m-2"
