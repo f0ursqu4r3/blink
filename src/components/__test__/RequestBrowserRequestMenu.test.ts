@@ -153,3 +153,64 @@ describe("Browser request menu", () => {
     expect(find("[data-request-copy-curl]")).toBeNull();
   });
 });
+
+describe("Browser group menus", () => {
+  const groups: RequestGroup[] = [
+    { id: 1, name: "Platform", parentId: null, collapsed: false },
+    { id: 2, name: "Identity", parentId: 1, collapsed: false },
+    { id: 3, name: "Billing", parentId: null, collapsed: false },
+  ];
+
+  it("moves a group through its Move to menu, never into its own subtree", async () => {
+    const onMoveGroup = vi.fn();
+    const s = createSession();
+    const browser = mountBrowser({ sessions: [s], groups, onMoveGroup });
+    await browser.get('[data-group-id="1"]').trigger("contextmenu");
+    await openSubmenu(find("[data-group-move-menu]"));
+    expect(find('[data-move-target="2"]')).toBeNull();
+    find('[data-move-target="3"]').click();
+    expect(onMoveGroup).toHaveBeenCalledWith(1, 3, null);
+  });
+
+  it("the ⋯ dropdown offers the same Move to tree", async () => {
+    const onMoveGroup = vi.fn();
+    const s = createSession();
+    const browser = mountBrowser({ sessions: [s], groups, onMoveGroup });
+    await browser
+      .get('[aria-label="More actions for Platform"]')
+      .trigger("keydown", { key: "Enter" });
+    await openSubmenu(find("[data-group-move-menu]"));
+    find('[data-move-target="root"]');
+    expect(find('[data-move-target="2"]')).toBeNull();
+    find('[data-move-target="3"]').click();
+    expect(onMoveGroup).toHaveBeenCalledWith(1, 3, null);
+  });
+
+  it("hides Move selection here without a selection", async () => {
+    const s = createSession();
+    const browser = mountBrowser({ sessions: [s], groups });
+    await browser.get('[data-group-id="3"]').trigger("contextmenu");
+    expect(document.body.textContent).not.toContain("Move selection here");
+  });
+
+  it("the blank-space menu offers New request, New group, and Collapse all", async () => {
+    const onCollapseAllGroups = vi.fn();
+    const s = createSession();
+    const browser = mountBrowser({
+      sessions: [s],
+      groups,
+      onCollapseAllGroups,
+    });
+    await browser.get("[data-browser-list]").trigger("contextmenu");
+    const items = [
+      ...document.body.querySelectorAll('[role="menuitem"]'),
+    ] as HTMLElement[];
+    expect(items.map((item) => item.textContent?.trim())).toEqual([
+      "New request",
+      "New group",
+      "Collapse all",
+    ]);
+    items[2].click();
+    expect(onCollapseAllGroups).toHaveBeenCalled();
+  });
+});

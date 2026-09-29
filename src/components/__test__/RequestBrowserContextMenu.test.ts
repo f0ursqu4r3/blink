@@ -79,7 +79,7 @@ describe("RequestBrowser – context menus and new features", () => {
     const groupCtx = browser.get('[data-group-context="1"]');
     const items = groupCtx
       .findAll("button")
-      .filter((b) => b.text() === "Settings");
+      .filter((b) => b.text() === "Settings…");
     expect(items.length).toBeGreaterThan(0);
     await items[0].trigger("click");
 

@@ -35,6 +35,7 @@ describe("compact request console", () => {
     await app.get('[aria-label="Add top-level group"]').trigger("click");
     await app.get('[aria-label="Top-level group name"]').setValue("Platform");
     await app.get(".top-level-form").trigger("submit");
+    await app.get("[data-request-id]").trigger("click");
     await app
       .get('[aria-label="More actions for Platform"]')
       .trigger("keydown", { key: "Enter" });
@@ -48,8 +49,8 @@ describe("compact request console", () => {
       .trigger("keydown", { key: "Enter" });
     const updatedMove = Array.from(
       document.querySelectorAll<HTMLElement>('[role="menuitem"]'),
-    ).find((item) => item.textContent?.trim() === "Move selection here")!;
-    expect(updatedMove.getAttribute("data-disabled")).not.toBeNull();
+    ).find((item) => item.textContent?.trim() === "Move selection here");
+    expect(updatedMove).toBeUndefined();
   });
 
   it("hides and restores the request browser from the title bar", async () => {

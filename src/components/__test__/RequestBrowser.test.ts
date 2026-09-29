@@ -20,6 +20,7 @@ describe("request browser", () => {
           { id: 1, name: "Platform", parentId: null, collapsed: false },
           { id: 2, name: "Identity", parentId: 1, collapsed: false },
         ],
+        selectedIds: [active.id],
         onMoveRequest: moveRequest,
       },
     });

@@ -35,6 +35,7 @@ import {
   ContextMenuShortcut,
 } from "@/components/ui/context-menu";
 import GroupMenuTree from "./GroupMenuTree.vue";
+import GroupMenuItems, { type GroupAction } from "./GroupMenuItems.vue";
 import { shortcutLabel } from "@/lib/shortcut";
 import { useDragDrop, type DropHit } from "@/composables/useDragDrop";
 import {
@@ -192,6 +193,20 @@ function selectionAlreadyIn(groupId: number | null) {
         groupId,
     )
   );
+}
+/** True when requests are selected and not all of them are in `groupId`. */
+function hasMovableSelection(groupId: number | null) {
+  return (props.selectedIds?.length ?? 0) > 0 && !selectionAlreadyIn(groupId);
+}
+function onGroupAction(group: RequestGroup, action: GroupAction) {
+  if (action === "createRequest") emit("createRequest", group.id);
+  else if (action === "createGroup") startCreating(group.id);
+  else if (action === "rename") startRename(group);
+  else if (action === "settings") emit("openGroupSettings", group.id);
+  else if (action === "toggle") emit("toggleGroup", group.id);
+  else if (action === "collapseAll") emit("collapseAllGroups");
+  else if (action === "moveSelection") moveSelection(group.id);
+  else deletingId.value = group.id;
 }
 function indent(level: number) {
   const pxMap = [12, 28, 44, 60, 76, 92, 108];
@@ -602,11 +617,14 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
               </div>
             </ContextMenuTrigger>
             <ContextMenuContent>
-              <ContextMenuItem @select="moveSelection(null)">
-                Move selection here
-              </ContextMenuItem>
               <ContextMenuItem @select="emit('createRequest', null)">
-                New request in ungrouped
+                New request
+              </ContextMenuItem>
+              <ContextMenuItem
+                v-if="hasMovableSelection(null)"
+                @select="moveSelection(null)"
+              >
+                Move selection here
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -955,52 +973,31 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                             <Plus :size="12" aria-hidden="true" /></button
                         ></HelpTooltip>
                         <GroupActionsMenu
-                          :name="row.group.name"
-                          :can-move="!selectionAlreadyIn(row.group.id)"
-                          @action="
-                            (action) => {
-                              if (action === 'createGroup')
-                                startCreating(row.group.id);
-                              else if (action === 'move')
-                                moveSelection(row.group.id);
-                              else if (action === 'rename')
-                                startRename(row.group);
-                              else deletingId = row.group.id;
-                            }
+                          :group="row.group"
+                          :groups="groups"
+                          :can-move-selection="
+                            hasMovableSelection(row.group.id)
+                          "
+                          @action="(action) => onGroupAction(row.group, action)"
+                          @move-to="
+                            (parentId) =>
+                              emit('moveGroup', row.group.id, parentId, null)
                           "
                         />
                       </div>
                     </div>
                   </ContextMenuTrigger>
                   <ContextMenuContent>
-                    <ContextMenuItem
-                      @select="emit('openGroupSettings', row.group.id)"
-                    >
-                      Settings
-                    </ContextMenuItem>
-                    <ContextMenuItem @select="startCreating(row.group.id)">
-                      New child group
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      @select="emit('createRequest', row.group.id)"
-                    >
-                      New request in {{ row.group.name }}
-                    </ContextMenuItem>
-                    <ContextMenuItem @select="startRename(row.group)">
-                      Rename
-                    </ContextMenuItem>
-                    <ContextMenuItem
-                      @select="emit('toggleGroup', row.group.id)"
-                    >
-                      {{ row.group.collapsed ? "Expand" : "Collapse" }}
-                    </ContextMenuItem>
-                    <ContextMenuItem @select="moveSelection(row.group.id)">
-                      Move selection here
-                    </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem @select="deletingId = row.group.id">
-                      Delete
-                    </ContextMenuItem>
+                    <GroupMenuItems
+                      :group="row.group"
+                      :groups="groups"
+                      :can-move-selection="hasMovableSelection(row.group.id)"
+                      @action="(action) => onGroupAction(row.group, action)"
+                      @move-to="
+                        (parentId) =>
+                          emit('moveGroup', row.group.id, parentId, null)
+                      "
+                    />
                   </ContextMenuContent>
                 </ContextMenu>
               </div>
@@ -1071,11 +1068,17 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
+        <ContextMenuItem @select="emit('createRequest', null)">
+          New request
+        </ContextMenuItem>
         <ContextMenuItem @select="startCreating(null)">
           New group
         </ContextMenuItem>
-        <ContextMenuItem @select="emit('createRequest', null)">
-          New request
+        <ContextMenuItem
+          :disabled="!groups.length"
+          @select="emit('collapseAllGroups')"
+        >
+          Collapse all
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
