@@ -22,6 +22,11 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
   ContextMenuTrigger,
+  ContextMenuRadioGroup,
+  ContextMenuRadioItem,
+  ContextMenuSub,
+  ContextMenuSubContent,
+  ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import KeyValueEditor from "./KeyValueEditor.vue";
 import CodeEditor from "./CodeEditor.vue";
@@ -428,6 +433,31 @@ function clearBody() {
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
+            <ContextMenuSub>
+              <ContextMenuSubTrigger
+                data-testid="body-menu-type"
+                :disabled="busy"
+              >
+                Body type
+              </ContextMenuSubTrigger>
+              <ContextMenuSubContent>
+                <ContextMenuRadioGroup
+                  :model-value="draft.bodyMode"
+                  @update:model-value="
+                    (mode) =>
+                      !busy && (draft.bodyMode = mode as typeof draft.bodyMode)
+                  "
+                >
+                  <ContextMenuRadioItem value="none">None</ContextMenuRadioItem>
+                  <ContextMenuRadioItem value="json">JSON</ContextMenuRadioItem>
+                  <ContextMenuRadioItem value="text">Text</ContextMenuRadioItem>
+                  <ContextMenuRadioItem value="graphql">
+                    GraphQL
+                  </ContextMenuRadioItem>
+                </ContextMenuRadioGroup>
+              </ContextMenuSubContent>
+            </ContextMenuSub>
+            <ContextMenuSeparator />
             <ContextMenuItem
               data-testid="body-menu-format"
               :disabled="busy || !formattable || !draft.body"
@@ -439,35 +469,11 @@ function clearBody() {
             </ContextMenuItem>
             <ContextMenuItem
               data-testid="body-menu-clear"
+              variant="destructive"
               :disabled="busy || !draft.body"
               @select="clearBody"
             >
               Clear body
-            </ContextMenuItem>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              :disabled="busy"
-              @select="!busy && (draft.bodyMode = 'none')"
-            >
-              Body: none
-            </ContextMenuItem>
-            <ContextMenuItem
-              :disabled="busy"
-              @select="!busy && (draft.bodyMode = 'json')"
-            >
-              Body: JSON
-            </ContextMenuItem>
-            <ContextMenuItem
-              :disabled="busy"
-              @select="!busy && (draft.bodyMode = 'text')"
-            >
-              Body: text
-            </ContextMenuItem>
-            <ContextMenuItem
-              :disabled="busy"
-              @select="!busy && (draft.bodyMode = 'graphql')"
-            >
-              Body: GraphQL
             </ContextMenuItem>
           </ContextMenuContent>
         </ContextMenu>
@@ -706,18 +712,23 @@ function clearBody() {
             </div>
           </ContextMenuTrigger>
           <ContextMenuContent>
-            <ContextMenuItem :disabled="busy" @select="setAuthType('inherit')">
-              Inherit
-            </ContextMenuItem>
-            <ContextMenuItem :disabled="busy" @select="setAuthType('none')">
-              No auth
-            </ContextMenuItem>
-            <ContextMenuItem :disabled="busy" @select="setAuthType('bearer')">
-              Bearer token
-            </ContextMenuItem>
-            <ContextMenuItem :disabled="busy" @select="setAuthType('basic')">
-              Basic auth
-            </ContextMenuItem>
+            <ContextMenuRadioGroup
+              :model-value="authSelectValue"
+              @update:model-value="(value) => setAuthType(value as string)"
+            >
+              <ContextMenuRadioItem value="inherit" :disabled="busy">
+                Inherit
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="none" :disabled="busy">
+                No auth
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="bearer" :disabled="busy">
+                Bearer token
+              </ContextMenuRadioItem>
+              <ContextMenuRadioItem value="basic" :disabled="busy">
+                Basic auth
+              </ContextMenuRadioItem>
+            </ContextMenuRadioGroup>
             <ContextMenuSeparator />
             <ContextMenuItem
               data-testid="auth-menu-clear-local"

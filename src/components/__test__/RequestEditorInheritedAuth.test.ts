@@ -3,6 +3,7 @@ import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import RequestEditor from "../RequestEditor.vue";
 import { createDraft } from "@/lib/request";
+import { openSubmenu } from "./menu-test-utils";
 
 vi.mock("../CodeEditor.vue", () => import("./code-editor-stub"));
 
@@ -148,5 +149,55 @@ describe("RequestEditor – Inherit auth option", () => {
     textarea.element.dispatchEvent(event);
 
     expect(event.defaultPrevented).toBe(false);
+  });
+});
+
+describe("RequestEditor – menus show the current mode", () => {
+  it("auth menu checks the current mode as a radio item", async () => {
+    const wrapper = mountEditor({
+      localAuth: { type: "basic", username: "", password: "" },
+    });
+    await wrapper.get("[data-auth-actions]").trigger("contextmenu");
+    const checked = [
+      ...document.body.querySelectorAll(
+        '[role="menuitemradio"][aria-checked="true"]',
+      ),
+    ].map((el) => el.textContent?.trim());
+    expect(checked).toEqual(["Basic auth"]);
+  });
+
+  it("choosing Bearer in the auth menu sets a bearer override", async () => {
+    const wrapper = mountEditor();
+    await wrapper.get("[data-auth-actions]").trigger("contextmenu");
+    const bearer = [
+      ...document.body.querySelectorAll<HTMLElement>('[role="menuitemradio"]'),
+    ].find((el) => el.textContent?.trim() === "Bearer token")!;
+    bearer.click();
+    const emitted = wrapper.emitted("update:modelValue")!;
+    expect(
+      (emitted[emitted.length - 1][0] as { localAuth?: { type: string } })
+        .localAuth?.type,
+    ).toBe("bearer");
+  });
+
+  it("body menu has a Body type submenu with the current type checked and a destructive Clear body", async () => {
+    const wrapper = mountEditor(
+      { method: "POST", bodyMode: "json", body: "{}" },
+      { tab: "body" },
+    );
+    await wrapper.get("[data-body-actions]").trigger("contextmenu");
+    expect(
+      document.body
+        .querySelector('[data-testid="body-menu-clear"]')
+        ?.getAttribute("data-variant"),
+    ).toBe("destructive");
+    await openSubmenu(
+      document.body.querySelector('[data-testid="body-menu-type"]'),
+    );
+    expect(
+      document.body
+        .querySelector('[role="menuitemradio"][aria-checked="true"]')
+        ?.textContent?.trim(),
+    ).toBe("JSON");
   });
 });
