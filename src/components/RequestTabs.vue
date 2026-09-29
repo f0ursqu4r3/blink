@@ -14,8 +14,10 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuShortcut,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
+import { shortcutLabel } from "@/lib/shortcut";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -39,14 +41,26 @@ import {
 const props = defineProps<{
   sessions: RequestSession[];
   activeId: number | null;
+  /** cURL text for a request; empty when its draft does not build. */
+  curlFor?: (id: number) => string;
 }>();
 const emit = defineEmits<{
   select: [id: number];
   close: [id: number];
+  closeMany: [ids: number[]];
   create: [];
-  duplicate: [];
+  duplicate: [id?: number];
+  copy: [text: string];
+  reveal: [id: number];
   openRequests: [ids: number[], beforeId: number | null];
 }>();
+const allIds = computed(() => props.sessions.map((session) => session.id));
+function othersOf(id: number) {
+  return allIds.value.filter((other) => other !== id);
+}
+function rightOf(id: number) {
+  return allIds.value.slice(allIds.value.indexOf(id) + 1);
+}
 const strip = ref<HTMLElement>();
 // Overflow state. The strip has no scrollbar, so fades and a count show
 // that more tabs exist.
@@ -308,28 +322,65 @@ function navigate(event: KeyboardEvent, index: number) {
             </ContextMenuTrigger>
             <ContextMenuContent>
               <ContextMenuItem
-                :data-testid="`tab-ctx-select-${session.id}`"
-                @select="emit('select', session.id)"
-              >
-                Select
-              </ContextMenuItem>
-              <ContextMenuItem
-                :data-testid="`tab-ctx-duplicate-${session.id}`"
-                @select="
-                  () => {
-                    emit('select', session.id);
-                    emit('duplicate');
-                  }
-                "
-              >
-                Duplicate
-              </ContextMenuItem>
-              <ContextMenuSeparator />
-              <ContextMenuItem
                 :data-testid="`tab-ctx-close-${session.id}`"
                 @select="emit('close', session.id)"
               >
                 Close
+                <ContextMenuShortcut>{{
+                  shortcutLabel(["mod", "w"])
+                }}</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuItem
+                :data-testid="`tab-ctx-close-others-${session.id}`"
+                :disabled="!othersOf(session.id).length"
+                @select="emit('closeMany', othersOf(session.id))"
+              >
+                Close others
+              </ContextMenuItem>
+              <ContextMenuItem
+                :data-testid="`tab-ctx-close-right-${session.id}`"
+                :disabled="!rightOf(session.id).length"
+                @select="emit('closeMany', rightOf(session.id))"
+              >
+                Close to the right
+              </ContextMenuItem>
+              <ContextMenuItem
+                :data-testid="`tab-ctx-close-all-${session.id}`"
+                @select="emit('closeMany', allIds)"
+              >
+                Close all
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                :data-testid="`tab-ctx-duplicate-${session.id}`"
+                @select="emit('duplicate', session.id)"
+              >
+                Duplicate
+                <ContextMenuShortcut>{{
+                  shortcutLabel(["mod", "shift", "d"])
+                }}</ContextMenuShortcut>
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                :data-testid="`tab-ctx-copy-url-${session.id}`"
+                :disabled="!session.draft.url"
+                @select="emit('copy', session.draft.url)"
+              >
+                Copy URL
+              </ContextMenuItem>
+              <ContextMenuItem
+                :data-testid="`tab-ctx-copy-curl-${session.id}`"
+                :disabled="!curlFor?.(session.id)"
+                @select="emit('copy', curlFor?.(session.id) ?? '')"
+              >
+                Copy as cURL
+              </ContextMenuItem>
+              <ContextMenuSeparator />
+              <ContextMenuItem
+                :data-testid="`tab-ctx-reveal-${session.id}`"
+                @select="emit('reveal', session.id)"
+              >
+                Reveal in Browser
               </ContextMenuItem>
             </ContextMenuContent>
           </ContextMenu>
@@ -390,12 +441,16 @@ function navigate(event: KeyboardEvent, index: number) {
     <ContextMenuContent>
       <ContextMenuItem data-testid="tab-strip-ctx-new" @select="emit('create')">
         New request
+        <ContextMenuShortcut>{{
+          shortcutLabel(["mod", "t"])
+        }}</ContextMenuShortcut>
       </ContextMenuItem>
       <ContextMenuItem
-        data-testid="tab-strip-ctx-duplicate"
-        @select="emit('duplicate')"
+        data-testid="tab-strip-ctx-close-all"
+        :disabled="!allIds.length"
+        @select="emit('closeMany', allIds)"
       >
-        Duplicate active
+        Close all
       </ContextMenuItem>
     </ContextMenuContent>
   </ContextMenu>

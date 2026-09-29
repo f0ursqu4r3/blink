@@ -221,3 +221,56 @@ describe("compact request console", () => {
     expect(app.get("[data-send]").attributes("disabled")).toBeUndefined();
   });
 });
+
+describe("tab menu actions", () => {
+  async function openTabMenu(id: string) {
+    document
+      .querySelector(`[data-testid="tab-ctx-trigger-${id}"]`)!
+      .dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
+    await flushPromises();
+  }
+  function tabIds() {
+    return [...document.querySelectorAll<HTMLElement>("[data-tab-id]")].map(
+      (tab) => tab.dataset.tabId!,
+    );
+  }
+
+  it("Close others closes every other tab and keeps the requests", async () => {
+    const app = render();
+    await app.get("[data-new-request]").trigger("click");
+    await app.get("[data-new-request]").trigger("click");
+    const [first, second, third] = tabIds();
+    await openTabMenu(second);
+    (
+      document.querySelector(
+        `[data-testid="tab-ctx-close-others-${second}"]`,
+      ) as HTMLElement
+    ).click();
+    await flushPromises();
+    expect(tabIds()).toEqual([second]);
+    expect(
+      [first, third].every((id) =>
+        document.querySelector(`[data-request-id="${id}"]`),
+      ),
+    ).toBe(true);
+  });
+
+  it("Reveal in Browser shows a hidden Browser and selects the request", async () => {
+    const app = render();
+    await app.get("[data-title-browser]").trigger("click");
+    const [id] = tabIds();
+    await openTabMenu(id);
+    (
+      document.querySelector(
+        `[data-testid="tab-ctx-reveal-${id}"]`,
+      ) as HTMLElement
+    ).click();
+    await flushPromises();
+    expect(app.get("[data-request-browser]").isVisible()).toBe(true);
+    expect(
+      document
+        .querySelector(`[data-request-id="${id}"]`)
+        ?.getAttribute("aria-selected"),
+    ).toBe("true");
+  });
+});

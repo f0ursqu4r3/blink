@@ -15,6 +15,8 @@ import { useTheme } from "@/composables/useTheme";
 import { nativeTransport } from "@/lib/transport";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
 import { createSession } from "@/lib/session";
+import { sessionCurl } from "@/lib/session-curl";
+import { useClipboard } from "@/composables/useClipboard";
 import type { AuthorizationConfig } from "@/lib/authorization";
 import {
   applyNewRequestDefaults,
@@ -41,6 +43,7 @@ const {
   quitWithoutSaving,
   openRequest,
   closeTab,
+  closeTabs,
   openRequests,
   deleteRequest,
   addGroup,
@@ -71,6 +74,14 @@ const openSessions = computed(() =>
 );
 const sidebarCollapsed = ref(false);
 const commandCenter = ref<InstanceType<typeof CommandCenter>>();
+const { copied, copyError, copy: copyText } = useClipboard();
+/** cURL text for a request; empty when its draft does not build. */
+function curlFor(id: number) {
+  const session = sessions.value.find((candidate) => candidate.id === id);
+  return session
+    ? sessionCurl(session, groups.value, globalDefinitions.value)
+    : "";
+}
 const { name: themeName } = useTheme();
 // Tauri draws the macOS traffic lights over the title bar.
 const macOverlay = nativeTransport && /Mac/.test(navigator.userAgent);
@@ -194,18 +205,20 @@ function create(duplicate = false, inGroupId?: number | null) {
       resolveNewRequestDefaults(groups.value, groupId, preferences.value),
     );
   sessions.value.push(session);
-  if (groupId !== null) {
-    const byId = new Map(groups.value.map((group) => [group.id, group]));
-    let cursor: number | null = groupId;
-    while (cursor !== null) {
-      const group = byId.get(cursor);
-      if (!group) break;
-      group.collapsed = false;
-      cursor = group.parentId;
-    }
-  }
+  expandAncestors(groupId);
   select(session.id);
   updateSelection([session.id], session.id);
+}
+/** Expand every group from `groupId` up to the root. */
+function expandAncestors(groupId: number | null) {
+  const byId = new Map(groups.value.map((group) => [group.id, group]));
+  let cursor = groupId;
+  while (cursor !== null) {
+    const group = byId.get(cursor);
+    if (!group) break;
+    group.collapsed = false;
+    cursor = group.parentId;
+  }
 }
 function duplicate(sessionId?: number) {
   if (!ready.value) return;
@@ -218,16 +231,7 @@ function duplicate(sessionId?: number) {
   session.groupId = source.groupId;
   session.view = { ...source.view, responseScroll: 0 };
   sessions.value.push(session);
-  if (session.groupId !== null) {
-    const byId = new Map(groups.value.map((group) => [group.id, group]));
-    let cursor: number | null = session.groupId;
-    while (cursor !== null) {
-      const group = byId.get(cursor);
-      if (!group) break;
-      group.collapsed = false;
-      cursor = group.parentId;
-    }
-  }
+  expandAncestors(session.groupId);
   select(session.id);
   updateSelection([session.id], session.id);
 }
@@ -235,6 +239,27 @@ async function close(id: number) {
   closeTab(id);
   await nextTick();
   document.getElementById(`request-tab-${activeId.value}`)?.focus();
+}
+async function closeMany(ids: number[]) {
+  closeTabs(ids);
+  await nextTick();
+  document.getElementById(`request-tab-${activeId.value}`)?.focus();
+}
+/**
+ * Show a request in the Browser: open the Browser, expand its groups, then
+ * select, scroll to, and focus its row.
+ */
+async function reveal(id: number) {
+  const session = sessions.value.find((candidate) => candidate.id === id);
+  if (!session) return;
+  if (narrow.value) mobileBrowserOpen.value = true;
+  else sidebarCollapsed.value = false;
+  expandAncestors(session.groupId);
+  updateSelection([id], id);
+  await nextTick();
+  const row = document.querySelector<HTMLElement>(`[data-request-id="${id}"]`);
+  row?.scrollIntoView?.({ block: "nearest" });
+  row?.focus();
 }
 function remove(id: number) {
   deleteRequest(id);
@@ -412,10 +437,14 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         <RequestTabs
           :sessions="openSessions"
           :active-id="activeId"
+          :curl-for="curlFor"
           @select="select"
           @create="create()"
           @close="close"
-          @duplicate="duplicate()"
+          @close-many="closeMany"
+          @duplicate="(id) => duplicate(id)"
+          @copy="copyText"
+          @reveal="reveal"
           @open-requests="placeTabs"
         />
         <div
@@ -461,6 +490,10 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       <span v-if="sending" class="text-primary" role="status">
         {{ sending }} SENDING
       </span>
+      <span v-if="copyError" class="text-destructive" role="alert">
+        {{ copyError }}
+      </span>
+      <span v-else-if="copied" role="status">COPIED</span>
       <span class="ml-auto max-[760px]:hidden">
         {{ transport.timeoutSeconds }} s TIMEOUT ·
         {{ transport.inspectionLimitMiB }} MiB LIMIT
