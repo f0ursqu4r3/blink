@@ -3,6 +3,7 @@ import { mount } from "@vue/test-utils";
 import { nextTick } from "vue";
 import RequestWorkspace from "../RequestWorkspace.vue";
 import { createSession } from "@/lib/session";
+import { menuLabels } from "./menu-test-utils";
 
 vi.stubGlobal(
   "fetch",
@@ -92,6 +93,47 @@ describe("RequestWorkspace context menu – request bar", () => {
     ).click();
     await nextTick();
     expect(wrapper.find("[data-curl-preview]").exists()).toBe(false);
+  });
+});
+
+describe("RequestWorkspace context menu – request bar items", () => {
+  it("lists Send, Focus URL, Copy URL, Copy as cURL, and a Show cURL check", async () => {
+    const { wrapper } = makeWorkspace();
+    await wrapper.get(".request-bar").trigger("contextmenu");
+    expect(menuLabels()).toEqual([
+      "Send",
+      "Focus URL",
+      "Copy URL",
+      "Copy as cURL",
+      "Show cURL",
+    ]);
+    expect(
+      document.body
+        .querySelector('[data-testid="ctx-show-curl"]')
+        ?.getAttribute("role"),
+    ).toBe("menuitemcheckbox");
+  });
+
+  it("shows the Send and Focus URL shortcuts", async () => {
+    const { wrapper } = makeWorkspace();
+    await wrapper.get(".request-bar").trigger("contextmenu");
+    expect(
+      document.body.querySelectorAll('[data-slot="context-menu-shortcut"]')
+        .length,
+    ).toBe(2);
+  });
+
+  it("Copy URL writes the draft URL to the clipboard", async () => {
+    const writeText = vi.fn(() => Promise.resolve());
+    vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    const { wrapper, session } = makeWorkspace();
+    session.draft.url = "https://example.test/a";
+    await nextTick();
+    await wrapper.get(".request-bar").trigger("contextmenu");
+    (
+      document.body.querySelector('[data-testid="ctx-copy-url"]') as HTMLElement
+    ).click();
+    expect(writeText).toHaveBeenCalledWith("https://example.test/a");
   });
 });
 

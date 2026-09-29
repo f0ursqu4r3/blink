@@ -8,7 +8,10 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuCheckboxItem,
+  ContextMenuShortcut,
 } from "@/components/ui/context-menu";
+import { shortcutLabel } from "@/lib/shortcut";
 import RequestEditor from "./RequestEditor.vue";
 import ResponsePanel from "./ResponsePanel.vue";
 import { methods } from "@/lib/request";
@@ -279,16 +282,34 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           @select="send()"
         >
           Send
+          <ContextMenuShortcut>{{
+            shortcutLabel(["mod", "enter"])
+          }}</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuItem data-testid="ctx-focus-url" @select="focusUrl()">
           Focus URL
+          <ContextMenuShortcut>{{
+            shortcutLabel(["mod", "l"])
+          }}</ContextMenuShortcut>
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem
-          data-testid="ctx-show-curl"
-          @select="showCurl = !showCurl"
-          >cURL</ContextMenuItem
+          data-testid="ctx-copy-url"
+          :disabled="!session.draft.url"
+          @select="copy(session.draft.url)"
         >
+          Copy URL
+        </ContextMenuItem>
+        <ContextMenuItem
+          data-testid="ctx-copy-curl-bar"
+          :disabled="!curl"
+          @select="copy(curl)"
+        >
+          Copy as cURL
+        </ContextMenuItem>
+        <ContextMenuCheckboxItem v-model="showCurl" data-testid="ctx-show-curl">
+          Show cURL
+        </ContextMenuCheckboxItem>
       </ContextMenuContent>
     </ContextMenu>
     <p
@@ -351,6 +372,9 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           @select="showCurl = false"
         >
           Close
+          <ContextMenuShortcut>{{
+            shortcutLabel(["esc"])
+          }}</ContextMenuShortcut>
         </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
