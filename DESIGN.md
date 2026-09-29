@@ -21,7 +21,9 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
   HEAD/OPTIONS keyword. Components use tokens only; never hardcode colors.
 - **Typography:** Local system fonts only. Monospace for URL, headers, body,
   metrics, and compact uppercase section labels. System sans-serif for tabs
-  and explanatory text. No web font requests.
+  and explanatory text. Menus use the system sans-serif at 12 pixels; only
+  data inside a menu item, such as an HTTP method, uses monospace. No web
+  font requests.
 - **Layout:** A 40-pixel title bar holds the Browser toggle right of the
   traffic lights, the centered command center (`Cmd/Ctrl+P`), and the
   Settings cog at the right; it doubles as the window drag area, and on
@@ -75,5 +77,9 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 - Explain browser limitations; use native HTTP for unrestricted inspection.
 - Put secondary guidance in keyboard and touch accessible tooltips. Keep errors,
   effective authorization, and destructive confirmations visible.
+- Context menus follow VS Code: a check gutter on every item, shortcut hints
+  at the right, submenus for nested groups, and destructive items in the error
+  color. Shift+F10 and the Context Menu key open the menu for the focused
+  element.
 - Apply application and group defaults only when creating a new request. Do not
   rewrite an existing request or a duplicate.
