@@ -134,4 +134,35 @@ describe("JsonTreeView context menu", () => {
     expect(sep).not.toBeNull();
     wrapper.unmount();
   });
+
+  it("Collapse all collapses every container below the root; Expand all restores them", async () => {
+    const text = JSON.stringify({ a: { b: { c: 1 } }, d: [1] });
+    const wrapper = mount(JsonTreeView, {
+      attachTo: document.body,
+      props: { text, active: true },
+    });
+    await nextTick();
+    const labels = () =>
+      wrapper
+        .findAll(".tree-row")
+        .map((row) => row.text().replace(/\s+/g, " "));
+    await wrapper.findAll(".tree-row")[0].trigger("contextmenu");
+    (
+      document.body.querySelector(
+        '[data-testid="ctx-collapse-all"]',
+      ) as HTMLElement
+    ).click();
+    await nextTick();
+    expect(labels().some((label) => label.includes("c"))).toBe(false);
+    expect(labels().length).toBe(3);
+    await wrapper.findAll(".tree-row")[0].trigger("contextmenu");
+    (
+      document.body.querySelector(
+        '[data-testid="ctx-expand-all"]',
+      ) as HTMLElement
+    ).click();
+    await nextTick();
+    expect(labels().length).toBe(6);
+    wrapper.unmount();
+  });
 });

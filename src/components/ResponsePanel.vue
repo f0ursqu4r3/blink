@@ -26,7 +26,10 @@ import {
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
+  ContextMenuCheckboxItem,
+  ContextMenuShortcut,
 } from "@/components/ui/context-menu";
+import { shortcutLabel } from "@/lib/shortcut";
 import { formatBytes, type ApiResponse, type Header } from "@/lib/request";
 import { canSaveResponse, saveResponse } from "@/lib/response-body";
 import { useClipboard } from "@/composables/useClipboard";
@@ -415,24 +418,27 @@ function copyHeaderPair() {
             </ContextMenuItem>
             <template v-if="tab === 'body' && !response.binary">
               <ContextMenuSeparator />
-              <ContextMenuItem
+              <ContextMenuCheckboxItem
                 v-if="parsed"
+                v-model="pretty"
                 data-testid="ctx-toolbar-pretty"
-                @select="pretty = !pretty"
               >
-                {{ pretty ? "Pretty" : "Raw" }}
-              </ContextMenuItem>
-              <ContextMenuItem
+                Pretty
+              </ContextMenuCheckboxItem>
+              <ContextMenuCheckboxItem
+                v-model="wrap"
                 data-testid="ctx-toolbar-wrap"
-                @select="wrap = !wrap"
               >
-                Wrap
-              </ContextMenuItem>
+                Wrap lines
+              </ContextMenuCheckboxItem>
               <ContextMenuItem
                 data-testid="ctx-toolbar-find"
                 @select="toggleInspector"
               >
                 Find
+                <ContextMenuShortcut>{{
+                  shortcutLabel(["mod", "f"])
+                }}</ContextMenuShortcut>
               </ContextMenuItem>
             </template>
           </ContextMenuContent>

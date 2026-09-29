@@ -1,15 +1,15 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
-import { useVirtualizer } from '@tanstack/vue-virtual';
-import { parse } from 'lossless-json';
+import { computed, nextTick, ref, watch } from "vue";
+import { useVirtualizer } from "@tanstack/vue-virtual";
+import { parse } from "lossless-json";
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from '@/components/ui/context-menu';
-import { useClipboard } from '@/composables/useClipboard';
+} from "@/components/ui/context-menu";
+import { useClipboard } from "@/composables/useClipboard";
 
 type JsonContainer = Record<string, unknown> | unknown[];
 type JsonRow = {
@@ -28,18 +28,18 @@ const props = defineProps<{
   wrap?: boolean;
 }>();
 
-const scroll = defineModel<number>('scroll', { default: 0 });
+const scroll = defineModel<number>("scroll", { default: 0 });
 const element = ref<HTMLElement>();
 const collapsed = ref(new Set<string>());
 
 const value = computed(() => parse(props.text));
-const query = computed(() => props.filter?.trim().toLocaleLowerCase() ?? '');
+const query = computed(() => props.filter?.trim().toLocaleLowerCase() ?? "");
 
 function isContainer(value: unknown): value is JsonContainer {
   return (
     Boolean(value) &&
-    typeof value === 'object' &&
-    !('isLosslessNumber' in (value as Record<string, unknown>))
+    typeof value === "object" &&
+    !("isLosslessNumber" in (value as Record<string, unknown>))
   );
 }
 
@@ -50,10 +50,10 @@ function childEntries(value: JsonContainer): [string, unknown][] {
 }
 
 function valueLabel(value: unknown) {
-  if (value === null) return 'null';
-  if (typeof value === 'string') return JSON.stringify(value);
-  if (typeof value === 'boolean') return String(value);
-  if (typeof value === 'object' && 'isLosslessNumber' in (value as object))
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "boolean") return String(value);
+  if (typeof value === "object" && "isLosslessNumber" in (value as object))
     return String(value);
   if (Array.isArray(value)) return `[${value.length}]`;
   if (isContainer(value)) return `{${Object.keys(value).length}}`;
@@ -64,13 +64,13 @@ function addRows(
   value: unknown,
   key: string | null,
   id: string,
-  depth: number
+  depth: number,
 ): { matches: boolean; rows: JsonRow[] } {
-  const label = `${key === null ? 'root' : key} ${valueLabel(value)}`;
+  const label = `${key === null ? "root" : key} ${valueLabel(value)}`;
   const container = isContainer(value);
   const children = container
     ? childEntries(value).map(([childKey, child]) =>
-        addRows(child, childKey, `${id}/${childKey}`, depth + 1)
+        addRows(child, childKey, `${id}/${childKey}`, depth + 1),
       )
     : [];
   const matches =
@@ -91,7 +91,7 @@ function addRows(
   };
 }
 
-const rows = computed(() => addRows(value.value, null, '$', 0).rows);
+const rows = computed(() => addRows(value.value, null, "$", 0).rows);
 const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
   computed(() => ({
     count: rows.value.length,
@@ -106,13 +106,13 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
           height: target?.clientHeight || 800,
         });
       report();
-      if (!target || typeof ResizeObserver === 'undefined') return;
+      if (!target || typeof ResizeObserver === "undefined") return;
       const observer = new ResizeObserver(report);
       observer.observe(target);
       return () => observer.disconnect();
     },
     overscan: 12,
-  }))
+  })),
 );
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
 
@@ -136,13 +136,28 @@ function toggle(row: JsonRow) {
   collapsed.value = next;
 }
 
+/** Ids of every container below the root. */
+function containerIds(value: unknown, id: string): string[] {
+  if (!isContainer(value)) return [];
+  return childEntries(value).flatMap(([key, child]) => {
+    const childId = `${id}/${key}`;
+    return isContainer(child) ? [childId, ...containerIds(child, childId)] : [];
+  });
+}
+function collapseAll() {
+  collapsed.value = new Set(containerIds(value.value, "$"));
+}
+function expandAll() {
+  collapsed.value = new Set();
+}
+
 function valueClass(value: unknown) {
-  if (value === null) return 'text-info';
-  if (typeof value === 'string') return 'text-success';
-  if (typeof value === 'boolean') return 'text-info';
-  if (typeof value === 'object' && value && 'isLosslessNumber' in value)
-    return 'text-warning';
-  return 'text-muted-foreground';
+  if (value === null) return "text-info";
+  if (typeof value === "string") return "text-success";
+  if (typeof value === "boolean") return "text-info";
+  if (typeof value === "object" && value && "isLosslessNumber" in value)
+    return "text-warning";
+  return "text-muted-foreground";
 }
 // Vue can call the ref before the row is in the DOM. A detached row measures
 // 0px, and correcting that later scrolls the list down one row at a time.
@@ -215,7 +230,7 @@ function copyValue() {
                 :aria-expanded="!collapsed.has(rows[virtualRow.index].id)"
                 @click="toggle(rows[virtualRow.index])"
               >
-                {{ collapsed.has(rows[virtualRow.index].id) ? '›' : '⌄' }}
+                {{ collapsed.has(rows[virtualRow.index].id) ? "›" : "⌄" }}
               </button>
               <span
                 v-else
@@ -247,17 +262,26 @@ function copyValue() {
         <ContextMenuItem data-testid="ctx-copy-value" @select="copyValue">
           Copy value
         </ContextMenuItem>
-        <template v-if="contextRow?.container">
-          <ContextMenuSeparator data-testid="ctx-separator" />
-          <ContextMenuItem
-            data-testid="ctx-toggle"
-            @select="contextRow && toggle(contextRow)"
-          >
-            {{
-              contextRow && collapsed.has(contextRow.id) ? 'Expand' : 'Collapse'
-            }}
-          </ContextMenuItem>
-        </template>
+        <ContextMenuSeparator data-testid="ctx-separator" />
+        <ContextMenuItem
+          v-if="contextRow?.container"
+          data-testid="ctx-toggle"
+          @select="contextRow && toggle(contextRow)"
+        >
+          {{
+            contextRow && collapsed.has(contextRow.id) ? "Expand" : "Collapse"
+          }}
+        </ContextMenuItem>
+        <ContextMenuItem
+          data-testid="ctx-expand-all"
+          :disabled="!collapsed.size"
+          @select="expandAll"
+        >
+          Expand all
+        </ContextMenuItem>
+        <ContextMenuItem data-testid="ctx-collapse-all" @select="collapseAll">
+          Collapse all
+        </ContextMenuItem>
       </ContextMenuContent>
     </ContextMenu>
     <p v-if="!rows.length" class="p-4 text-muted-foreground font-sans text-xs">

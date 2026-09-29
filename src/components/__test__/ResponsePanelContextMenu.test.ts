@@ -105,6 +105,33 @@ describe("ResponsePanel context menu – response toolbar", () => {
   });
 });
 
+describe("ResponsePanel context menu – view checks", () => {
+  it("Pretty and Wrap lines are checkbox items that show their state", async () => {
+    const wrapper = makePanel();
+    await wrapper.get(".response-toolbar").trigger("contextmenu");
+    const pretty = document.body.querySelector(
+      "[data-testid='ctx-toolbar-pretty']",
+    )!;
+    const wrap = document.body.querySelector(
+      "[data-testid='ctx-toolbar-wrap']",
+    )!;
+    expect(pretty.getAttribute("role")).toBe("menuitemcheckbox");
+    expect(pretty.getAttribute("aria-checked")).toBe("true");
+    expect(wrap.getAttribute("role")).toBe("menuitemcheckbox");
+    expect(wrap.textContent?.trim()).toBe("Wrap lines");
+  });
+
+  it("Find shows its shortcut", async () => {
+    const wrapper = makePanel();
+    await wrapper.get(".response-toolbar").trigger("contextmenu");
+    expect(
+      document.body.querySelector(
+        "[data-testid='ctx-toolbar-find'] [data-slot='context-menu-shortcut']",
+      ),
+    ).not.toBeNull();
+  });
+});
+
 describe("ResponsePanel context menu – JSON rows", () => {
   it("right-clicking a JSON row opens its value actions", async () => {
     const wrapper = makePanel();
