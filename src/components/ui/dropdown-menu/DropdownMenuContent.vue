@@ -1,10 +1,13 @@
 <script setup lang="ts">
-import type { ContextMenuContentEmits, ContextMenuContentProps } from "reka-ui";
+import type {
+  DropdownMenuContentEmits,
+  DropdownMenuContentProps,
+} from "reka-ui";
 import type { HTMLAttributes } from "vue";
 import { reactiveOmit } from "@vueuse/core";
 import {
-  ContextMenuContent,
-  ContextMenuPortal,
+  DropdownMenuContent,
+  DropdownMenuPortal,
   useForwardPropsEmits,
 } from "reka-ui";
 import { cn } from "@/lib/utils";
@@ -14,10 +17,13 @@ defineOptions({
   inheritAttrs: false,
 });
 
-const props = defineProps<
-  ContextMenuContentProps & { class?: HTMLAttributes["class"] }
->();
-const emits = defineEmits<ContextMenuContentEmits>();
+const props = withDefaults(
+  defineProps<DropdownMenuContentProps & { class?: HTMLAttributes["class"] }>(),
+  {
+    sideOffset: 4,
+  },
+);
+const emits = defineEmits<DropdownMenuContentEmits>();
 
 const delegatedProps = reactiveOmit(props, "class");
 
@@ -25,19 +31,20 @@ const forwarded = useForwardPropsEmits(delegatedProps, emits);
 </script>
 
 <template>
-  <ContextMenuPortal>
-    <ContextMenuContent
-      data-slot="context-menu-content"
+  <DropdownMenuPortal>
+    <DropdownMenuContent
+      data-slot="dropdown-menu-content"
       data-surface="context-menu"
       v-bind="{ ...$attrs, ...forwarded }"
       :class="
         cn(
-          menuContent + ' max-h-(--reka-context-menu-content-available-height)',
+          menuContent +
+            ' max-h-(--reka-dropdown-menu-content-available-height)',
           props.class,
         )
       "
     >
       <slot />
-    </ContextMenuContent>
-  </ContextMenuPortal>
+    </DropdownMenuContent>
+  </DropdownMenuPortal>
 </template>

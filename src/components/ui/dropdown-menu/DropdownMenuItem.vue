@@ -1,14 +1,14 @@
 <script setup lang="ts">
-import type { ContextMenuItemEmits, ContextMenuItemProps } from "reka-ui";
+import type { DropdownMenuItemProps } from "reka-ui";
 import type { HTMLAttributes } from "vue";
 import { reactiveOmit } from "@vueuse/core";
-import { ContextMenuItem, useForwardPropsEmits } from "reka-ui";
+import { DropdownMenuItem, useForwardProps } from "reka-ui";
 import { cn } from "@/lib/utils";
 import { menuItem } from "../menu-classes";
 
 const props = withDefaults(
   defineProps<
-    ContextMenuItemProps & {
+    DropdownMenuItemProps & {
       class?: HTMLAttributes["class"];
       variant?: "default" | "destructive";
     }
@@ -17,20 +17,19 @@ const props = withDefaults(
     variant: "default",
   },
 );
-const emits = defineEmits<ContextMenuItemEmits>();
 
 const delegatedProps = reactiveOmit(props, "variant", "class");
 
-const forwarded = useForwardPropsEmits(delegatedProps, emits);
+const forwardedProps = useForwardProps(delegatedProps);
 </script>
 
 <template>
-  <ContextMenuItem
-    data-slot="context-menu-item"
+  <DropdownMenuItem
+    data-slot="dropdown-menu-item"
     :data-variant="variant"
-    v-bind="forwarded"
+    v-bind="forwardedProps"
     :class="cn(menuItem, props.class)"
   >
     <slot />
-  </ContextMenuItem>
+  </DropdownMenuItem>
 </template>

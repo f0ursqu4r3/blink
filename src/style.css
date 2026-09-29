@@ -7,6 +7,8 @@
   --muted: oklch(0.2 0.006 100);
   --muted-foreground: oklch(0.66 0.012 95);
   --secondary: oklch(0.24 0.008 100);
+  --popover: var(--secondary);
+  --popover-foreground: var(--foreground);
   --accent: oklch(0.29 0.01 100);
   --primary: oklch(0.82 0.145 85);
   --primary-foreground: oklch(0.2 0.016 85);
@@ -34,6 +36,8 @@
   --foreground: var(--term-fg);
   --muted: color-mix(in oklch, var(--term-fg) 5%, var(--term-bg));
   --secondary: color-mix(in oklch, var(--term-fg) 9%, var(--term-bg));
+  --popover: var(--secondary);
+  --popover-foreground: var(--foreground);
   --accent: color-mix(in oklch, var(--term-fg) 14%, var(--term-bg));
   --border: color-mix(in oklch, var(--term-fg) 18%, var(--term-bg));
   --input: color-mix(in oklch, var(--term-fg) 28%, var(--term-bg));
@@ -60,6 +64,9 @@
   --color-muted: var(--muted);
   --color-muted-foreground: var(--muted-foreground);
   --color-secondary: var(--secondary);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --shadow-menu: 0 4px 12px color-mix(in oklch, var(--frame) 60%, transparent);
   --color-accent: var(--accent);
   --color-primary: var(--primary);
   --color-primary-foreground: var(--primary-foreground);
@@ -167,8 +174,16 @@
   }
 }
 
-[data-surface="context-menu"] {
-  background-color: var(--secondary) !important;
+/* Menus fade in like VS Code: no scale, no slide, no exit animation. */
+@media (prefers-reduced-motion: no-preference) {
+  [data-surface="context-menu"][data-state="open"] {
+    animation: menu-fade-in 100ms ease-out;
+  }
+}
+@keyframes menu-fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
 /* HTTP method colors. Elements set data-method (or data-http-method, where
