@@ -31,6 +31,7 @@ vi.mock("@/lib/workspace-storage", () => ({
 }));
 
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
+import { createSession } from "@/lib/session";
 
 let scope: EffectScope;
 let state: ReturnType<typeof useWorkspaceState>;
@@ -180,5 +181,43 @@ describe("useWorkspaceState – narrow setters", () => {
       defs.key = "mutated";
       expect(state.globalDefinitions.value.key).toBe("val");
     });
+  });
+});
+
+describe("closeTabs", () => {
+  function openFour() {
+    const ids = [0, 1, 2, 3].map(() => {
+      const session = createSession();
+      state.sessions.value.push(session);
+      return session.id;
+    });
+    state.openIds.value = [...ids];
+    return ids;
+  }
+
+  it("keeps the active tab when it stays open", () => {
+    const [a, b, c, d] = openFour();
+    state.activeId.value = b;
+    state.closeTabs([a, c]);
+    expect(state.openIds.value).toEqual([b, d]);
+    expect(state.activeId.value).toBe(b);
+  });
+
+  it("moves the active tab to the next open tab at the same position", () => {
+    const [a, b, c, d] = openFour();
+    state.activeId.value = b;
+    state.closeTabs([b, c]);
+    expect(state.openIds.value).toEqual([a, d]);
+    expect(state.activeId.value).toBe(d);
+  });
+
+  it("clears the active tab when all tabs close, and keeps the requests", () => {
+    const ids = openFour();
+    const count = state.sessions.value.length;
+    state.activeId.value = ids[0];
+    state.closeTabs(ids);
+    expect(state.openIds.value).toEqual([]);
+    expect(state.activeId.value).toBeNull();
+    expect(state.sessions.value.length).toBe(count);
   });
 });

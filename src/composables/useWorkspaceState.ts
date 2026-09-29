@@ -255,6 +255,23 @@ export function useWorkspaceState() {
         openIds.value[Math.min(index, openIds.value.length - 1)] ?? null;
   }
   /**
+   * Close several tabs. The active tab stays active when it stays open;
+   * otherwise the next open tab at its position becomes active.
+   */
+  function closeTabs(ids: number[]) {
+    const closing = new Set(ids);
+    const before = openIds.value;
+    const remaining = before.filter((id) => !closing.has(id));
+    if (remaining.length === before.length) return;
+    openIds.value = remaining;
+    if (activeId.value === null || !closing.has(activeId.value)) return;
+    const position = before
+      .slice(0, before.indexOf(activeId.value))
+      .filter((id) => !closing.has(id)).length;
+    activeId.value =
+      remaining[Math.min(position, remaining.length - 1)] ?? null;
+  }
+  /**
    * Open requests as tabs before `beforeId`, or at the end. Open requests
    * move there. The first request becomes active.
    */
@@ -452,6 +469,7 @@ export function useWorkspaceState() {
     quitWithoutSaving,
     openRequest,
     closeTab,
+    closeTabs,
     openRequests,
     deleteRequest,
     addGroup,
