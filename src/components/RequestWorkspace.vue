@@ -637,6 +637,8 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :stale="stale"
         :request-url="sentUrl || session.draft.url"
         :timeout-seconds="transport?.timeoutSeconds"
+        :history="session.history"
+        @clear-history="session.history = []"
       />
     </div>
   </section>

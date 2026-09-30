@@ -1,4 +1,5 @@
 import { createDraft, pair, type Draft, type ApiResponse } from "./request";
+import type { HistoryEntry } from "./history";
 import { resolveTokenDefinitions } from "./authorization";
 import type { RequestGroup } from "./groups";
 import { resolveForDisplay } from "./token-hints";
@@ -13,6 +14,8 @@ export type RequestSession = {
   elapsed: number;
   sentFingerprint: string;
   view: RequestView;
+  /** Past sends, newest first. */
+  history?: HistoryEntry[];
   /** The request changed since the shown response was sent. Not saved. */
   stale?: boolean;
 };

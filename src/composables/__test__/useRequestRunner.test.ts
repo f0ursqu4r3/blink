@@ -24,6 +24,7 @@ import { defaultTransportOptions } from "@/lib/transport-options";
 
 // Mock transport so send() doesn't make real network calls
 vi.mock("@/lib/transport", () => ({
+  CANCELED: "Request canceled.",
   sendRequest: vi.fn(() =>
     Promise.resolve({
       status: 200,
@@ -320,5 +321,34 @@ describe("transport options and body release", () => {
     const calls = vi.mocked(sendRequest).mock.calls;
     expect(calls[calls.length - 1][0].url).toBe("https://example.test/a");
     expect(stale.value).toBe(true);
+  });
+});
+
+describe("history", () => {
+  it("records each send, newest first, but not a cancel", async () => {
+    const session = reactive(createSession());
+    session.draft.url = "https://example.test/a";
+    const scope = effectScope();
+    const runner = scope.run(() => useRequestRunner(session))!;
+    await runner.send();
+    await runner.send();
+    expect(session.history?.map((entry) => entry.id)).toEqual([2, 1]);
+    expect(session.history?.[0]).toMatchObject({
+      method: "GET",
+      url: "https://example.test/a",
+      status: 200,
+    });
+    vi.mocked(sendRequest).mockRejectedValueOnce(
+      new Error("Request canceled."),
+    );
+    await runner.send();
+    vi.mocked(sendRequest).mockRejectedValueOnce(new Error("Offline"));
+    await runner.send();
+    expect(session.history?.map((entry) => entry.error)).toEqual([
+      "Offline",
+      undefined,
+      undefined,
+    ]);
+    scope.stop();
   });
 });

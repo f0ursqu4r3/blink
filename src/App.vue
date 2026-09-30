@@ -338,6 +338,7 @@ const commands = computed<Command[]>(() => {
       disabled: !response || response.binary,
     },
     { id: "copy-response", label: "Response: Copy", disabled: !response },
+    { id: "toggle-history", label: "Response: Toggle history", disabled: none },
     {
       id: "save-response",
       label: "Response: Save body…",
@@ -403,6 +404,7 @@ function runCommand(id: string) {
   else if (id === "reopen-tab") void reopenTab();
   else if (id === "find") response?.find();
   else if (id === "copy-response") response?.copyResult();
+  else if (id === "toggle-history") response?.toggleHistory();
   else if (id === "save-response") void response?.saveBody();
   else if (id === "toggle-wrap") response?.toggleWrap();
   else if (id === "toggle-pretty") response?.togglePretty();

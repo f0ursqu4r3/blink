@@ -9,6 +9,7 @@ import {
   type RequestSession,
 } from "./session";
 import { reserveGroupId, type RequestGroup } from "./groups";
+import { HISTORY_LIMIT } from "./history";
 import {
   defaultPreferences,
   normalizePreferences,
@@ -168,16 +169,46 @@ function validateResponse(input: unknown) {
       (response.finalUrl === undefined || text(response.finalUrl)) &&
       (response.redirectCount === undefined || numeric(response.redirectCount)),
   );
-  if (response.timing !== undefined) {
-    const timing = record(response.timing);
-    check(numeric(timing.waitMs) && numeric(timing.downloadMs));
-    for (const key of ["dnsMs", "connectMs", "tlsMs"])
-      check(timing[key] === undefined || numeric(timing[key]));
-  }
+  if (response.timing !== undefined) validateTiming(response.timing);
   for (const item of array(response.headers, 10_000)) {
     const header = record(item);
     check(text(header.key) && text(header.value));
   }
+}
+function validateHistory(input: unknown) {
+  const ids = new Set();
+  for (const item of array(input, HISTORY_LIMIT)) {
+    const entry = record(item);
+    check(id(entry.id) && !ids.has(entry.id));
+    ids.add(entry.id);
+    check(
+      numeric(entry.sentAt) &&
+        isMethod(entry.method) &&
+        text(entry.url) &&
+        numeric(entry.durationMs) &&
+        numeric(entry.sizeBytes) &&
+        text(entry.body) &&
+        (entry.error === undefined || text(entry.error)) &&
+        (entry.status === undefined ||
+          (Number.isInteger(entry.status) &&
+            Number(entry.status) >= 100 &&
+            Number(entry.status) <= 599)) &&
+        (entry.statusText === undefined || text(entry.statusText)) &&
+        (entry.bodyOmitted === undefined ||
+          typeof entry.bodyOmitted === "boolean"),
+    );
+    for (const header of array(entry.headers, 10_000)) {
+      const pair = record(header);
+      check(text(pair.key) && text(pair.value));
+    }
+    if (entry.timing !== undefined) validateTiming(entry.timing);
+  }
+}
+function validateTiming(input: unknown) {
+  const timing = record(input);
+  check(numeric(timing.waitMs) && numeric(timing.downloadMs));
+  for (const key of ["dnsMs", "connectMs", "tlsMs"])
+    check(timing[key] === undefined || numeric(timing[key]));
 }
 function validateGroups(input: unknown, version: number): RequestGroup[] {
   const groups = array(input, MAX_GROUPS).map((value) => {
@@ -254,6 +285,7 @@ function parseSnapshot(content: string): Snapshot {
     ids.add(tab.id);
     validateDraft(tab.draft, version);
     validateResponse(tab.response);
+    if (tab.history !== undefined) validateHistory(tab.history);
     check(tab.groupId === undefined || tab.groupId === null || id(tab.groupId));
     check(
       text(tab.error) &&
@@ -348,6 +380,7 @@ export function encodeWorkspace(
         sentFingerprint,
         view,
         busy,
+        history,
       }) => ({
         id,
         groupId,
@@ -363,6 +396,7 @@ export function encodeWorkspace(
         error,
         sentFingerprint,
         view,
+        ...(history?.length ? { history } : {}),
         interrupted: busy,
       }),
     ),

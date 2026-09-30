@@ -21,6 +21,7 @@ import {
   ChevronUp,
   ChevronDown,
   ListFilter,
+  History,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import {
@@ -43,6 +44,8 @@ import CodeView from "./CodeView.vue";
 import JsonTreeView from "./JsonTreeView.vue";
 import HelpTooltip from "./HelpTooltip.vue";
 import TimingCard from "./TimingCard.vue";
+import HistoryView from "./HistoryView.vue";
+import type { HistoryEntry } from "@/lib/history";
 const props = withDefaults(
   defineProps<{
     response: ApiResponse | null;
@@ -53,10 +56,13 @@ const props = withDefaults(
     active?: boolean;
     requestUrl?: string;
     timeoutSeconds?: number;
+    history?: HistoryEntry[];
   }>(),
   { timeoutSeconds: 30 },
 );
+const emit = defineEmits<{ clearHistory: [] }>();
 const headingId = useId();
+const historyOpen = ref(false);
 const view = defineModel<RequestView>("view", { default: createView });
 const tab = computed({
   get: () => view.value.responseTab,
@@ -192,6 +198,12 @@ const tone = computed(() =>
         : "success",
 );
 watch(
+  () => props.busy,
+  (busy) => {
+    if (busy) historyOpen.value = false;
+  },
+);
+watch(
   () => props.response,
   () => {
     tab.value = "body";
@@ -267,6 +279,7 @@ defineExpose({
   copyResult,
   saveBody,
   toggleWrap: () => (wrap.value = !wrap.value),
+  toggleHistory: () => (historyOpen.value = !historyOpen.value),
   togglePretty: () => (pretty.value = !pretty.value),
 });
 
@@ -300,12 +313,12 @@ function copyHeaderPair() {
     :aria-busy="busy"
   >
     <header
-      class="h-9 shrink-0 px-4 flex items-center justify-between border-b border-border bg-muted font-mono text-[0.625rem] tracking-[0.12em]"
+      class="h-9 shrink-0 px-4 flex items-center border-b border-border bg-muted font-mono text-[0.625rem] tracking-[0.12em]"
     >
       <h2 :id="headingId" class="font-semibold text-[0.6875rem] uppercase">
         Response
       </h2>
-      <span class="text-muted-foreground" role="status">{{
+      <span class="ml-auto text-muted-foreground" role="status">{{
         busy
           ? "RECEIVING"
           : error
@@ -314,8 +327,27 @@ function copyHeaderPair() {
               ? "RECEIVED"
               : "STANDBY"
       }}</span>
+      <Button
+        variant="ghost"
+        class="-mr-2 ml-2 h-6 gap-1 px-1.5 font-mono text-[0.625rem] tracking-normal"
+        data-history-toggle
+        :aria-pressed="historyOpen"
+        aria-label="History"
+        title="Request history"
+        @click="historyOpen = !historyOpen"
+      >
+        <History :size="13" aria-hidden="true" />
+        <span v-if="history?.length" class="tabular-nums">{{
+          history.length
+        }}</span>
+      </Button>
     </header>
-    <template v-if="response && !busy && !error">
+    <HistoryView
+      v-if="historyOpen"
+      :history="history ?? []"
+      @clear="emit('clearHistory')"
+    />
+    <template v-else-if="response && !busy && !error">
       <p
         v-if="stale"
         class="py-1.5 px-3.5 border-b border-border text-warning font-mono text-[0.625rem]"

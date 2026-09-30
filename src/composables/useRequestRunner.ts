@@ -8,7 +8,8 @@ import {
 import { buildRequest, toCurl } from "@/lib/request";
 import type { ResolvedRequestContext } from "@/lib/authorization";
 import { requestFingerprint, type RequestSession } from "@/lib/session";
-import { sendRequest } from "@/lib/transport";
+import { CANCELED, sendRequest } from "@/lib/transport";
+import { addHistory, historyEntry, nextHistoryId } from "@/lib/history";
 import { releaseResponse } from "@/lib/response-body";
 import {
   defaultTransportOptions,
@@ -97,6 +98,7 @@ export function useRequestRunner(
     // Persist the resolved-request fingerprint so stale can compare accurately.
     session.sentFingerprint = requestFingerprint(request, authType);
     const start = performance.now();
+    const sentAt = Date.now();
     clock = setInterval(() => {
       session.elapsed = performance.now() - start;
     }, 100);
@@ -109,9 +111,23 @@ export function useRequestRunner(
       // A result for an unmounted view has no owner, so free its body.
       if (alive) session.response = result;
       else releaseResponse(result);
+      session.history = addHistory(
+        session.history,
+        historyEntry(nextHistoryId(session.history), sentAt, request, {
+          response: result,
+        }),
+      );
     } catch (cause) {
-      if (alive)
-        session.error = cause instanceof Error ? cause.message : String(cause);
+      const message = cause instanceof Error ? cause.message : String(cause);
+      if (alive) session.error = message;
+      if (message !== CANCELED)
+        session.history = addHistory(
+          session.history,
+          historyEntry(nextHistoryId(session.history), sentAt, request, {
+            error: message,
+            durationMs: Math.round(performance.now() - start),
+          }),
+        );
     } finally {
       controller = undefined;
       clearInterval(clock);
