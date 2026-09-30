@@ -46,6 +46,7 @@ import HelpTooltip from "./HelpTooltip.vue";
 import TimingCard from "./TimingCard.vue";
 import HistoryView from "./HistoryView.vue";
 import type { HistoryEntry } from "@/lib/history";
+import type { AssertionResult } from "@/lib/checks";
 const props = withDefaults(
   defineProps<{
     response: ApiResponse | null;
@@ -57,10 +58,22 @@ const props = withDefaults(
     requestUrl?: string;
     timeoutSeconds?: number;
     history?: HistoryEntry[];
+    testResults?: AssertionResult[];
+    captureErrors?: string[];
+    /** The request has assertions, so the Tests tab shows. */
+    hasChecks?: boolean;
   }>(),
   { timeoutSeconds: 30 },
 );
-const emit = defineEmits<{ clearHistory: [] }>();
+const emit = defineEmits<{ clearHistory: []; recheck: [] }>();
+const passed = computed(
+  () => props.testResults?.filter((result) => result.pass).length ?? 0,
+);
+const showTests = computed(
+  () =>
+    Boolean(props.hasChecks || props.testResults?.length) ||
+    Boolean(props.captureErrors?.length),
+);
 const headingId = useId();
 const historyOpen = ref(false);
 const view = defineModel<RequestView>("view", { default: createView });
@@ -206,7 +219,8 @@ watch(
 watch(
   () => props.response,
   () => {
-    tab.value = "body";
+    // Stay on Tests across sends, so a rerun shows its results.
+    if (tab.value !== "tests" || !showTests.value) tab.value = "body";
     view.value.responseScroll = 0;
     search.value = "";
     inspectorVisible.value = false;
@@ -407,6 +421,26 @@ function copyHeaderPair() {
                   Headers
                   <span class="ml-1 font-mono text-[0.625rem]">
                     {{ response.headers.length }}
+                  </span>
+                </TabsTrigger>
+                <TabsTrigger
+                  v-if="showTests"
+                  value="tests"
+                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-foreground data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
+                  data-response-tests
+                >
+                  Tests
+                  <span
+                    v-if="testResults?.length"
+                    class="ml-1 font-mono text-[0.625rem]"
+                    :class="
+                      passed === testResults.length
+                        ? 'text-success'
+                        : 'text-destructive'
+                    "
+                    data-tests-summary
+                  >
+                    {{ passed }}/{{ testResults.length }}
                   </span>
                 </TabsTrigger>
               </TabsList>
@@ -705,6 +739,63 @@ function copyHeaderPair() {
           >
             Empty response body.
           </p>
+        </TabsContent>
+        <TabsContent value="tests" class="flex-1 min-h-0 overflow-auto">
+          <div
+            class="flex h-8 items-center justify-between border-b border-border px-4 font-mono text-[0.625rem] tracking-[0.1em] text-muted-foreground"
+          >
+            <span v-if="testResults?.length"
+              >{{ passed }} OF {{ testResults.length }} PASSED</span
+            >
+            <span v-else>NO RESULTS</span>
+            <Button
+              variant="ghost"
+              class="h-6 px-2 font-sans tracking-normal"
+              data-recheck
+              @click="emit('recheck')"
+            >
+              Run again
+            </Button>
+          </div>
+          <ul role="list" data-test-results>
+            <li
+              v-for="result in testResults"
+              :key="result.id"
+              class="flex items-start gap-2.5 border-b border-border px-4 py-2 font-mono text-[0.6875rem]"
+              :data-test-result="result.pass ? 'pass' : 'fail'"
+            >
+              <span
+                class="w-8 shrink-0 font-semibold"
+                :class="result.pass ? 'text-success' : 'text-destructive'"
+                >{{ result.pass ? "PASS" : "FAIL" }}</span
+              >
+              <span class="min-w-0 flex-1">
+                <span class="block wrap-anywhere">{{
+                  result.description
+                }}</span>
+                <span
+                  v-if="!result.pass"
+                  class="block text-muted-foreground wrap-anywhere"
+                  >Actual: {{ result.actual }}</span
+                >
+              </span>
+            </li>
+          </ul>
+          <p
+            v-if="!testResults?.length"
+            class="p-4 text-xs text-muted-foreground"
+          >
+            Add assertions in the request Tests tab, then send or run again.
+          </p>
+          <div
+            v-if="captureErrors?.length"
+            role="alert"
+            class="border-t border-border px-4 py-2 font-mono text-[0.6875rem] text-warning"
+          >
+            <p v-for="message in captureErrors" :key="message">
+              Capture {{ message }}
+            </p>
+          </div>
         </TabsContent>
         <TabsContent value="headers" class="flex-1 min-h-0 overflow-auto">
           <ContextMenu>

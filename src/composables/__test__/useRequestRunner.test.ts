@@ -352,3 +352,41 @@ describe("history", () => {
     scope.stop();
   });
 });
+
+describe("checks", () => {
+  it("runs assertions and passes captures to the hook", async () => {
+    const { createAssertion, createCapture } = await import("@/lib/checks");
+    const session = reactive(createSession());
+    session.draft.url = "https://example.test/a";
+    session.draft.assertions = [
+      createAssertion("status", "equals", "200"),
+      createAssertion("json", "equals", "abc", ".token"),
+    ];
+    session.draft.captures = [createCapture("token", "json", ".token")];
+    vi.mocked(sendRequest).mockResolvedValueOnce({
+      status: 200,
+      statusText: "OK",
+      durationMs: 5,
+      sizeBytes: 15,
+      headers: [],
+      body: '{"token":"abc"}',
+    });
+    const captured: Record<string, string>[] = [];
+    const scope = effectScope();
+    const runner = scope.run(() =>
+      useRequestRunner(session, undefined, undefined, {
+        onCapture: (values) => captured.push(values),
+      }),
+    )!;
+    await runner.send();
+    expect(session.testResults?.map((result) => result.pass)).toEqual([
+      true,
+      true,
+    ]);
+    expect(captured).toEqual([{ token: "abc" }]);
+    session.draft.assertions[0].expected = "201";
+    await runner.recheck();
+    expect(session.testResults?.[0].pass).toBe(false);
+    scope.stop();
+  });
+});

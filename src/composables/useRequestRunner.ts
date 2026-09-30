@@ -10,6 +10,7 @@ import type { ResolvedRequestContext } from "@/lib/authorization";
 import { requestFingerprint, type RequestSession } from "@/lib/session";
 import { CANCELED, sendRequest } from "@/lib/transport";
 import { addHistory, historyEntry, nextHistoryId } from "@/lib/history";
+import { runAssertions, runCaptures } from "@/lib/checks";
 import { releaseResponse } from "@/lib/response-body";
 import {
   defaultTransportOptions,
@@ -40,6 +41,10 @@ export function useRequestRunner(
   session: RequestSession,
   contextSource?: MaybeRefOrGetter<ResolvedRequestContext | undefined>,
   optionsSource?: MaybeRefOrGetter<TransportOptions | undefined>,
+  hooks: {
+    /** Receives token values from the request captures after a send. */
+    onCapture?: (values: Record<string, string>) => void;
+  } = {},
 ) {
   let alive = true;
   let clock: ReturnType<typeof setInterval> | undefined;
@@ -93,6 +98,8 @@ export function useRequestRunner(
     session.error = "";
     releaseResponse(session.response);
     session.response = null;
+    session.testResults = undefined;
+    session.captureErrors = undefined;
     session.elapsed = 0;
     sentUrl.value = request.url;
     // Persist the resolved-request fingerprint so stale can compare accurately.
@@ -117,6 +124,7 @@ export function useRequestRunner(
           response: result,
         }),
       );
+      if (alive) await check(result);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
       if (alive) session.error = message;
@@ -135,6 +143,18 @@ export function useRequestRunner(
     }
   }
 
+  /** Run the assertions and captures of the draft on `result`. */
+  async function check(result: import("@/lib/request").ApiResponse) {
+    const { assertions, captures } = session.draft;
+    if (assertions?.some((row) => row.enabled))
+      session.testResults = await runAssertions(assertions, result);
+    if (captures?.some((row) => row.enabled)) {
+      const { values, errors } = await runCaptures(captures, result);
+      session.captureErrors = errors.length ? errors : undefined;
+      if (Object.keys(values).length) hooks.onCapture?.(values);
+    }
+  }
+
   /** Stop the running send. Its error reads "Request canceled.". */
   function cancel() {
     controller?.abort();
@@ -145,5 +165,10 @@ export function useRequestRunner(
     clearInterval(clock);
   });
 
-  return { prepared, curl, stale, send, cancel, sentUrl };
+  /** Run the checks again on the shown response. */
+  async function recheck() {
+    if (session.response && !session.busy) await check(session.response);
+  }
+
+  return { prepared, curl, stale, send, cancel, sentUrl, recheck };
 }

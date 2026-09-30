@@ -48,7 +48,10 @@ const props = defineProps<{
   /** Language in the code panel. */
   codeTarget?: CodeTarget;
 }>();
-const emit = defineEmits<{ "update:codeTarget": [target: CodeTarget] }>();
+const emit = defineEmits<{
+  "update:codeTarget": [target: CodeTarget];
+  capture: [values: Record<string, string>];
+}>();
 
 const resolvedCtx = computed(() =>
   buildResolvedRequestContext(
@@ -92,11 +95,10 @@ const inheritedSource = computed(() => {
   return undefined;
 });
 
-const { prepared, curl, stale, send, cancel, sentUrl } = useRequestRunner(
-  props.session,
-  resolvedCtx,
-  () => props.transport,
-);
+const { prepared, curl, stale, send, cancel, sentUrl, recheck } =
+  useRequestRunner(props.session, resolvedCtx, () => props.transport, {
+    onCapture: (values) => emit("capture", values),
+  });
 watch(stale, (value) => (props.session.stale = value), { immediate: true });
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
@@ -638,6 +640,10 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :request-url="sentUrl || session.draft.url"
         :timeout-seconds="transport?.timeoutSeconds"
         :history="session.history"
+        :test-results="session.testResults"
+        :capture-errors="session.captureErrors"
+        :has-checks="Boolean(session.draft.assertions?.length)"
+        @recheck="recheck"
         @clear-history="session.history = []"
       />
     </div>

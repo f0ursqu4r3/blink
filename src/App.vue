@@ -771,6 +771,10 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           :layout="preferences.paneLayout"
           :ref="(handle) => setWorkspace(session.id, handle)"
           :code-target="preferences.codeTarget"
+          @capture="
+            (values) =>
+              setGlobalDefinitions({ ...globalDefinitions, ...values })
+          "
           @update:code-target="
             (codeTarget) => setPreferences({ ...preferences, codeTarget })
           "

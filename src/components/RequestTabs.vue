@@ -318,6 +318,16 @@ function navigate(event: KeyboardEvent, index: number) {
                     {{ sessionStatus(session) }}
                   </span>
                   <span
+                    v-if="
+                      !session.busy &&
+                      session.testResults?.some((result) => !result.pass)
+                    "
+                    class="text-[0.5625rem] text-destructive"
+                    data-tab-tests-failed
+                    :title="`${session.testResults.filter((result) => !result.pass).length} failed tests`"
+                    >✕</span
+                  >
+                  <span
                     v-if="session.stale && !session.busy"
                     class="size-1.5 shrink-0 rounded-full bg-foreground"
                     data-tab-edited

@@ -10,6 +10,7 @@ import {
 } from "./session";
 import { reserveGroupId, type RequestGroup } from "./groups";
 import { HISTORY_LIMIT } from "./history";
+import { isCheckOperator, isCheckSource, reserveCheckId } from "./checks";
 import {
   defaultPreferences,
   normalizePreferences,
@@ -130,6 +131,30 @@ function validateDraft(input: unknown, version: number) {
   if (version >= 3 && draft.localAuth !== undefined) {
     check(validateAuthorizationConfig(draft.localAuth));
   }
+  if (draft.assertions !== undefined)
+    for (const row of array(draft.assertions, 500)) {
+      const entry = record(row);
+      check(
+        id(entry.id) &&
+          typeof entry.enabled === "boolean" &&
+          isCheckSource(entry.source) &&
+          isCheckOperator(entry.operator) &&
+          text(entry.path) &&
+          text(entry.expected),
+      );
+    }
+  if (draft.captures !== undefined)
+    for (const row of array(draft.captures, 500)) {
+      const entry = record(row);
+      check(
+        id(entry.id) &&
+          typeof entry.enabled === "boolean" &&
+          isCheckSource(entry.source) &&
+          !["time", "size"].includes(entry.source as string) &&
+          text(entry.name) &&
+          text(entry.path),
+      );
+    }
   for (const key of ["query", "headers", "form"]) {
     if (key === "form" && draft.form === undefined) continue;
     const ids = new Set();
@@ -294,9 +319,11 @@ function parseSnapshot(content: string): Snapshot {
     );
     const view = record(tab.view);
     check(
-      ["query", "headers", "body", "auth"].includes(view.requestTab as string),
+      ["query", "headers", "body", "auth", "tests"].includes(
+        view.requestTab as string,
+      ),
     );
-    check(["body", "headers"].includes(view.responseTab as string));
+    check(["body", "headers", "tests"].includes(view.responseTab as string));
     check(
       typeof view.pretty === "boolean" &&
         typeof view.wrap === "boolean" &&
@@ -436,6 +463,10 @@ export function decodeWorkspace(content: string) {
       ...session.draft.headers,
       ...(session.draft.form ?? []),
     ].forEach((row) => reservePairId(row.id));
+    [
+      ...(session.draft.assertions ?? []),
+      ...(session.draft.captures ?? []),
+    ].forEach((row) => reserveCheckId(row.id));
     if (session.response) delete session.response.bodyId;
   }
   const groups =

@@ -30,6 +30,7 @@ import {
   ContextMenuSubTrigger,
 } from "@/components/ui/context-menu";
 import KeyValueEditor from "./KeyValueEditor.vue";
+import ChecksEditor from "./ChecksEditor.vue";
 import CodeEditor from "./CodeEditor.vue";
 import TokenInput from "./TokenInput.vue";
 import {
@@ -244,6 +245,13 @@ const tabs = computed(() => [
     count: bodyAllowed.value && draft.value.bodyMode !== "none" ? 1 : 0,
   },
   { id: "auth", label: "Auth", count: authBadgeCount.value },
+  {
+    id: "tests",
+    label: "Tests",
+    count:
+      (draft.value.assertions?.filter((row) => row.enabled).length ?? 0) +
+      (draft.value.captures?.filter((row) => row.enabled).length ?? 0),
+  },
 ]);
 const formattable = computed(
   () => draft.value.bodyMode === "json" || draft.value.bodyMode === "graphql",
@@ -823,6 +831,17 @@ function clearBody() {
           <KeyRound :size="13" aria-hidden="true" />Credentials are saved
           locally in plaintext. Copy cURL includes them.
         </p>
+      </TabsContent>
+      <TabsContent
+        value="tests"
+        class="flex-1 min-h-0 overflow-auto -outline-offset-2"
+      >
+        <ChecksEditor
+          :assertions="draft.assertions ?? []"
+          :captures="draft.captures ?? []"
+          @update:assertions="draft.assertions = $event"
+          @update:captures="draft.captures = $event"
+        />
       </TabsContent>
     </TabsRoot>
     <footer

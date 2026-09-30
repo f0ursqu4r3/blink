@@ -1,5 +1,6 @@
 import { createDraft, pair, type Draft, type ApiResponse } from "./request";
 import type { HistoryEntry } from "./history";
+import { createAssertion, createCapture, type AssertionResult } from "./checks";
 import { resolveTokenDefinitions } from "./authorization";
 import type { RequestGroup } from "./groups";
 import { resolveForDisplay } from "./token-hints";
@@ -16,6 +17,10 @@ export type RequestSession = {
   view: RequestView;
   /** Past sends, newest first. */
   history?: HistoryEntry[];
+  /** Assertion results for the shown response. Not saved. */
+  testResults?: AssertionResult[];
+  /** Capture problems from the last send. Not saved. */
+  captureErrors?: string[];
   /** The request changed since the shown response was sent. Not saved. */
   stale?: boolean;
 };
@@ -100,6 +105,14 @@ export function createSession(source?: Draft): RequestSession {
           query: cloneRows(source.query),
           headers: cloneRows(source.headers),
           form: source.form && cloneRows(source.form),
+          assertions: source.assertions?.map((row) => ({
+            ...row,
+            id: createAssertion().id,
+          })),
+          captures: source.captures?.map((row) => ({
+            ...row,
+            id: createCapture().id,
+          })),
         }
       : createDraft(),
     response: null,

@@ -59,6 +59,10 @@ export type Draft = {
   password: string;
   /** Structured local auth override. Undefined = inherit from group. */
   localAuth?: import("./authorization").AuthorizationConfig | undefined;
+  /** Checks run on each response. */
+  assertions?: import("./checks").Assertion[];
+  /** Response values saved as workspace tokens after each send. */
+  captures?: import("./checks").Capture[];
 };
 export type MultipartPart = { key: string; value: string; file: boolean };
 export type RequestInput = {
