@@ -10,7 +10,7 @@ use gpui_kit::*;
 
 /// Saved bounds when they are still on a display, else a centered default.
 fn window_bounds(engine: &Engine, cx: &App) -> WindowBounds {
-    let default = size(px(1280.), px(800.));
+    let default = size(px(1180.), px(780.));
     let Some(saved) = engine.load_window_state() else {
         return WindowBounds::Windowed(Bounds::centered(None, default, cx));
     };
@@ -65,7 +65,7 @@ fn main() {
             let options = WindowOptions {
                 titlebar: Some(titlebar),
                 window_bounds: Some(window_bounds(&engine, cx)),
-                window_min_size: Some(size(px(320.), px(400.))),
+                window_min_size: Some(size(px(860.), px(620.))),
                 app_id: Some("com.kyle.blink.gpui".into()),
                 ..TitleBar::window_options()
             };

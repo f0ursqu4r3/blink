@@ -13,7 +13,7 @@ pub const HEIGHT: f32 = 40.0;
 
 /// Where macOS draws the traffic lights: centered in the 40 px bar.
 pub fn traffic_light_position() -> Point<Pixels> {
-    point(px(14.0), px(13.0))
+    point(px(9.0), px(13.0))
 }
 
 pub struct TitleBarProps {

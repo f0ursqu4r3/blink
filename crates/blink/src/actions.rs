@@ -1,7 +1,9 @@
 //! Application actions and their shortcuts. The shortcut table matches the
 //! README and the command list in `App.vue`.
 
-use gpui_kit::{Action, App, KeyBinding, actions};
+use gpui_kit::{
+    Action, App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions,
+};
 
 actions!(
     blink,
@@ -28,6 +30,8 @@ actions!(
         Quit,
     ]
 );
+
+actions!(blink, [Hide, HideOthers, ShowAll, Minimize, Zoom]);
 
 actions!(
     blink,
@@ -59,7 +63,53 @@ pub struct RunCommandId {
 /// descendant receives them.
 pub const APP_CONTEXT: &str = "BlinkApp";
 
+/// The macOS menu bar, as Tauri's default menu gave the Vue app.
+fn menus() -> Vec<Menu> {
+    use gpui_kit::component::input;
+    vec![
+        Menu::new("Blink").items([
+            MenuItem::os_submenu("Services", SystemMenuType::Services),
+            MenuItem::separator(),
+            MenuItem::action("Hide Blink", Hide),
+            MenuItem::action("Hide Others", HideOthers),
+            MenuItem::action("Show All", ShowAll),
+            MenuItem::separator(),
+            MenuItem::action("Quit Blink", Quit),
+        ]),
+        Menu::new("Edit").items([
+            MenuItem::os_action("Undo", input::Undo, OsAction::Undo),
+            MenuItem::os_action("Redo", input::Redo, OsAction::Redo),
+            MenuItem::separator(),
+            MenuItem::os_action("Cut", input::Cut, OsAction::Cut),
+            MenuItem::os_action("Copy", input::Copy, OsAction::Copy),
+            MenuItem::os_action("Paste", input::Paste, OsAction::Paste),
+            MenuItem::os_action("Select All", input::SelectAll, OsAction::SelectAll),
+        ]),
+        Menu::new("Window").items([
+            MenuItem::action("Minimize", Minimize),
+            MenuItem::action("Zoom", Zoom),
+        ]),
+    ]
+}
+
 pub fn init(cx: &mut App) {
+    cx.on_action(|_: &Quit, cx| cx.quit());
+    cx.on_action(|_: &Hide, cx| cx.hide());
+    cx.on_action(|_: &HideOthers, cx| cx.hide_other_apps());
+    cx.on_action(|_: &ShowAll, cx| cx.unhide_other_apps());
+    cx.on_action(|_: &Minimize, cx| {
+        if let Some(window) = cx.active_window() {
+            window
+                .update(cx, |_, window, _| window.minimize_window())
+                .ok();
+        }
+    });
+    cx.on_action(|_: &Zoom, cx| {
+        if let Some(window) = cx.active_window() {
+            window.update(cx, |_, window, _| window.zoom_window()).ok();
+        }
+    });
+    cx.set_menus(menus());
     let context = Some(APP_CONTEXT);
     cx.bind_keys([
         KeyBinding::new("secondary-t", NewRequest, context),

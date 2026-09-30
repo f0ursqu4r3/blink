@@ -1,0 +1,17 @@
+#!/bin/sh
+# Build Blink in release mode and wrap it in target/release/Blink.app.
+set -eu
+
+root=$(cd "$(dirname "$0")/.." && pwd)
+cd "$root"
+cargo build --release -p blink
+
+app=target/release/Blink.app
+rm -rf "$app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
+cp target/release/blink "$app/Contents/MacOS/blink"
+cp crates/blink/resources/Info.plist "$app/Contents/Info.plist"
+cp crates/blink/resources/icon.icns "$app/Contents/Resources/icon.icns"
+# Ad-hoc sign so Gatekeeper accepts the local build.
+codesign --force --sign - "$app" >/dev/null
+echo "$app"
