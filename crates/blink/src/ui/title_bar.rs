@@ -16,13 +16,15 @@ pub fn traffic_light_position() -> Point<Pixels> {
     point(px(9.0), px(13.0))
 }
 
+type Handler = Box<dyn Fn(&mut Window, &mut App)>;
+
 pub struct TitleBarProps {
     pub browser_visible: bool,
     pub stacked: bool,
     pub command_center: AnyElement,
-    pub on_toggle_browser: Box<dyn Fn(&mut Window, &mut App)>,
-    pub on_toggle_layout: Box<dyn Fn(&mut Window, &mut App)>,
-    pub on_settings: Box<dyn Fn(&mut Window, &mut App)>,
+    pub on_toggle_browser: Handler,
+    pub on_toggle_layout: Handler,
+    pub on_settings: Handler,
 }
 
 pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> AnyElement {

@@ -21,13 +21,10 @@ use crate::ui::tabs::RequestTabs;
 use crate::ui::title_bar::{self, TitleBarProps};
 use crate::ui::{cookies_dialog, group_settings, settings_dialog, status_bar};
 
-/// Browser card width (`w-61`) and the frame gap (`gap-1.5`).
-pub const BROWSER_WIDTH: f32 = 244.0;
+/// The frame gap (`gap-1.5`).
 pub const FRAME_GAP: f32 = 6.0;
 /// Below this width the Browser opens as an overlay (`max-[760px]`).
 pub const NARROW_WIDTH: f32 = 760.0;
-/// Root font size at zoom 1, as the webview's 16 px rem.
-const REM: f32 = 16.0;
 
 pub struct BlinkApp {
     focus_handle: FocusHandle,
@@ -54,6 +51,11 @@ impl BlinkApp {
                 cx.notify();
             }),
             // Save the window layout on blur too, so it survives a killed process.
+            // Opening a request from the narrow overlay closes it, as `select` did.
+            cx.subscribe(&browser, |this, _, _: &crate::ui::browser::BrowserEvent, cx| {
+                this.mobile_browser_open = false;
+                cx.notify();
+            }),
             cx.observe_window_activation(window, |this, window, cx| {
                 if !window.is_window_active() {
                     crate::save_window_state(&this.store.read(cx).engine, window);
@@ -81,10 +83,6 @@ impl BlinkApp {
         app
     }
 
-    pub fn store(&self) -> &Entity<Store> {
-        &self.store
-    }
-
     /// Create panes for new requests and drop panes of deleted ones.
     fn sync_panes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let ids: Vec<u64> = self
@@ -105,12 +103,9 @@ impl BlinkApp {
         }
     }
 
-    fn apply_zoom(&self, window: &mut Window, cx: &App) {
+    fn apply_zoom(&self, _window: &mut Window, cx: &mut App) {
         let zoom = self.store.read(cx).workspace.preferences.zoom as f32;
-        let rem = px(REM * zoom);
-        if window.rem_size() != rem {
-            window.set_rem_size(rem);
-        }
+        theme::set_zoom(zoom, cx);
     }
 
     fn narrow(window: &Window) -> bool {
@@ -369,6 +364,13 @@ impl BlinkApp {
         self.run_command(&action.id, window, cx);
     }
 
+    fn on_reveal(&mut self, action: &RevealRequest, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_browser(window);
+        let id = action.id;
+        self.update_workspace(cx, |workspace| workspace.reveal(id));
+        self.browser.update(cx, |browser, cx| browser.reveal(id, cx));
+    }
+
     fn on_quit(&mut self, _: &Quit, _: &mut Window, cx: &mut Context<Self>) {
         cx.quit();
     }
@@ -569,8 +571,7 @@ impl BlinkApp {
             "duplicate-request" => self.on_duplicate(&DuplicateRequest, window, cx),
             "reveal" => {
                 if let Some(id) = active_id {
-                    self.show_browser(window);
-                    self.update_workspace(cx, |workspace| workspace.reveal(id));
+                    self.on_reveal(&RevealRequest { id }, window, cx);
                 }
             }
             "delete-request" => {
@@ -651,12 +652,12 @@ impl BlinkApp {
                         let code = pane.read(cx).code_for(target, cx);
                         self.store.update(cx, |store, cx| store.copy(code, cx));
                     }
-                } else if let Some(environment) = id.strip_prefix("environment-") {
-                    if let (Some(root_id), Ok(environment)) = (root_id, environment.parse::<u64>()) {
-                        self.update_workspace(cx, |workspace| {
-                            workspace.switch_environment(root_id, Some(environment))
-                        });
-                    }
+                } else if let Some(environment) = id.strip_prefix("environment-")
+                    && let (Some(root_id), Ok(environment)) = (root_id, environment.parse::<u64>())
+                {
+                    self.update_workspace(cx, |workspace| {
+                        workspace.switch_environment(root_id, Some(environment))
+                    });
                 }
             }
         }
@@ -780,6 +781,7 @@ impl Render for BlinkApp {
             .on_action(cx.listener(Self::on_collapse_groups))
             .on_action(cx.listener(Self::on_import))
             .on_action(cx.listener(Self::on_run_command_id))
+            .on_action(cx.listener(Self::on_reveal))
             .on_action(cx.listener(Self::on_quit))
             .flex()
             .flex_col()
@@ -787,7 +789,7 @@ impl Render for BlinkApp {
             .bg(colors.frame)
             .text_color(colors.foreground)
             .font_family(theme::SANS)
-            .text_size(px(theme::FONT_SIZE))
+            .text_size(rems(theme::FONT_SIZE / theme::REM))
             .when(closing, |this| this.opacity(0.6))
             .child(title)
             .child(notice)

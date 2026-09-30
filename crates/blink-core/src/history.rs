@@ -159,10 +159,42 @@ pub fn clock_time(epoch_ms: f64, hour12: bool) -> String {
     }
 }
 
+/// Local date and time, as `toLocaleString` writes it with `dateStyle` and
+/// `timeStyle` "short" in the en-US locale: "9/30/26, 3:45 PM".
+pub fn short_date_time(epoch_ms: i64) -> String {
+    short_date_time_in(&chrono::Local, epoch_ms)
+}
+
+fn short_date_time_in<Tz: chrono::TimeZone>(zone: &Tz, epoch_ms: i64) -> String {
+    use chrono::{Datelike, Timelike};
+    let Some(time) = zone.timestamp_millis_opt(epoch_ms).single() else {
+        return "Invalid Date".into();
+    };
+    let (pm, hour) = time.hour12();
+    format!(
+        "{}/{}/{:02}, {hour}:{:02} {}",
+        time.month(),
+        time.day(),
+        time.year().rem_euclid(100),
+        time.minute(),
+        if pm { "PM" } else { "AM" }
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::model::Header;
+
+    #[test]
+    fn writes_the_short_en_us_date_and_time() {
+        // 2026-09-30T15:45:00Z
+        assert_eq!(
+            short_date_time_in(&chrono::Utc, 1_790_783_100_000),
+            "9/30/26, 3:45 PM"
+        );
+        assert_eq!(short_date_time_in(&chrono::Utc, 0), "1/1/70, 12:00 AM");
+    }
 
     fn request() -> RequestInput {
         RequestInput {

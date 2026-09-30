@@ -115,10 +115,26 @@ pub fn status_color(status: u16, cx: &App) -> Hsla {
 
 /// System sans-serif for chrome, as `--font-sans`.
 pub const SANS: &str = ".SystemUIFont";
-/// `ui-monospace` resolves to SF Mono on macOS.
-pub const MONO: &str = "SF Mono";
+/// `ui-monospace` resolves to SF Mono on macOS, whose system family name is
+/// `.SF NS Mono`.
+pub const MONO: &str = if cfg!(target_os = "macos") {
+    ".SF NS Mono"
+} else {
+    "monospace"
+};
 /// Body text: 0.8125rem of a 16 px root.
 pub const FONT_SIZE: f32 = 13.0;
+/// The webview root font size. GPUI Kit's `Root` sets the window rem size to
+/// the theme font size each frame, so zoom scales this value.
+pub const REM: f32 = 16.0;
+
+/// Scale the interface as the webview zoom did.
+pub fn set_zoom(zoom: f32, cx: &mut App) {
+    let rem = px(REM * zoom);
+    if Theme::global(cx).font_size != rem {
+        Theme::update(cx, |theme| theme.font_size = rem);
+    }
+}
 
 /// The app theme setting. The Vue app kept it in localStorage; the native
 /// app keeps it in `theme.json` in the data directory.
@@ -130,10 +146,6 @@ pub struct AppTheme {
 impl Global for AppTheme {}
 
 impl AppTheme {
-    fn stored(&self) -> Option<String> {
-        std::fs::read_to_string(&self.path).ok()
-    }
-
     /// Store `text`, or remove the file for the default theme.
     pub fn write(&self, text: Option<String>) -> Result<(), String> {
         match text {
@@ -148,8 +160,26 @@ impl AppTheme {
     }
 }
 
+/// SF Mono ships with macOS as a hidden system font that name lookup does
+/// not find, so register its files as the webview's `ui-monospace` did.
+fn register_mono(cx: &App) {
+    let files = [
+        "/System/Library/Fonts/SFNSMono.ttf",
+        "/System/Library/Fonts/SFNSMonoItalic.ttf",
+    ];
+    let fonts: Vec<_> = files
+        .iter()
+        .filter_map(|path| std::fs::read(path).ok())
+        .map(std::borrow::Cow::Owned)
+        .collect();
+    if !fonts.is_empty() {
+        let _ = cx.text_system().add_fonts(fonts);
+    }
+}
+
 /// Load the saved theme and apply it.
 pub fn init(engine: &Engine, cx: &mut App) {
+    register_mono(cx);
     let path = engine.paths().data_dir.join(THEME_FILE);
     let state = ThemeState::new(std::fs::read_to_string(&path).ok().as_deref());
     let tokens = state.tokens.clone();
@@ -165,14 +195,6 @@ pub fn update_theme<R>(cx: &mut App, change: impl FnOnce(&mut AppTheme) -> R) ->
     result
 }
 
-/// Re-read the stored theme, as the Vue app did when storage changed.
-pub fn reload_theme(cx: &mut App) {
-    update_theme(cx, |theme| {
-        let stored = theme.stored();
-        theme.state.reload(stored.as_deref());
-    });
-}
-
 /// The saved theme name, shown at the end of the status bar.
 pub fn theme_name(cx: &App) -> String {
     cx.global::<AppTheme>().state.name().to_string()
@@ -184,6 +206,11 @@ const THEME_FILE: &str = "theme.json";
 pub fn apply(tokens: ThemeTokens, cx: &mut App) {
     let c = Colors::new(&tokens);
     let dark = matches!(tokens.scheme, blink_core::theme::ColorScheme::Dark);
+    let rem = if cx.has_global::<Palette>() {
+        Theme::global(cx).font_size
+    } else {
+        px(REM)
+    };
     let scrollbar = (
         color(tokens.scrollbar_thumb),
         color(tokens.scrollbar_thumb_hover),
@@ -196,8 +223,8 @@ pub fn apply(tokens: ThemeTokens, cx: &mut App) {
     Theme::update(cx, |theme| {
         theme.font_family = SANS.into();
         theme.mono_font_family = MONO.into();
-        theme.font_size = px(FONT_SIZE);
-        theme.mono_font_size = px(12.0);
+        theme.font_size = rem;
+        theme.mono_font_size = rem * 0.75;
         // 4 px for controls and tooltips, 8 px for cards, menus, and dialogs.
         theme.radius = px(4.0);
         theme.radius_lg = px(8.0);

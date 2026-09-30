@@ -52,6 +52,14 @@ pub struct OpenGroupSettings {
     pub group_id: u64,
 }
 
+/// Show a request in the Browser: open the Browser, expand its groups, and
+/// select its row.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = blink, no_json)]
+pub struct RevealRequest {
+    pub id: u64,
+}
+
 /// Run a command-center command by id, such as `copy-as-curl`.
 #[derive(Clone, PartialEq, Debug, Action)]
 #[action(namespace = blink, no_json)]

@@ -315,9 +315,4 @@ impl Store {
         });
         cx.emit(crate::store::StoreEvent::DraftReplaced(session_id));
     }
-
-    /// Whether the request has a live WebSocket connection.
-    pub fn socket_connected(&self, session_id: u64) -> bool {
-        self.sockets.contains_key(&session_id)
-    }
 }
