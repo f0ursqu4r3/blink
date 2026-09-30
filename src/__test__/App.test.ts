@@ -291,9 +291,7 @@ describe("compact request console", () => {
     await app.get("[data-copy-code]").trigger("click");
     await flushPromises();
     expect(app.get('[role="alert"]').text()).toContain("Clipboard unavailable");
-    expect(app.get("[data-copy-code]").text()).not.toContain(
-      "Copied",
-    );
+    expect(app.get("[data-copy-code]").text()).not.toContain("Copied");
   });
   it("keeps request errors visible and supports retry", async () => {
     vi.stubGlobal(
