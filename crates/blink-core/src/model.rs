@@ -594,11 +594,19 @@ pub struct TransportOptions {
     pub max_redirects: u64,
     pub inspection_limit_mi_b: u64,
     /// Off accepts invalid and self-signed certificates.
+    #[serde(default = "default_true")]
     pub verify_tls: bool,
     /// Empty uses the system proxy settings.
+    #[serde(default)]
     pub proxy_url: String,
     /// Keep response cookies in a jar and send them.
+    #[serde(default = "default_true")]
     pub store_cookies: bool,
+}
+
+/// Settings saved before these fields existed keep the safe defaults.
+fn default_true() -> bool {
+    true
 }
 
 impl Default for TransportOptions {
