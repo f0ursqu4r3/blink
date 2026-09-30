@@ -22,12 +22,30 @@ Browser sidebar organizes the request tabs in the current session.
   GraphQL bodies take a query and optional JSON variables. Format tidies JSON
   bodies, GraphQL queries, and GraphQL variables.
 - Use Bearer tokens or Basic authentication.
-- Export shell-quoted cURL commands. These include any entered credentials
-  and the timeout, redirect, TLS, and proxy settings.
+- Export the request as cURL, JavaScript `fetch`, Python `requests`, Go
+  `net/http`, HTTPie, or Rust `reqwest` code. The code includes any entered
+  credentials and the timeout, redirect, TLS, and proxy settings.
 - Paste a cURL command into the URL field to import it. Blink lists the
   options it ignored.
+- Import OpenAPI 3 or Swagger 2 (JSON or YAML), Postman collections, and
+  `.http` files from the Browser header or the command center. Each import
+  becomes a group.
 - Cancel a running request. The draft stays editable while it runs.
 - Inspect response status, duration, headers, and body, including error responses.
+  Hover the duration to see DNS, connect, wait, and download times.
+- Find text in a response with a match count. Enter and Shift+Enter move
+  between matches. The filter button shows only matching lines.
+- Compare responses in the History view. Blink keeps the last 25 sends of each
+  request.
+- Add assertions on status, time, size, headers, body text, or jq values in
+  the request Tests tab. Captures save a response value as a workspace token,
+  such as a login token for later requests.
+- Watch `text/event-stream` responses as they arrive. Cancel stops the stream
+  and keeps the events.
+- Open a WebSocket with a `ws://` or `wss://` URL. Send and receive messages
+  in the WebSocket panel.
+- Keep cookies in one jar and send them with later requests (desktop app).
+  Manage them from Application Settings or the command center.
 - Switch between pretty JSON and raw text. Large JSON numbers stay exact.
 - Copy response bodies and toggle line wrapping.
 - Use the Tauri backend for requests without browser CORS limits.
@@ -37,8 +55,11 @@ Browser sidebar organizes the request tabs in the current session.
 - Place the request and response side by side or stack them. Use the layout
   button beside Settings in the title bar, or press `Cmd/Ctrl+\`. Blink
   restores the layout after a restart.
-- Type `>` in the command center to run a command, such as the layout and
-  Browser toggles, new request, or settings.
+- Type `>` in the command center to run a command, such as send, copy as
+  code, tab, response, zoom, and Browser commands. Matching is fuzzy.
+- Zoom with `Cmd/Ctrl+=`, `Cmd/Ctrl+-`, and `Cmd/Ctrl+0`.
+- Reopen a closed tab with `Cmd/Ctrl+Shift+T`. Undo a deleted request or group
+  from the status bar or with `Cmd/Ctrl+Z` for 10 seconds.
 
 Application Settings → Requests controls the timeout (default 30 s total,
 10 s to connect), whether redirects are followed (default off; up to 20 hops),
@@ -137,7 +158,8 @@ Escape closes a tooltip first, then the dialog. Cancel discards unsaved edits.
 
 Blink saves tab order, groups, group hierarchy, request membership, the active
 tab, complete request drafts, responses, errors, editor tabs, Pretty/Raw mode,
-wrapping, and response scroll position.
+wrapping, response scroll position, and request history. History keeps the
+last 25 sends of each request, with bodies up to 64 KiB.
 The desktop app also restores window size and position. Closing the window
 or quitting waits for the latest workspace save. Interrupted requests restore
 as idle tabs with an explanation; Blink never replays them automatically.
@@ -146,14 +168,16 @@ Transient confirmations and the cURL preview start closed.
 **Saved data includes credentials, request bodies, and response content.
 It is local plaintext, not encrypted.** Desktop saves use owner-only file
 permissions on macOS and Linux. Protect your device and backups accordingly.
-There is no cloud synchronization or request history beyond the open tabs.
+There is no cloud synchronization. Clear a request's history from its History
+view.
 Discarding a tab removes it from the next saved snapshot; this is not secure
 erasure of filesystem blocks or backups.
 
 On macOS, the snapshot is stored at
 `~/Library/Application Support/com.kyle.blink/workspace-v1.json`.
 The paths of files you picked for request bodies are stored beside it in
-`file-grants.json`.
+`file-grants.json`. The cookie jar is stored beside it in `cookies.json`,
+including session cookies.
 Other desktop systems use Tauri's application data directory. Native saves
 write a temporary file, sync it, then replace the snapshot atomically.
 The versioned format supports up to 10,000 requests, 10,000 groups, and a 64 MiB total
