@@ -1,7 +1,7 @@
 //! Application actions and their shortcuts. The shortcut table matches the
 //! README and the command list in `App.vue`.
 
-use gpui_kit::{App, KeyBinding, actions};
+use gpui_kit::{Action, App, KeyBinding, actions};
 
 actions!(
     blink,
@@ -28,6 +28,32 @@ actions!(
         Quit,
     ]
 );
+
+actions!(
+    blink,
+    [
+        ToggleBrowser,
+        ImportFile,
+        ManageCookies,
+        NewGroup,
+        CollapseAllGroups,
+    ]
+);
+
+/// Open group settings for a group. Dispatched by the Browser, the
+/// environment badge, and the command center; the root view opens the dialog.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = blink, no_json)]
+pub struct OpenGroupSettings {
+    pub group_id: u64,
+}
+
+/// Run a command-center command by id, such as `copy-as-curl`.
+#[derive(Clone, PartialEq, Debug, Action)]
+#[action(namespace = blink, no_json)]
+pub struct RunCommandId {
+    pub id: String,
+}
 
 /// Key context of the root view. Global shortcuts bind here so any focused
 /// descendant receives them.

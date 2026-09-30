@@ -25,7 +25,7 @@ pub struct TitleBarProps {
     pub on_settings: Box<dyn Fn(&mut Window, &mut App)>,
 }
 
-pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> impl IntoElement {
+pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> AnyElement {
     let colors = theme::colors(cx);
     let browser_label = if props.browser_visible {
         "Hide request browser"
@@ -99,6 +99,7 @@ pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> impl IntoEleme
                         ),
                 ),
         )
+        .into_any_element()
 }
 
 /// `layoutToggleLabel` in `App.vue`.
