@@ -126,7 +126,7 @@ fn grants(root: &tempfile::TempDir) -> FileGrants {
 
 async fn run(request: RequestInput, options: TransportOptions) -> Result<ResponseOutput, String> {
     let (root, store) = store();
-    execute(request, options, &store, &grants(&root), DOWNLOAD_LIMIT).await
+    execute(request, options, &store, &grants(&root), DOWNLOAD_LIMIT, None).await
 }
 
 #[test]
@@ -370,6 +370,7 @@ async fn truncates_the_preview_and_stores_the_full_body() {
         &store,
         &grants(&root),
         DOWNLOAD_LIMIT,
+        None,
     )
     .await
     .unwrap();
@@ -415,7 +416,7 @@ async fn a_character_cut_at_the_preview_limit_stays_text() {
 async fn rejects_a_body_over_the_download_limit_and_keeps_no_file() {
     let base = serve(vec![("200 OK", String::new(), vec![b'x'; 64])]);
     let (root, store) = store();
-    let error = execute(input(base), options(), &store, &grants(&root), 32)
+    let error = execute(input(base), options(), &store, &grants(&root), 32, None)
         .await
         .unwrap_err();
     assert_eq!(error, "Response exceeds the 1 GiB download limit.");
@@ -462,7 +463,7 @@ async fn cancel_stops_a_running_request() {
     let started = Instant::now();
     let request = in_flight.run(
         "r1".into(),
-        execute(input(url), options(), &store, &grants, DOWNLOAD_LIMIT),
+        execute(input(url), options(), &store, &grants, DOWNLOAD_LIMIT, None),
     );
     let cancel = async {
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -493,7 +494,7 @@ async fn sends_a_granted_file_body() {
         body_file: Some(file.to_string_lossy().into_owned()),
         ..input(url)
     };
-    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT)
+    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT, None)
         .await
         .unwrap();
     assert!(received.recv().unwrap().ends_with("\r\n\r\nfile-bytes"));
@@ -509,7 +510,7 @@ async fn refuses_a_file_that_was_not_picked() {
         body_file: Some(file.to_string_lossy().into_owned()),
         ..input("http://127.0.0.1:9/".into())
     };
-    let error = execute(request, options(), &store, &grants(&root), DOWNLOAD_LIMIT)
+    let error = execute(request, options(), &store, &grants(&root), DOWNLOAD_LIMIT, None)
         .await
         .unwrap_err();
     assert_eq!(error, "Choose secret.txt again to allow Blink to read it.");
@@ -539,7 +540,7 @@ async fn sends_multipart_text_and_file_parts() {
         ]),
         ..input(url)
     };
-    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT)
+    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT, None)
         .await
         .unwrap();
     let raw = received.recv().unwrap();
@@ -592,4 +593,53 @@ fn transport_options_default_to_verified_tls_and_system_proxy() {
     .unwrap();
     assert!(parsed.verify_tls);
     assert!(parsed.proxy_url.is_empty());
+}
+
+#[tokio::test]
+async fn cookie_jar_sends_stored_cookies_and_saves_them() {
+    let first = fixture(
+        "200 OK",
+        "Set-Cookie: session=abc; Path=/\r\n",
+        String::new(),
+        Duration::ZERO,
+    );
+    let (root, store) = store();
+    let cookies = crate::cookies::Cookies::load(root.path().join("cookies.json"));
+    execute(
+        input(first.0.clone()),
+        options(),
+        &store,
+        &grants(&root),
+        DOWNLOAD_LIMIT,
+        Some(cookies.jar()),
+    )
+    .await
+    .unwrap();
+    let listed = serde_json::to_value(cookies.list()).unwrap();
+    assert_eq!(listed[0]["name"], "session");
+    assert_eq!(listed[0]["value"], "abc");
+    assert_eq!(listed[0]["domain"], "127.0.0.1");
+    cookies.save().unwrap();
+    // A reloaded jar still holds the session cookie.
+    let reloaded = crate::cookies::Cookies::load(root.path().join("cookies.json"));
+    assert_eq!(reloaded.list().len(), 1);
+
+    let second = fixture("200 OK", "", String::new(), Duration::ZERO);
+    let port = second.0.rsplit(':').next().unwrap().to_string();
+    // Cookies are per host, not per port, so the second server gets it.
+    execute(
+        input(format!("http://127.0.0.1:{port}")),
+        options(),
+        &store,
+        &grants(&root),
+        DOWNLOAD_LIMIT,
+        Some(reloaded.jar()),
+    )
+    .await
+    .unwrap();
+    assert!(second.1.recv().unwrap().to_lowercase().contains("cookie: session=abc"));
+    // Without a jar no cookie goes out.
+    let third = fixture("200 OK", "", String::new(), Duration::ZERO);
+    run(input(third.0), options()).await.unwrap();
+    assert!(!third.1.recv().unwrap().to_lowercase().contains("cookie:"));
 }

@@ -66,6 +66,7 @@ export function validPreferences(
     isZoom(p.zoom) &&
     typeof p.followRedirects === "boolean" &&
     typeof p.verifyTls === "boolean" &&
+    typeof p.storeCookies === "boolean" &&
     typeof p.proxyUrl === "string" &&
     proxyUrlError(p.proxyUrl) === "" &&
     Object.keys(transportFieldErrors(p as TransportOptions)).length === 0
@@ -124,6 +125,7 @@ export const transportOptions = (
   inspectionLimitMiB: preferences.inspectionLimitMiB,
   verifyTls: preferences.verifyTls,
   proxyUrl: preferences.proxyUrl,
+  storeCookies: preferences.storeCookies,
 });
 
 export function resolveNewRequestDefaults(

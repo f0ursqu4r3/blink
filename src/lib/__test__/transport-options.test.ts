@@ -15,6 +15,7 @@ describe("transport options", () => {
       inspectionLimitMiB: 4,
       verifyTls: true,
       proxyUrl: "",
+      storeCookies: true,
     });
     expect(transportFieldErrors(defaultTransportOptions())).toEqual({});
   });

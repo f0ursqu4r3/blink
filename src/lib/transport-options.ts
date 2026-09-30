@@ -11,6 +11,8 @@ export type TransportOptions = {
   verifyTls: boolean;
   /** Empty uses the system proxy settings. Desktop only. */
   proxyUrl: string;
+  /** Keep response cookies in a jar and send them. Desktop only. */
+  storeCookies: boolean;
 };
 
 export type TransportField =
@@ -27,6 +29,7 @@ export const defaultTransportOptions = (): TransportOptions => ({
   inspectionLimitMiB: 4,
   verifyTls: true,
   proxyUrl: "",
+  storeCookies: true,
 });
 
 export const transportRanges: Record<

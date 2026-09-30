@@ -14,8 +14,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-reqwest = { version = "0.12", default-features = false, features = ["charset", "http2", "json", "macos-system-configuration", "multipart", "rustls-tls", "rustls-tls-native-roots", "socks"] }
+reqwest = { version = "0.12", default-features = false, features = ["charset", "cookies", "http2", "json", "macos-system-configuration", "multipart", "rustls-tls", "rustls-tls-native-roots", "socks"] }
 serde = { version = "1", features = ["derive"] }
+cookie_store = { version = "0.22", features = ["serde_json"] }
+reqwest_cookie_store = "0.9"
 serde_json = "1"
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

@@ -14,6 +14,7 @@ use serde::{Deserialize, Serialize};
 use request_files::FileGrants;
 use response_store::{ResponseStore, STORE_ERROR};
 use timing::{Phases, TimedConnectLayer, TimedResolver, Timing};
+use reqwest_cookie_store::CookieStoreMutex;
 use tokio::sync::oneshot;
 
 const MIB: usize = 1024 * 1024;
@@ -86,6 +87,13 @@ struct TransportOptions {
     /// Empty uses the system proxy settings.
     #[serde(default)]
     proxy_url: String,
+    /// Send and keep cookies with the shared jar.
+    #[serde(default = "default_store_cookies")]
+    store_cookies: bool,
+}
+
+fn default_store_cookies() -> bool {
+    true
 }
 
 fn default_verify_tls() -> bool {
@@ -102,6 +110,7 @@ impl Default for TransportOptions {
             inspection_limit_mib: 4,
             verify_tls: true,
             proxy_url: String::new(),
+            store_cookies: true,
         }
     }
 }
@@ -128,6 +137,7 @@ fn build_client(
     options: &TransportOptions,
     redirects: Arc<AtomicUsize>,
     phases: Arc<Phases>,
+    jar: Option<Arc<CookieStoreMutex>>,
 ) -> Result<Client, String> {
     let policy = if options.follow_redirects {
         let max = options.max_redirects;
@@ -152,6 +162,9 @@ fn build_client(
         .dns_resolver(Arc::new(TimedResolver(phases.clone())))
         .connector_layer(TimedConnectLayer(phases))
         .danger_accept_invalid_certs(!options.verify_tls);
+    if let Some(jar) = jar {
+        builder = builder.cookie_provider(jar);
+    }
     let proxy_url = options.proxy_url.trim();
     if !proxy_url.is_empty() {
         let valid = reqwest::Url::parse(proxy_url)
@@ -203,13 +216,20 @@ async fn send_request(
     store: tauri::State<'_, ResponseStore>,
     grants: tauri::State<'_, FileGrants>,
     in_flight: tauri::State<'_, InFlight>,
+    cookies: tauri::State<'_, cookies::Cookies>,
 ) -> Result<ResponseOutput, String> {
-    in_flight
+    let jar = options.store_cookies.then(|| cookies.jar());
+    let result = in_flight
         .run(
             request_id,
-            execute(request, options, &store, &grants, DOWNLOAD_LIMIT),
+            execute(request, options, &store, &grants, DOWNLOAD_LIMIT, jar.clone()),
         )
-        .await
+        .await;
+    if jar.is_some() {
+        // A failed cookie save does not fail the request.
+        let _ = cookies.save();
+    }
+    result
 }
 
 #[tauri::command]
@@ -243,6 +263,7 @@ async fn execute(
     store: &ResponseStore,
     grants: &FileGrants,
     download_limit: u64,
+    jar: Option<Arc<CookieStoreMutex>>,
 ) -> Result<ResponseOutput, String> {
     options.validate()?;
     request.url = resolve_environment_references(&request.url)?;
@@ -271,7 +292,7 @@ async fn execute(
     let has_body = method != Method::GET && method != Method::HEAD;
     let redirects = Arc::new(AtomicUsize::new(0));
     let phases = Arc::new(Phases::default());
-    let client = build_client(&options, redirects.clone(), phases.clone())?;
+    let client = build_client(&options, redirects.clone(), phases.clone(), jar)?;
     let mut builder = client.request(method, url);
 
     for header in request.headers {
@@ -431,6 +452,7 @@ fn network_error(error: reqwest::Error, options: &TransportOptions) -> String {
 }
 
 mod app_state;
+mod cookies;
 mod ghostty_themes;
 mod request_files;
 #[cfg(test)]
@@ -456,6 +478,9 @@ pub fn run() {
                 app.path().app_data_dir()?.join("file-grants.json"),
             ));
             app.manage(InFlight::default());
+            app.manage(cookies::Cookies::load(
+                app.path().app_data_dir()?.join("cookies.json"),
+            ));
             app.manage(ResponseStore::new(
                 app.path().app_cache_dir()?.join("responses"),
             ));
@@ -485,7 +510,10 @@ pub fn run() {
             ghostty_themes::read_ghostty_theme,
             response_store::release_response,
             response_store::save_response,
-            response_store::save_response_text
+            response_store::save_response_text,
+            cookies::list_cookies,
+            cookies::delete_cookie,
+            cookies::clear_cookies
         ])
         .build(tauri::generate_context!())
         .expect("error while building Blink")

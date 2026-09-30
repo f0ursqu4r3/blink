@@ -252,6 +252,7 @@ describe("transport preferences", () => {
       inspectionLimitMiB: 4,
       verifyTls: true,
       proxyUrl: "",
+      storeCookies: true,
     });
   });
   it("opens older workspaces side by side and rejects unknown layouts", () => {

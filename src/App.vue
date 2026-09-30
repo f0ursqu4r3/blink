@@ -17,6 +17,8 @@ import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vu
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import HelpTooltip from "@/components/HelpTooltip.vue";
 import CommandCenter from "@/components/CommandCenter.vue";
+import CookiesDialog from "@/components/CookiesDialog.vue";
+import { clearCookies } from "@/lib/cookies";
 import { COMMAND_PREFIX, groupPath, type Command } from "@/lib/command-center";
 import { formatBytes } from "@/lib/request";
 import { codeTargets } from "@/lib/codegen";
@@ -128,6 +130,14 @@ const transport = computed(() => transportOptions(preferences.value));
 const groupSettingsOpen = ref(false);
 const groupSettingsId = ref<number | null>(null);
 const applicationSettingsOpen = ref(false);
+const cookiesOpen = ref(false);
+function openCookies() {
+  // From settings, focus later returns to what opened settings.
+  if (!applicationSettingsOpen.value)
+    dialogOpener.value = document.activeElement as HTMLElement | null;
+  applicationSettingsOpen.value = false;
+  cookiesOpen.value = true;
+}
 const dialogOpener = ref<HTMLElement | null>(null);
 const groupSettingsGroup = computed(
   () => groups.value.find((g) => g.id === groupSettingsId.value) ?? null,
@@ -145,9 +155,14 @@ function openApplicationSettings(event?: Event) {
   applicationSettingsOpen.value = true;
 }
 watch(
-  [groupSettingsOpen, applicationSettingsOpen],
-  ([groupOpen, appOpen], [wasGroupOpen, wasAppOpen]) => {
-    if ((wasGroupOpen || wasAppOpen) && !groupOpen && !appOpen)
+  [groupSettingsOpen, applicationSettingsOpen, cookiesOpen],
+  ([groupOpen, appOpen, cookies], [wasGroupOpen, wasAppOpen, wasCookies]) => {
+    if (
+      (wasGroupOpen || wasAppOpen || wasCookies) &&
+      !groupOpen &&
+      !appOpen &&
+      !cookies
+    )
       void nextTick(() => dialogOpener.value?.focus());
   },
 );
@@ -355,6 +370,12 @@ const commands = computed<Command[]>(() => {
       disabled: !response || response.binary || response.truncated,
     },
     { id: "new-group", label: "Browser: New group" },
+    { id: "manage-cookies", label: "Cookies: Manage cookies" },
+    {
+      id: "clear-cookies",
+      label: "Cookies: Clear all cookies",
+      disabled: !nativeTransport,
+    },
     {
       id: "collapse-groups",
       label: "Browser: Collapse all groups",
@@ -409,6 +430,8 @@ function runCommand(id: string) {
   else if (id === "toggle-wrap") response?.toggleWrap();
   else if (id === "toggle-pretty") response?.togglePretty();
   else if (id === "new-group") newGroup();
+  else if (id === "manage-cookies") openCookies();
+  else if (id === "clear-cookies") void clearCookies().catch(() => {});
   else if (id === "collapse-groups") collapseAllGroups();
   else if (id === "undo-delete") undoDeletion();
   else if (id === "open-settings") openApplicationSettings();
@@ -540,6 +563,7 @@ function onKey(event: KeyboardEvent) {
     closing.value ||
     groupSettingsOpen.value ||
     applicationSettingsOpen.value ||
+    cookiesOpen.value ||
     document.querySelector(
       '[data-surface="context-menu"], [data-surface="command-center"]',
     )
@@ -901,12 +925,18 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       :preferences="preferences"
       :open="applicationSettingsOpen"
       @update:open="applicationSettingsOpen = $event"
+      @manage-cookies="openCookies"
       @save="
         (definitions, next: WorkspacePreferences) => {
           setGlobalDefinitions(definitions);
           setPreferences(next);
         }
       "
+    />
+    <CookiesDialog
+      :open="cookiesOpen"
+      :enabled="preferences.storeCookies"
+      @update:open="cookiesOpen = $event"
     />
     <DragPreview />
   </main>

@@ -31,6 +31,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (event: "update:open", value: boolean): void;
+  (event: "manageCookies"): void;
   (
     event: "save",
     definitions: Record<string, string>,
@@ -339,6 +340,30 @@ function save() {
                 <p v-else class="text-muted-foreground text-[0.6875rem]">
                   Blink trusts the system certificate store, including company
                   and local development CAs.
+                </p>
+              </div>
+              <div class="col-span-full grid gap-1">
+                <div class="flex items-center justify-between gap-2">
+                  <label class="flex items-center gap-2"
+                    ><input
+                      v-model="preferences.storeCookies"
+                      type="checkbox"
+                      class="accent-primary"
+                      data-store-cookies
+                    />
+                    Store and send cookies</label
+                  >
+                  <button
+                    type="button"
+                    class="text-[0.6875rem] text-muted-foreground underline decoration-dotted underline-offset-3 hover:text-foreground"
+                    data-manage-cookies
+                    @click="emit('manageCookies')"
+                  >
+                    Manage cookies…
+                  </button>
+                </div>
+                <p class="text-muted-foreground text-[0.6875rem]">
+                  One jar for all requests, kept on this device. Desktop only.
                 </p>
               </div>
             </fieldset>
