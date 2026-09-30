@@ -2,12 +2,14 @@
 import { computed, nextTick, ref } from "vue";
 import GroupActionsMenu from "./GroupActionsMenu.vue";
 import HelpTooltip from "./HelpTooltip.vue";
+import TreeGuides from "./TreeGuides.vue";
+import EnvironmentBadge from "./EnvironmentBadge.vue";
+import { treeGuides } from "@/lib/tree-guides";
 import {
-  ChevronDown,
-  ChevronRight,
   FilePlus,
   Import,
   Folder,
+  FolderOpen,
   FolderInput,
   FolderPlus,
   ListCollapse,
@@ -89,6 +91,7 @@ const emit = defineEmits<{
   deleteGroup: [id: number];
   collapseAllGroups: [];
   import: [];
+  setEnvironment: [groupId: number, environmentId: number | null];
   openGroupSettings: [groupId: number];
   createRequest: [groupId: number | null];
   duplicateRequest: [sessionId: number];
@@ -101,6 +104,12 @@ const emit = defineEmits<{
   ];
 }>();
 
+const guides = computed(() => {
+  const list = treeGuides(rows.value.map((row) => row.level));
+  return new Map(rows.value.map((row, index) => [rowKey(row), list[index]]));
+});
+/** x of the line for children at `depth`: under the parent's folder icon. */
+const guideX = (depth: number) => indent(depth - 1) + 11;
 type BrowserRow =
   | { type: "group"; group: RequestGroup; level: number }
   | { type: "request"; session: RequestSession; level: number };
@@ -217,7 +226,7 @@ function onGroupAction(group: RequestGroup, action: GroupAction) {
   else deletingId.value = group.id;
 }
 function indent(level: number) {
-  const pxMap = [12, 28, 44, 60, 76, 92, 108];
+  const pxMap = [12, 32, 52, 72, 92, 112, 132];
   return pxMap[Math.min(level, 6)];
 }
 function levelPadding(level: number): string {
@@ -699,6 +708,12 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                         dropZoneFor(`request-${row.session.id}`)
                       "
                     />
+                    <TreeGuides
+                      :guide="guides.get(rowKey(row))"
+                      :level="row.level"
+                      :x="guideX"
+                      :end="indent(row.level) - 2"
+                    />
                     <span
                       class="method w-8.5 shrink-0 text-[8px] font-bold"
                       :data-method="displayMethod(row.session)"
@@ -905,20 +920,27 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                           dropZoneFor(`group-${row.group.id}`)
                         "
                       />
+                      <TreeGuides
+                        :guide="guides.get(rowKey(row))"
+                        :level="row.level"
+                        :x="guideX"
+                        :end="indent(row.level) - 1"
+                      />
                       <button
                         type="button"
-                        class="inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 text-muted-foreground hover:text-foreground hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
+                        class="relative inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
                         :aria-label="`${row.group.collapsed ? 'Expand' : 'Collapse'} ${row.group.name}`"
+                        :aria-expanded="!row.group.collapsed"
+                        data-group-toggle
                         @click="emit('toggleGroup', row.group.id)"
                       >
-                        <ChevronRight
+                        <Folder
                           v-if="row.group.collapsed"
-                          :size="13"
+                          :size="14"
                           aria-hidden="true"
                         />
-                        <ChevronDown v-else :size="13" aria-hidden="true" />
+                        <FolderOpen v-else :size="14" aria-hidden="true" />
                       </button>
-                      <Folder :size="13" class="shrink-0" aria-hidden="true" />
                       <span
                         v-if="editingId !== row.group.id"
                         class="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap text-foreground font-mono text-[11px] flex items-center gap-1"
@@ -934,6 +956,22 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                           aria-hidden="true"
                           data-auth-indicator
                           class="shrink-0 text-muted-foreground"
+                        />
+                        <EnvironmentBadge
+                          v-if="
+                            row.group.parentId === null &&
+                            row.group.environments?.length
+                          "
+                          :group="row.group"
+                          @switch="
+                            (environmentId) =>
+                              emit(
+                                'setEnvironment',
+                                row.group.id,
+                                environmentId,
+                              )
+                          "
+                          @edit="emit('openGroupSettings', row.group.id)"
                         />
                       </span>
                       <form
