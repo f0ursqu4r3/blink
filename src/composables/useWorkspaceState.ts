@@ -1,7 +1,7 @@
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { createSession, type RequestSession } from "@/lib/session";
+import { createSession, hasDraft, type RequestSession } from "@/lib/session";
 import { releaseResponse } from "@/lib/response-body";
 import { isMethod } from "@/lib/request";
 import {
@@ -29,6 +29,29 @@ import {
   validPreferences,
   type WorkspacePreferences,
 } from "@/lib/preferences";
+
+/** How long a deletion can be undone. */
+export const UNDO_WINDOW_MS = 10_000;
+export type Deletion =
+  | {
+      kind: "requests";
+      items: {
+        session: RequestSession;
+        index: number;
+        /** -1 when the request was not open as a tab. */
+        openIndex: number;
+        /** True when deleting it emptied the workspace. */
+        last: boolean;
+      }[];
+    }
+  | {
+      kind: "group";
+      group: RequestGroup;
+      index: number;
+      /** Groups and requests promoted to the parent of the deleted group. */
+      childGroupIds: number[];
+      sessionIds: number[];
+    };
 
 export function useWorkspaceState() {
   const sessions = ref<RequestSession[]>([createSession()]);
@@ -245,10 +268,31 @@ export function useWorkspaceState() {
     if (!openIds.value.includes(id)) openIds.value.push(id);
     activeId.value = id;
   }
+  /** Recently closed tabs, most recent last. Not saved. */
+  const closedIds: number[] = [];
+  function rememberClosed(ids: number[]) {
+    closedIds.push(...ids);
+    if (closedIds.length > 50) closedIds.splice(0, closedIds.length - 50);
+  }
+  /** Open the most recently closed tab that still exists. */
+  function reopenClosedTab() {
+    while (closedIds.length) {
+      const id = closedIds.pop()!;
+      if (
+        sessions.value.some((session) => session.id === id) &&
+        !openIds.value.includes(id)
+      ) {
+        openRequest(id);
+        return id;
+      }
+    }
+    return null;
+  }
   /** Close a tab. The request stays in the browser tree. */
   function closeTab(id: number) {
     const index = openIds.value.indexOf(id);
     if (index < 0) return;
+    rememberClosed([id]);
     openIds.value.splice(index, 1);
     if (activeId.value === id)
       activeId.value =
@@ -263,6 +307,7 @@ export function useWorkspaceState() {
     const before = openIds.value;
     const remaining = before.filter((id) => !closing.has(id));
     if (remaining.length === before.length) return;
+    rememberClosed(before.filter((id) => closing.has(id)));
     openIds.value = remaining;
     if (activeId.value === null || !closing.has(activeId.value)) return;
     const position = before
@@ -287,13 +332,109 @@ export function useWorkspaceState() {
     openIds.value = remaining;
     activeId.value = known[0];
   }
+  /**
+   * The last deletion, kept so it can be undone. Deletions in the same task
+   * (such as a multi-select delete) are one deletion.
+   */
+  const lastDeletion = ref<Deletion | null>(null);
+  let batchOpen = false;
+  let expiry: ReturnType<typeof setTimeout> | undefined;
+  function discardDeletion() {
+    clearTimeout(expiry);
+    const deletion = lastDeletion.value;
+    lastDeletion.value = null;
+    if (deletion?.kind === "requests")
+      deletion.items.forEach((item) => releaseResponse(item.session.response));
+  }
+  function recordDeletion(next: Deletion) {
+    const current = lastDeletion.value;
+    if (batchOpen && current?.kind === "requests" && next.kind === "requests")
+      current.items.push(...next.items);
+    else {
+      discardDeletion();
+      lastDeletion.value = next;
+    }
+    if (!batchOpen) {
+      batchOpen = true;
+      setTimeout(() => (batchOpen = false));
+    }
+    clearTimeout(expiry);
+    expiry = setTimeout(discardDeletion, UNDO_WINDOW_MS);
+  }
+  /** Restore the last deleted requests or group. */
+  function undoDelete() {
+    const deletion = lastDeletion.value;
+    if (!deletion) return false;
+    clearTimeout(expiry);
+    lastDeletion.value = null;
+    if (deletion.kind === "requests") {
+      // Each index is from the moment of its deletion, so undo in reverse.
+      const items = [...deletion.items].reverse();
+      // A request created because the workspace became empty goes away again.
+      const placeholder =
+        sessions.value.length === 1 && !hasDraft(sessions.value[0])
+          ? sessions.value[0]
+          : null;
+      if (placeholder && deletion.items.some((item) => item.last)) {
+        sessions.value = [];
+        openIds.value = openIds.value.filter((id) => id !== placeholder.id);
+      }
+      const groupIds = new Set(groups.value.map((group) => group.id));
+      for (const item of items) {
+        if (
+          item.session.groupId !== null &&
+          !groupIds.has(item.session.groupId)
+        )
+          item.session.groupId = null;
+        sessions.value.splice(
+          Math.min(item.index, sessions.value.length),
+          0,
+          item.session,
+        );
+      }
+      for (const item of items)
+        if (item.openIndex >= 0)
+          openIds.value.splice(
+            Math.min(item.openIndex, openIds.value.length),
+            0,
+            item.session.id,
+          );
+      const first =
+        deletion.items.find((item) => item.openIndex >= 0) ?? deletion.items[0];
+      if (first) openRequest(first.session.id);
+    } else {
+      const { group, index, childGroupIds, sessionIds } = deletion;
+      const next = [...groups.value];
+      if (group.parentId !== null && !next.some((g) => g.id === group.parentId))
+        group.parentId = null;
+      next.splice(Math.min(index, next.length), 0, group);
+      groups.value = next.map((candidate) =>
+        childGroupIds.includes(candidate.id) &&
+        candidate.parentId === group.parentId
+          ? { ...candidate, parentId: group.id }
+          : candidate,
+      );
+      for (const session of sessions.value)
+        if (
+          sessionIds.includes(session.id) &&
+          session.groupId === group.parentId
+        )
+          session.groupId = group.id;
+    }
+    return true;
+  }
   /** Remove a request from the workspace. The workspace always keeps one request. */
   function deleteRequest(id: number) {
     const index = sessions.value.findIndex((session) => session.id === id);
     if (index < 0 || sessions.value[index].busy) return;
+    const openIndex = openIds.value.indexOf(id);
+    const session = sessions.value[index];
     closeTab(id);
-    releaseResponse(sessions.value[index].response);
     sessions.value.splice(index, 1);
+    recordDeletion({
+      kind: "requests",
+      items: [{ session, index, openIndex, last: !sessions.value.length }],
+    });
     if (!sessions.value.length) {
       const session = createSession();
       sessions.value.push(session);
@@ -359,6 +500,19 @@ export function useWorkspaceState() {
     groups.value = next;
   }
   function deleteGroup(id: number) {
+    const index = groups.value.findIndex((group) => group.id === id);
+    if (index < 0) return;
+    recordDeletion({
+      kind: "group",
+      group: { ...groups.value[index] },
+      index,
+      childGroupIds: groups.value
+        .filter((group) => group.parentId === id)
+        .map((group) => group.id),
+      sessionIds: sessions.value
+        .filter((session) => session.groupId === id)
+        .map((session) => session.id),
+    });
     const result = deleteGroupAndPromoteContents(
       groups.value,
       sessions.value,
@@ -468,6 +622,10 @@ export function useWorkspaceState() {
     reset,
     quitWithoutSaving,
     openRequest,
+    reopenClosedTab,
+    lastDeletion,
+    undoDelete,
+    discardDeletion,
     closeTab,
     closeTabs,
     openRequests,

@@ -18,6 +18,8 @@ import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import HelpTooltip from "@/components/HelpTooltip.vue";
 import CommandCenter from "@/components/CommandCenter.vue";
 import { COMMAND_PREFIX, type Command } from "@/lib/command-center";
+import { codeTargets } from "@/lib/codegen";
+import { applyZoom } from "@/lib/zoom";
 import { shortcutLabel } from "@/lib/shortcut";
 import { useTheme } from "@/composables/useTheme";
 import { nativeTransport } from "@/lib/transport";
@@ -29,6 +31,7 @@ import type { AuthorizationConfig } from "@/lib/authorization";
 import {
   applyNewRequestDefaults,
   resolveNewRequestDefaults,
+  stepZoom,
   transportOptions,
   type WorkspacePreferences,
 } from "@/lib/preferences";
@@ -50,6 +53,10 @@ const {
   reset,
   quitWithoutSaving,
   openRequest,
+  reopenClosedTab,
+  lastDeletion,
+  undoDelete,
+  discardDeletion,
   closeTab,
   closeTabs,
   openRequests,
@@ -179,39 +186,225 @@ function toggleLayout() {
     paneLayout: stacked.value ? "horizontal" : "vertical",
   });
 }
-const commands = computed<Command[]>(() => [
-  {
-    id: "toggle-layout",
-    label: `View: ${layoutToggleLabel.value}`,
-    shortcut: ["mod", "\\"],
-  },
-  { id: "toggle-browser", label: `View: ${browserToggleLabel.value}` },
-  { id: "new-request", label: "Request: New request", shortcut: ["mod", "t"] },
-  {
-    id: "duplicate-request",
-    label: "Request: Duplicate request",
-    shortcut: ["mod", "shift", "d"],
-    disabled: activeId.value === null,
-  },
-  {
-    id: "close-tab",
-    label: "Request: Close tab",
-    shortcut: ["mod", "w"],
-    disabled: activeId.value === null,
-  },
-  {
-    id: "open-settings",
-    label: "Preferences: Application settings",
-    shortcut: ["mod", ","],
-  },
-]);
+type WorkspaceHandle = InstanceType<typeof RequestWorkspace>;
+const workspaces = new Map<number, WorkspaceHandle>();
+function setWorkspace(id: number, handle: unknown) {
+  if (handle) workspaces.set(id, handle as WorkspaceHandle);
+  else workspaces.delete(id);
+}
+const activeWorkspace = () =>
+  activeId.value === null ? undefined : workspaces.get(activeId.value);
+function setZoom(zoom: number) {
+  setPreferences({ ...preferences.value, zoom });
+}
+watch(
+  () => preferences.value.zoom,
+  (zoom) => void applyZoom(zoom).catch(() => {}),
+  { immediate: true },
+);
+const zoomPercent = computed(() => Math.round(preferences.value.zoom * 100));
+function cycleTab(step: 1 | -1) {
+  if (!openIds.value.length) return;
+  const index = openIds.value.indexOf(activeId.value ?? -1);
+  select(
+    openIds.value[(index + step + openIds.value.length) % openIds.value.length],
+  );
+  void nextTick(() =>
+    document.getElementById(`request-tab-${activeId.value}`)?.focus(),
+  );
+}
+async function reopenTab() {
+  const id = reopenClosedTab();
+  if (id === null) return;
+  updateSelection([id], id);
+  await nextTick();
+  document.getElementById(`request-tab-${id}`)?.focus();
+}
+function undoDeletion() {
+  if (undoDelete() && activeId.value !== null)
+    updateSelection([activeId.value], activeId.value);
+}
+const deletionLabel = computed(() => {
+  const deletion = lastDeletion.value;
+  if (!deletion) return "";
+  if (deletion.kind === "group") return `DELETED GROUP ${deletion.group.name}`;
+  const count = deletion.items.length;
+  return `DELETED ${count} ${count === 1 ? "REQUEST" : "REQUESTS"}`;
+});
+function newGroup() {
+  const names = new Set(groups.value.map((group) => group.name));
+  let name = "New group";
+  for (let n = 2; names.has(name); n++) name = `New group ${n}`;
+  const group = addGroup(name, null);
+  if (narrow.value) mobileBrowserOpen.value = true;
+  else sidebarCollapsed.value = false;
+  openGroupSettings(group.id);
+}
+const commands = computed<Command[]>(() => {
+  const none = activeId.value === null;
+  const current = active.value;
+  const response = current?.response;
+  return [
+    {
+      id: "toggle-layout",
+      label: `View: ${layoutToggleLabel.value}`,
+      shortcut: ["mod", "\\"],
+    },
+    { id: "toggle-browser", label: `View: ${browserToggleLabel.value}` },
+    { id: "zoom-in", label: "View: Zoom in", shortcut: ["mod", "="] },
+    { id: "zoom-out", label: "View: Zoom out", shortcut: ["mod", "-"] },
+    {
+      id: "zoom-reset",
+      label: `View: Reset zoom (${zoomPercent.value}%)`,
+      shortcut: ["mod", "0"],
+      disabled: preferences.value.zoom === 1,
+    },
+    {
+      id: "next-tab",
+      label: "View: Next tab",
+      shortcut: ["ctrl", "tab"],
+      disabled: openIds.value.length < 2,
+    },
+    {
+      id: "previous-tab",
+      label: "View: Previous tab",
+      shortcut: ["ctrl", "shift", "tab"],
+      disabled: openIds.value.length < 2,
+    },
+    {
+      id: "new-request",
+      label: "Request: New request",
+      shortcut: ["mod", "t"],
+    },
+    {
+      id: "send",
+      label: current?.busy ? "Request: Cancel request" : "Request: Send",
+      shortcut: current?.busy ? ["mod", "."] : ["mod", "enter"],
+      disabled: none,
+    },
+    {
+      id: "focus-url",
+      label: "Request: Focus URL",
+      shortcut: ["mod", "l"],
+      disabled: none,
+    },
+    { id: "show-code", label: "Request: Show code", disabled: none },
+    ...codeTargets.map((target) => ({
+      id: `copy-as-${target.id}`,
+      label: `Request: Copy as ${target.label}`,
+      disabled: none,
+    })),
+    {
+      id: "duplicate-request",
+      label: "Request: Duplicate request",
+      shortcut: ["mod", "shift", "d"],
+      disabled: none,
+    },
+    { id: "reveal", label: "Request: Reveal in Browser", disabled: none },
+    {
+      id: "delete-request",
+      label: "Request: Delete request",
+      disabled: none || Boolean(current?.busy),
+    },
+    {
+      id: "close-tab",
+      label: "Tabs: Close tab",
+      shortcut: ["mod", "w"],
+      disabled: none,
+    },
+    {
+      id: "close-other-tabs",
+      label: "Tabs: Close other tabs",
+      disabled: openIds.value.length < 2,
+    },
+    {
+      id: "close-all-tabs",
+      label: "Tabs: Close all tabs",
+      disabled: !openIds.value.length,
+    },
+    {
+      id: "reopen-tab",
+      label: "Tabs: Reopen closed tab",
+      shortcut: ["mod", "shift", "t"],
+    },
+    {
+      id: "find",
+      label: "Response: Find",
+      shortcut: ["mod", "f"],
+      disabled: !response || response.binary,
+    },
+    { id: "copy-response", label: "Response: Copy", disabled: !response },
+    {
+      id: "save-response",
+      label: "Response: Save body…",
+      disabled: !response,
+    },
+    {
+      id: "toggle-wrap",
+      label: "Response: Toggle line wrap",
+      disabled: !response || response.binary,
+    },
+    {
+      id: "toggle-pretty",
+      label: "Response: Toggle pretty",
+      disabled: !response || response.binary || response.truncated,
+    },
+    { id: "new-group", label: "Browser: New group" },
+    {
+      id: "collapse-groups",
+      label: "Browser: Collapse all groups",
+      disabled: !groups.value.length,
+    },
+    {
+      id: "undo-delete",
+      label: "Edit: Undo delete",
+      shortcut: ["mod", "z"],
+      disabled: !lastDeletion.value,
+    },
+    {
+      id: "open-settings",
+      label: "Preferences: Application settings",
+      shortcut: ["mod", ","],
+    },
+  ];
+});
 function runCommand(id: string) {
+  const workspace = activeWorkspace();
+  const response = workspace?.response();
   if (id === "toggle-layout") toggleLayout();
   else if (id === "toggle-browser") toggleBrowser();
+  else if (id === "zoom-in") setZoom(stepZoom(preferences.value.zoom, 1));
+  else if (id === "zoom-out") setZoom(stepZoom(preferences.value.zoom, -1));
+  else if (id === "zoom-reset") setZoom(1);
+  else if (id === "next-tab") cycleTab(1);
+  else if (id === "previous-tab") cycleTab(-1);
   else if (id === "new-request") create();
-  else if (id === "duplicate-request") duplicate();
+  else if (id === "send")
+    active.value?.busy ? workspace?.cancel() : void workspace?.send();
+  else if (id === "focus-url") void workspace?.focusUrl();
+  else if (id === "show-code") workspace?.toggleCode();
+  else if (id.startsWith("copy-as-")) {
+    const target = codeTargets.find((t) => `copy-as-${t.id}` === id);
+    if (target && workspace) void copyText(workspace.codeFor(target.id));
+  } else if (id === "duplicate-request") duplicate();
+  else if (id === "reveal" && activeId.value !== null)
+    void reveal(activeId.value);
+  else if (id === "delete-request" && activeId.value !== null)
+    remove(activeId.value);
   else if (id === "close-tab" && activeId.value !== null)
     void close(activeId.value);
+  else if (id === "close-other-tabs")
+    void closeMany(openIds.value.filter((open) => open !== activeId.value));
+  else if (id === "close-all-tabs") void closeMany([...openIds.value]);
+  else if (id === "reopen-tab") void reopenTab();
+  else if (id === "find") response?.find();
+  else if (id === "copy-response") response?.copyResult();
+  else if (id === "save-response") void response?.saveBody();
+  else if (id === "toggle-wrap") response?.toggleWrap();
+  else if (id === "toggle-pretty") response?.togglePretty();
+  else if (id === "new-group") newGroup();
+  else if (id === "collapse-groups") collapseAllGroups();
+  else if (id === "undo-delete") undoDeletion();
   else if (id === "open-settings") openApplicationSettings();
 }
 function toggleBrowser() {
@@ -328,6 +521,13 @@ function remove(id: number) {
     selectionAnchorId.value === id ? null : selectionAnchorId.value,
   );
 }
+function isEditable(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.isContentEditable ||
+      ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+  );
+}
 function onKey(event: KeyboardEvent) {
   if (
     !ready.value ||
@@ -348,19 +548,35 @@ function onKey(event: KeyboardEvent) {
     return;
   if (event.ctrlKey && event.key === "Tab") {
     event.preventDefault();
-    if (!openIds.value.length) return;
-    const index = openIds.value.indexOf(activeId.value ?? -1);
-    select(
-      openIds.value[
-        (index + (event.shiftKey ? -1 : 1) + openIds.value.length) %
-          openIds.value.length
-      ],
-    );
-    void nextTick(() =>
-      document.getElementById(`request-tab-${activeId.value}`)?.focus(),
-    );
+    cycleTab(event.shiftKey ? -1 : 1);
   } else if (event.metaKey || event.ctrlKey) {
     const key = event.key.toLowerCase();
+    if (key === "t" && event.shiftKey) {
+      event.preventDefault();
+      void reopenTab();
+    }
+    if (key === "=" || key === "+") {
+      event.preventDefault();
+      setZoom(stepZoom(preferences.value.zoom, 1));
+    }
+    if (key === "-" && !event.shiftKey) {
+      event.preventDefault();
+      setZoom(stepZoom(preferences.value.zoom, -1));
+    }
+    if (key === "0" && !event.shiftKey) {
+      event.preventDefault();
+      setZoom(1);
+    }
+    // Text fields keep their own undo.
+    if (
+      key === "z" &&
+      !event.shiftKey &&
+      lastDeletion.value &&
+      !isEditable(event.target)
+    ) {
+      event.preventDefault();
+      undoDeletion();
+    }
     if (key === "t" && !event.shiftKey) {
       event.preventDefault();
       create();
@@ -547,6 +763,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           :global-definitions="globalDefinitions"
           :transport="transport"
           :layout="preferences.paneLayout"
+          :ref="(handle) => setWorkspace(session.id, handle)"
           :code-target="preferences.codeTarget"
           @update:code-target="
             (codeTarget) => setPreferences({ ...preferences, codeTarget })
@@ -582,6 +799,30 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         {{ copyError }}
       </span>
       <span v-else-if="copied" role="status">COPIED</span>
+      <span
+        v-if="lastDeletion"
+        class="flex items-center gap-2"
+        role="status"
+        data-undo-delete
+      >
+        <span class="max-w-60 truncate">{{ deletionLabel }}</span>
+        <button
+          type="button"
+          class="text-foreground underline decoration-dotted underline-offset-3"
+          :title="`Undo · ${shortcutLabel(['mod', 'z'])}`"
+          @click="undoDeletion"
+        >
+          UNDO
+        </button>
+        <button
+          type="button"
+          class="hover:text-foreground"
+          aria-label="Dismiss"
+          @click="discardDeletion"
+        >
+          ×
+        </button>
+      </span>
       <span v-if="!transport.verifyTls" class="text-warning" role="status">
         TLS VERIFY OFF
       </span>
@@ -590,6 +831,16 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         {{ transport.timeoutSeconds }} s TIMEOUT ·
         {{ transport.inspectionLimitMiB }} MiB LIMIT
       </span>
+      <button
+        v-if="preferences.zoom !== 1"
+        type="button"
+        class="hover:text-foreground"
+        data-zoom
+        :title="`Reset zoom · ${shortcutLabel(['mod', '0'])}`"
+        @click="setZoom(1)"
+      >
+        {{ zoomPercent }}%
+      </button>
       <span data-theme-name>{{ themeName }}</span>
     </footer>
     <GroupSettingsDialog

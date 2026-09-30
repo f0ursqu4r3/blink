@@ -5,6 +5,7 @@ import type { RequestGroup } from "@/lib/groups";
 import type { RequestSession } from "@/lib/session";
 import {
   COMMAND_PREFIX,
+  highlightRuns,
   isCommandQuery,
   matchCommands,
   matchRequests,
@@ -185,7 +186,20 @@ defineExpose({ show });
             @mousedown.prevent="command.disabled || runCommand(command.id)"
             @mousemove="index = i"
           >
-            <span class="min-w-0 flex-1 truncate">{{ command.label }}</span>
+            <span class="min-w-0 flex-1 truncate"
+              ><template
+                v-for="(run, r) in highlightRuns(
+                  command.label,
+                  command.indices,
+                )"
+                :key="r"
+                ><mark
+                  v-if="run.match"
+                  class="bg-transparent font-semibold text-primary"
+                  >{{ run.text }}</mark
+                ><template v-else>{{ run.text }}</template></template
+              ></span
+            >
             <kbd
               v-if="command.shortcut"
               class="shrink-0 text-[10px] text-muted-foreground"
@@ -207,7 +221,20 @@ defineExpose({ show });
               :data-method="match.method"
               >{{ match.method }}</span
             >
-            <span class="min-w-0 flex-1 truncate">{{ match.label }}</span>
+            <span class="min-w-0 flex-1 truncate"
+              ><template
+                v-for="(run, r) in highlightRuns(
+                  match.label,
+                  match.labelIndices,
+                )"
+                :key="r"
+                ><mark
+                  v-if="run.match"
+                  class="bg-transparent font-semibold text-primary"
+                  >{{ run.text }}</mark
+                ><template v-else>{{ run.text }}</template></template
+              ></span
+            >
             <span
               v-if="match.groupPath"
               class="max-w-[40%] truncate text-muted-foreground"

@@ -14,3 +14,10 @@ describe("shortcutLabel", () => {
     expect(shortcutLabel(["mod", "w"], false)).toBe("Ctrl+W");
   });
 });
+
+describe("control and tab keys", () => {
+  it("labels Control separately from the platform modifier", () => {
+    expect(shortcutLabel(["ctrl", "shift", "tab"], true)).toBe("⌃⇧Tab");
+    expect(shortcutLabel(["ctrl", "tab"], false)).toBe("Ctrl+Tab");
+  });
+});

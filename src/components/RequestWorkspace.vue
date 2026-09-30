@@ -238,6 +238,17 @@ function onKey(event: KeyboardEvent) {
   }
 }
 
+const responsePanel = ref<InstanceType<typeof ResponsePanel>>();
+defineExpose({
+  send,
+  cancel,
+  focusUrl,
+  toggleCode: () => (showCurl.value = !showCurl.value),
+  /** Code for the request in `target`, or "" when it does not build. */
+  codeFor,
+  response: () => responsePanel.value,
+});
+
 onMounted(() => {
   window.addEventListener("keydown", onKey);
   if (props.active) void focusUrl();
@@ -615,6 +626,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         @keydown="resizeWithKeyboard"
       />
       <ResponsePanel
+        ref="responsePanel"
         v-model:view="session.view"
         :active="active"
         :response="session.response"

@@ -233,6 +233,20 @@ function onKey(event: KeyboardEvent) {
 }
 onMounted(() => window.addEventListener("keydown", onKey));
 onUnmounted(() => window.removeEventListener("keydown", onKey));
+/** Open find on the body tab. */
+function find() {
+  if (!props.response || props.response.binary) return;
+  tab.value = "body";
+  if (!inspectorVisible.value) toggleInspector();
+  else void nextTick(() => searchInput.value?.focus());
+}
+defineExpose({
+  find,
+  copyResult,
+  saveBody,
+  toggleWrap: () => (wrap.value = !wrap.value),
+  togglePretty: () => (pretty.value = !pretty.value),
+});
 
 // ── Header row context menu ────────────────────────────────────────────────
 const contextHeader = ref<Header | null>(null);

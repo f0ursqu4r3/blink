@@ -2,11 +2,14 @@ const isMac =
   typeof navigator !== "undefined" &&
   /Mac|iPhone|iPad/i.test(navigator.platform);
 
-const modifiers = ["mod", "shift", "alt"];
-// VS Code order: ⌥⇧⌘ on macOS, Ctrl+Alt+Shift elsewhere.
-const macOrder = ["alt", "shift", "mod"];
-const wordOrder = ["mod", "alt", "shift"];
+// "ctrl" is the Control key on every platform; "mod" is ⌘ on macOS.
+const modifiers = ["mod", "ctrl", "shift", "alt"];
+// VS Code order: ⌃⌥⇧⌘ on macOS, Ctrl+Alt+Shift elsewhere.
+const macOrder = ["ctrl", "alt", "shift", "mod"];
+const wordOrder = ["mod", "ctrl", "alt", "shift"];
 const macSymbols: Record<string, string> = {
+  ctrl: "⌃",
+  tab: "Tab",
   alt: "⌥",
   shift: "⇧",
   mod: "⌘",
@@ -14,6 +17,8 @@ const macSymbols: Record<string, string> = {
   esc: "Esc",
 };
 const words: Record<string, string> = {
+  ctrl: "Ctrl",
+  tab: "Tab",
   alt: "Alt",
   shift: "Shift",
   mod: "Ctrl",
@@ -23,7 +28,8 @@ const words: Record<string, string> = {
 
 /**
  * A shortcut hint for menus, such as "⇧⌘D" on macOS and "Ctrl+Shift+D"
- * elsewhere. Keys: "mod", "shift", "alt", "enter", "esc", or one character.
+ * elsewhere. Keys: "mod", "ctrl", "shift", "alt", "enter", "esc", "tab", or one
+ * character.
  */
 export function shortcutLabel(keys: string[], mac = isMac) {
   const order = mac ? macOrder : wordOrder;

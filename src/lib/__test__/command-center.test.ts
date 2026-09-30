@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  fuzzyMatch,
   groupPath,
+  highlightRuns,
   isCommandQuery,
   matchCommands,
   matchRequests,
@@ -86,5 +88,45 @@ describe("matchCommands", () => {
   it("detects command queries", () => {
     expect(isCommandQuery(">x")).toBe(true);
     expect(isCommandQuery("x>")).toBe(false);
+  });
+});
+
+describe("fuzzyMatch", () => {
+  it("prefers a substring at a word start", () => {
+    const match = fuzzyMatch("View: Stack request", "req");
+    expect(match?.indices).toEqual([12, 13, 14]);
+    expect(match!.score).toBeGreaterThan(
+      fuzzyMatch("prerequest", "req")!.score,
+    );
+  });
+  it("matches characters in order", () => {
+    expect(fuzzyMatch("Request: Duplicate request", "dupr")?.indices).toEqual([
+      9, 10, 11, 19,
+    ]);
+    expect(fuzzyMatch("abc", "acb")).toBeNull();
+  });
+  it("ranks commands by score, then list order", () => {
+    const commands: Command[] = [
+      { id: "a", label: "View: Toggle unwrapped" },
+      { id: "b", label: "Response: Wrap lines" },
+    ];
+    expect(matchCommands(commands, ">wrap").map((c) => c.id)).toEqual([
+      "b",
+      "a",
+    ]);
+    expect(matchCommands(commands, ">tgu").map((c) => c.id)).toEqual(["a"]);
+  });
+  it("splits text into highlighted runs", () => {
+    expect(highlightRuns("abcd", [1, 2])).toEqual([
+      { text: "a", match: false },
+      { text: "bc", match: true },
+      { text: "d", match: false },
+    ]);
+  });
+  it("matches requests fuzzily by label", () => {
+    const users = session("https://api.example.test/v1/users/list", null);
+    expect(matchRequests([users], [], "usli").map((m) => m.id)).toEqual([
+      users.id,
+    ]);
   });
 });
