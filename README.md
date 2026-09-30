@@ -1,7 +1,8 @@
 # Blink
 
 Blink is a fast, private HTTP client for professional API work. It runs as a
-Tauri desktop app. It does not require an account or cloud service. The local
+native desktop app built with GPUI. It does not require an account or cloud
+service. The local
 Browser sidebar organizes the request tabs in the current session.
 
 ## Included
@@ -55,11 +56,11 @@ Browser sidebar organizes the request tabs in the current session.
   and keeps the events.
 - Open a WebSocket with a `ws://` or `wss://` URL. Send and receive messages
   in the WebSocket panel.
-- Keep cookies in one jar and send them with later requests (desktop app).
-  Manage them from Application Settings or the command center.
+- Keep cookies in one jar and send them with later requests. Manage them
+  from Application Settings or the command center.
 - Switch between pretty JSON and raw text. Large JSON numbers stay exact.
 - Copy response bodies and toggle line wrapping.
-- Use the Tauri backend for requests without browser CORS limits.
+- Send requests from the native engine, without browser CORS limits.
 - Restore open tabs and application state after restart. Nothing is sent until
   you press Send.
 - Distinguish a previous response from an edited, unsent draft.
@@ -84,11 +85,10 @@ The same settings control TLS and proxies. Blink trusts the system
 certificate store, so company and local development CAs work. **Verify TLS
 certificates** is on by default; while it is off, the status bar shows TLS
 VERIFY OFF. **Proxy URL** accepts `http`, `https`, or `socks5` URLs. Empty uses
-the system proxy settings. TLS and proxy settings apply only to the desktop
-app.
+the system proxy settings.
 
-File bodies and multipart file parts are desktop only. Blink reads a file
-only after you pick it in its open dialog. It remembers picked files so saved
+Blink reads a file for a file body or multipart file part only after you
+pick it in its open dialog. It remembers picked files so saved
 requests keep working after a restart. Uploads are limited to 1 GiB per file.
 
 ## Request tabs
@@ -115,8 +115,7 @@ never send automatically.
 | Application settings     | `Cmd/Ctrl+,`                  |
 
 In the request tab strip, use Left/Right, Home/End, and Delete to select or
-close tabs. Escape dismisses the cURL preview. Browser
-hosts can reserve shortcuts; the native Tauri app is the primary target.
+close tabs. Escape dismisses the cURL preview.
 
 ## Browser groups
 
@@ -154,7 +153,7 @@ Request fields can reference tokens:
 | ------------ | -------------------------------------------------- |
 | `{{name}}`   | The nearest group token, then the workspace token  |
 | `{{_.name}}` | The workspace token only                           |
-| `{{!NAME}}`  | The `NAME` environment variable of the desktop app |
+| `{{!NAME}}`  | The `NAME` environment variable of the Blink process |
 
 Environment values resolve in the desktop backend when a request is sent.
 They are not shown in the editor or included in cURL exports. Token names
@@ -171,7 +170,7 @@ Blink saves tab order, groups, group hierarchy, request membership, the active
 tab, complete request drafts, responses, errors, editor tabs, Pretty/Raw mode,
 wrapping, response scroll position, and request history. History keeps the
 last 25 sends of each request, with bodies up to 64 KiB.
-The desktop app also restores window size and position. Closing the window
+Blink also restores window size and position. Closing the window
 or quitting waits for the latest workspace save. Interrupted requests restore
 as idle tabs with an explanation; Blink never replays them automatically.
 Transient confirmations and the cURL preview start closed.
@@ -185,15 +184,22 @@ Discarding a tab removes it from the next saved snapshot; this is not secure
 erasure of filesystem blocks or backups.
 
 On macOS, the snapshot is stored at
-`~/Library/Application Support/com.kyle.blink/workspace-v1.json`.
+`~/Library/Application Support/com.kyle.blink.gpui/workspace-v1.json`.
 The paths of files you picked for request bodies are stored beside it in
 `file-grants.json`. The cookie jar is stored beside it in `cookies.json`,
-including session cookies.
-Other desktop systems use Tauri's application data directory. Native saves
-write a temporary file, sync it, then replace the snapshot atomically.
+including session cookies. The theme is stored in `theme.json` and the
+window size and position in `window-state.json`.
+Other desktop systems use the platform application data directory. Set
+`BLINK_DATA_DIR` to use another directory. Saves write a temporary file,
+sync it, then replace the snapshot atomically.
+
+On first launch, when there is no snapshot yet, Blink copies
+`workspace-v1.json`, `file-grants.json`, and `cookies.json` once from the
+earlier Tauri app's `com.kyle.blink` directory. It never changes those files.
+
 The versioned format supports up to 10,000 requests, 10,000 groups, and a 64 MiB total
 snapshot. Existing version 1 snapshots restore into Ungrouped. Versions 1, 2,
-and 3 remain readable; the next save writes version 3 with preferences.
+3, and 4 remain readable; the next save writes version 4.
 
 The footer reports saving and failure states. Failed saves preserve the
 previous snapshot and expose Retry. A corrupt or unsupported snapshot is
@@ -201,57 +207,44 @@ never silently replaced: retry loading or confirm Start fresh. If quitting
 cannot save, Blink stays open; Quit without saving explicitly discards
 unsaved changes.
 
-Browser preview stores a separate snapshot in this origin's local storage.
-Its smaller browser-defined quota can reject large responses; this is shown
-as a save error. Use the desktop app for large sessions.
-
 ## Stack
 
-- Tauri 2 and Rust
-- Vue 3 and TypeScript
-- Tailwind CSS 4
-- shadcn-vue source configuration with Reka UI primitives
+- Rust
+- GPUI and GPUI Kit (`gpui-kit`) for the interface
+- reqwest, tokio, and tokio-tungstenite in the request engine
 - Lucide icons
+
+The workspace has two crates. `crates/blink-core` holds the request engine
+and every piece of logic that does not draw: requests, tokens, groups,
+environments, the snapshot format, import and code export, checks, and
+themes. `crates/blink` is the GPUI app.
 
 ## Develop
 
 ```sh
-bun install
-bun run desktop
+cargo run -p blink
 ```
 
-This starts Vite and the native Tauri window. Vue, TypeScript, and CSS edits
-hot-reload through Vite. Rust edits rebuild and restart the native app.
-Frontend state can survive template and style edits; script edits can remount
-components. Saved request state restores after full page and app restarts.
-
-Vite uses port `1420` for the app and `1421` for its HMR WebSocket. Keep both
-ports available. Do not run a separate Vite server before `bun run desktop`.
-The dev server binds to localhost unless Tauri provides `TAURI_DEV_HOST`.
-
-For web-only UI work, run:
+Set `BLINK_DATA_DIR` to run against a separate data directory:
 
 ```sh
-bun run dev
+BLINK_DATA_DIR=/tmp/blink-dev cargo run -p blink
 ```
 
-Browser preview uses `fetch`, sends no ambient cookies, and remains subject
-to CORS. Browser response headers can be restricted by CORS, and browsers
-cannot expose manual redirect responses. With Follow redirects on, the
-browser preview shows the final URL but not the hop count. Use the desktop
-app for full HTTP inspection. Requests never use a relay or cloud proxy.
+Build the macOS app bundle at `target/release/Blink.app`:
+
+```sh
+script/bundle-macos
+```
 
 ## Verify
 
 ```sh
-bun run lint
-bun run test
-bunx playwright install chromium
-bun run test:e2e
-bun run build
-cargo test --manifest-path src-tauri/Cargo.toml
-cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Browser tests use intercepted fixture responses, not a public API. Rust
-tests use a local TCP server. Screenshots are written to `artifacts/`.
+Engine tests use a local TCP server. Snapshot compatibility tests read
+fixtures written by the earlier TypeScript encoder in
+`crates/blink-core/tests/fixtures/workspace`. UI tests run headless and open
+no window.
