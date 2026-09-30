@@ -23,7 +23,7 @@ test("fetch schema enables GraphQL completion; JSON is highlighted", async ({
   await page
     .getByLabel("Request URL", { exact: true })
     .fill("https://graph.test/graphql");
-  await page.getByLabel("HTTP method").selectOption("POST");
+  await page.getByLabel("HTTP method").fill("POST");
   const requestTabs = page.getByRole("tablist", { name: "Request options" });
   await requestTabs.getByRole("tab", { name: "Body" }).click();
   const bodyMode = page.getByRole("combobox", { name: "Body", exact: true });
@@ -53,7 +53,7 @@ test("format error names the line and marks it in the editor", async ({
   page,
 }) => {
   await page.goto("/");
-  await page.getByLabel("HTTP method").selectOption("POST");
+  await page.getByLabel("HTTP method").fill("POST");
   const requestTabs = page.getByRole("tablist", { name: "Request options" });
   await requestTabs.getByRole("tab", { name: "Body" }).click();
   await page
@@ -74,7 +74,7 @@ test("format error names the line and marks it in the editor", async ({
 
 test("variables pane resizes by drag and collapses", async ({ page }) => {
   await page.goto("/");
-  await page.getByLabel("HTTP method").selectOption("POST");
+  await page.getByLabel("HTTP method").fill("POST");
   const requestTabs = page.getByRole("tablist", { name: "Request options" });
   await requestTabs.getByRole("tab", { name: "Body" }).click();
   await page

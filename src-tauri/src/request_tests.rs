@@ -63,7 +63,7 @@ fn input(url: String) -> RequestInput {
         method: "GET".into(),
         url,
         headers: vec![],
-        body: None,
+        ..RequestInput::default()
     }
 }
 
@@ -120,9 +120,13 @@ fn store() -> (tempfile::TempDir, ResponseStore) {
     (root, store)
 }
 
+fn grants(root: &tempfile::TempDir) -> FileGrants {
+    FileGrants::load(root.path().join("file-grants.json"))
+}
+
 async fn run(request: RequestInput, options: TransportOptions) -> Result<ResponseOutput, String> {
-    let (_root, store) = store();
-    execute(request, options, &store, DOWNLOAD_LIMIT).await
+    let (root, store) = store();
+    execute(request, options, &store, &grants(&root), DOWNLOAD_LIMIT).await
 }
 
 #[test]
@@ -351,7 +355,7 @@ async fn timeout_message_uses_the_configured_limits() {
 async fn truncates_the_preview_and_stores_the_full_body() {
     let body = "x".repeat(1024 * 1024 + 10).into_bytes();
     let base = serve(vec![("200 OK", String::new(), body.clone())]);
-    let (_root, store) = store();
+    let (root, store) = store();
     let result = execute(
         input(base),
         TransportOptions {
@@ -359,6 +363,7 @@ async fn truncates_the_preview_and_stores_the_full_body() {
             ..options()
         },
         &store,
+        &grants(&root),
         DOWNLOAD_LIMIT,
     )
     .await
@@ -405,7 +410,7 @@ async fn a_character_cut_at_the_preview_limit_stays_text() {
 async fn rejects_a_body_over_the_download_limit_and_keeps_no_file() {
     let base = serve(vec![("200 OK", String::new(), vec![b'x'; 64])]);
     let (root, store) = store();
-    let error = execute(input(base), options(), &store, 32)
+    let error = execute(input(base), options(), &store, &grants(&root), 32)
         .await
         .unwrap_err();
     assert_eq!(error, "Response exceeds the 1 GiB download limit.");
@@ -415,4 +420,171 @@ async fn rejects_a_body_over_the_download_limit_and_keeps_no_file() {
             .count(),
         0
     );
+}
+
+#[tokio::test]
+async fn sends_a_custom_method() {
+    let (url, received) = fixture("200 OK", "", String::new(), Duration::ZERO);
+    let request = RequestInput {
+        method: "PURGE".into(),
+        ..input(url)
+    };
+    assert_eq!(run(request, options()).await.unwrap().status, 200);
+    assert!(received
+        .recv()
+        .unwrap()
+        .starts_with("PURGE /check HTTP/1.1"));
+}
+
+#[tokio::test]
+async fn rejects_an_invalid_method() {
+    let request = RequestInput {
+        method: "BAD METHOD".into(),
+        ..input("http://127.0.0.1:9/".into())
+    };
+    assert_eq!(
+        run(request, options()).await.unwrap_err(),
+        "Invalid HTTP method."
+    );
+}
+
+#[tokio::test]
+async fn cancel_stops_a_running_request() {
+    let (url, _received) = fixture("200 OK", "", "late".into(), Duration::from_secs(5));
+    let (root, store) = store();
+    let grants = grants(&root);
+    let in_flight = InFlight::default();
+    let started = Instant::now();
+    let request = in_flight.run(
+        "r1".into(),
+        execute(input(url), options(), &store, &grants, DOWNLOAD_LIMIT),
+    );
+    let cancel = async {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+        in_flight.cancel("r1");
+    };
+    let (result, ()) = tokio::join!(request, cancel);
+    assert_eq!(result.unwrap_err(), CANCELED);
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(in_flight.0.lock().unwrap().is_empty());
+    assert_eq!(
+        std::fs::read_dir(root.path().join("responses"))
+            .unwrap()
+            .count(),
+        0
+    );
+}
+
+#[tokio::test]
+async fn sends_a_granted_file_body() {
+    let (url, received) = fixture("200 OK", "", String::new(), Duration::ZERO);
+    let (root, store) = store();
+    let grants = grants(&root);
+    let file = root.path().join("payload.bin");
+    std::fs::write(&file, b"file-bytes").unwrap();
+    grants.grant(&file).unwrap();
+    let request = RequestInput {
+        method: "PUT".into(),
+        body_file: Some(file.to_string_lossy().into_owned()),
+        ..input(url)
+    };
+    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT)
+        .await
+        .unwrap();
+    assert!(received.recv().unwrap().ends_with("\r\n\r\nfile-bytes"));
+}
+
+#[tokio::test]
+async fn refuses_a_file_that_was_not_picked() {
+    let (root, store) = store();
+    let file = root.path().join("secret.txt");
+    std::fs::write(&file, b"secret").unwrap();
+    let request = RequestInput {
+        method: "POST".into(),
+        body_file: Some(file.to_string_lossy().into_owned()),
+        ..input("http://127.0.0.1:9/".into())
+    };
+    let error = execute(request, options(), &store, &grants(&root), DOWNLOAD_LIMIT)
+        .await
+        .unwrap_err();
+    assert_eq!(error, "Choose secret.txt again to allow Blink to read it.");
+}
+
+#[tokio::test]
+async fn sends_multipart_text_and_file_parts() {
+    let (url, received) = fixture("200 OK", "", String::new(), Duration::ZERO);
+    let (root, store) = store();
+    let grants = grants(&root);
+    let file = root.path().join("photo.png");
+    std::fs::write(&file, b"PNGDATA").unwrap();
+    grants.grant(&file).unwrap();
+    let request = RequestInput {
+        method: "POST".into(),
+        multipart: Some(vec![
+            MultipartInput {
+                key: "title".into(),
+                value: "Hello".into(),
+                file: false,
+            },
+            MultipartInput {
+                key: "upload".into(),
+                value: file.to_string_lossy().into_owned(),
+                file: true,
+            },
+        ]),
+        ..input(url)
+    };
+    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT)
+        .await
+        .unwrap();
+    let raw = received.recv().unwrap();
+    assert!(raw.contains("content-type: multipart/form-data; boundary="));
+    assert!(raw.contains("name=\"title\"\r\n\r\nHello"));
+    assert!(raw.contains("name=\"upload\"; filename=\"photo.png\""));
+    assert!(raw.contains("PNGDATA"));
+}
+
+#[tokio::test]
+async fn rejects_an_invalid_proxy_url() {
+    let error = run(
+        input("http://127.0.0.1:9/".into()),
+        TransportOptions {
+            proxy_url: "ftp://proxy".into(),
+            ..options()
+        },
+    )
+    .await
+    .unwrap_err();
+    assert_eq!(error, "Invalid proxy URL.");
+}
+
+#[tokio::test]
+async fn sends_through_a_configured_proxy() {
+    // The fixture acts as the proxy: it receives the absolute target URL.
+    let (proxy, received) = fixture("200 OK", "", String::new(), Duration::ZERO);
+    let proxy = proxy.trim_end_matches("/check").to_string();
+    let result = run(
+        input("http://example.invalid/through".into()),
+        TransportOptions {
+            proxy_url: proxy,
+            ..options()
+        },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.status, 200);
+    assert!(received
+        .recv()
+        .unwrap()
+        .starts_with("GET http://example.invalid/through HTTP/1.1"));
+}
+
+#[test]
+fn transport_options_default_to_verified_tls_and_system_proxy() {
+    let parsed: TransportOptions = serde_json::from_str(
+        r#"{"timeoutSeconds":5,"connectTimeoutSeconds":2,"followRedirects":false,"maxRedirects":3,"inspectionLimitMiB":8}"#,
+    )
+    .unwrap();
+    assert!(parsed.verify_tls);
+    assert!(parsed.proxy_url.is_empty());
 }

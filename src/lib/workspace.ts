@@ -1,4 +1,4 @@
-import { bodyModes, buildRequest, methods, reservePairId } from "./request";
+import { bodyModes, buildRequest, isMethod, reservePairId } from "./request";
 import {
   buildResolvedRequestContext,
   type AuthorizationConfig,
@@ -17,6 +17,9 @@ import {
 
 export const WORKSPACE_KEY = "blink.workspace.v1";
 export const MAX_STATE_BYTES = 64 * 1024 * 1024;
+/** Sanity bounds for a snapshot. The byte limit is the real cap. */
+export const MAX_REQUESTS = 10_000;
+export const MAX_GROUPS = 10_000;
 type StoredTab = Omit<RequestSession, "busy" | "elapsed" | "groupId"> & {
   interrupted: boolean;
   groupId?: number | null;
@@ -115,17 +118,19 @@ function validateDefinitions(
 
 function validateDraft(input: unknown, version: number) {
   const draft = record(input);
-  check(methods.includes(draft.method as never));
+  check(isMethod(draft.method));
   for (const key of ["url", "body", "token", "username", "password"])
     check(text(draft[key]));
   check(bodyModes.includes(draft.bodyMode as never));
   check(draft.variables === undefined || text(draft.variables));
+  check(draft.bodyFile === undefined || text(draft.bodyFile));
   check(["none", "bearer", "basic"].includes(draft.auth as string));
   // v3: validate localAuth if present
   if (version >= 3 && draft.localAuth !== undefined) {
     check(validateAuthorizationConfig(draft.localAuth));
   }
-  for (const key of ["query", "headers"]) {
+  for (const key of ["query", "headers", "form"]) {
+    if (key === "form" && draft.form === undefined) continue;
     const ids = new Set();
     for (const row of array(draft[key], 10_000)) {
       const entry = record(row);
@@ -134,7 +139,8 @@ function validateDraft(input: unknown, version: number) {
           !ids.has(entry.id) &&
           text(entry.key) &&
           text(entry.value) &&
-          typeof entry.enabled === "boolean",
+          typeof entry.enabled === "boolean" &&
+          (entry.file === undefined || typeof entry.file === "boolean"),
       );
       ids.add(entry.id);
     }
@@ -168,7 +174,7 @@ function validateResponse(input: unknown) {
   }
 }
 function validateGroups(input: unknown, version: number): RequestGroup[] {
-  const groups = array(input, 128).map((value) => {
+  const groups = array(input, MAX_GROUPS).map((value) => {
     const group = record(value);
     check(
       id(group.id) &&
@@ -191,7 +197,7 @@ function validateGroups(input: unknown, version: number): RequestGroup[] {
         );
       }
       if (group.defaultMethod !== undefined)
-        check(methods.includes(group.defaultMethod as never));
+        check(isMethod(group.defaultMethod));
       if (group.defaultUrl !== undefined)
         check(
           text(group.defaultUrl) &&
@@ -233,7 +239,7 @@ function parseSnapshot(content: string): Snapshot {
   check([1, 2, 3, 4].includes(data.version as number));
   const version = data.version as number;
   check(id(data.activeId) || (version >= 4 && data.activeId === null));
-  const tabs = array(data.tabs, 128);
+  const tabs = array(data.tabs, MAX_REQUESTS);
   check(tabs.length > 0);
   const ids = new Set();
   for (const item of tabs) {
@@ -260,7 +266,7 @@ function parseSnapshot(content: string): Snapshot {
     );
   }
   if (version >= 4) {
-    const openIds = array(data.openIds, 128);
+    const openIds = array(data.openIds, MAX_REQUESTS);
     check(
       openIds.every((openId) => ids.has(openId)) &&
         new Set(openIds).size === openIds.length,
@@ -385,9 +391,11 @@ export function decodeWorkspace(content: string) {
   );
   for (const session of sessions) {
     reserveSessionId(session.id);
-    [...session.draft.query, ...session.draft.headers].forEach((row) =>
-      reservePairId(row.id),
-    );
+    [
+      ...session.draft.query,
+      ...session.draft.headers,
+      ...(session.draft.form ?? []),
+    ].forEach((row) => reservePairId(row.id));
     if (session.response) delete session.response.bodyId;
   }
   const groups =

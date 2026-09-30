@@ -79,7 +79,12 @@ const { copied, copyError, copy: copyText } = useClipboard();
 function curlFor(id: number) {
   const session = sessions.value.find((candidate) => candidate.id === id);
   return session
-    ? sessionCurl(session, groups.value, globalDefinitions.value)
+    ? sessionCurl(
+        session,
+        groups.value,
+        globalDefinitions.value,
+        transport.value,
+      )
     : "";
 }
 const { name: themeName } = useTheme();
@@ -500,7 +505,11 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         {{ copyError }}
       </span>
       <span v-else-if="copied" role="status">COPIED</span>
+      <span v-if="!transport.verifyTls" class="text-warning" role="status">
+        TLS VERIFY OFF
+      </span>
       <span class="ml-auto max-[760px]:hidden">
+        <template v-if="transport.proxyUrl">PROXY ·</template>
         {{ transport.timeoutSeconds }} s TIMEOUT ·
         {{ transport.inspectionLimitMiB }} MiB LIMIT
       </span>

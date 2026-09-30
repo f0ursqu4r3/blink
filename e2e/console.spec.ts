@@ -37,7 +37,7 @@ test("compose, send, inspect and close through real controls", async ({
   await page
     .getByLabel("Query value 1", { exact: true })
     .fill("local development");
-  await page.getByLabel("HTTP method").selectOption("POST");
+  await page.getByLabel("HTTP method").fill("POST");
   const requestTabs = page.getByRole("tablist", { name: "Request options" });
   await requestTabs.getByRole("tab", { name: "Body" }).click();
   await page

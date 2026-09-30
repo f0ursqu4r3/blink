@@ -28,7 +28,7 @@ test("a fresh browser process restores tabs, request data, response and view sta
     await pane
       .getByLabel("Request URL", { exact: true })
       .fill("https://example.test/original");
-    await pane.getByLabel("HTTP method").selectOption("POST");
+    await pane.getByLabel("HTTP method").fill("POST");
     await pane
       .getByRole("tablist", { name: "Request options" })
       .getByRole("tab", { name: "Body" })

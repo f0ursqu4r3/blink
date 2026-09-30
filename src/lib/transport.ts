@@ -1,6 +1,7 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { ApiResponse, RequestInput } from "./request";
 import { storeBlob } from "./response-body";
+import { FILES_UNAVAILABLE } from "./request-files";
 import {
   defaultTransportOptions,
   DOWNLOAD_LIMIT,
@@ -8,6 +9,12 @@ import {
   type TransportOptions,
 } from "./transport-options";
 export const nativeTransport = isTauri();
+
+export type SendControls = {
+  /** Abort cancels the request. */
+  signal?: AbortSignal;
+  downloadLimit?: number;
+};
 
 // Per RFC 3629, the byte right after certain lead bytes is restricted beyond
 // the usual continuation-byte range 80–BF. Outside that range the sequence is
@@ -52,26 +59,53 @@ export function decodePreview(bytes: Uint8Array) {
   }
 }
 
+export const CANCELED = "Request canceled.";
+let requestSequence = 0;
+
 export async function sendRequest(
   request: RequestInput,
   options: TransportOptions = defaultTransportOptions(),
-  downloadLimit = DOWNLOAD_LIMIT,
+  { signal, downloadLimit = DOWNLOAD_LIMIT }: SendControls = {},
 ): Promise<ApiResponse> {
-  if (nativeTransport)
-    return invoke<ApiResponse>("send_request", { request, options });
+  if (signal?.aborted) throw new Error(CANCELED);
+  if (nativeTransport) {
+    const requestId = `request-${++requestSequence}`;
+    const cancel = () => void invoke("cancel_request", { requestId });
+    signal?.addEventListener("abort", cancel, { once: true });
+    try {
+      return await invoke<ApiResponse>("send_request", {
+        request,
+        options,
+        requestId,
+      });
+    } finally {
+      signal?.removeEventListener("abort", cancel);
+    }
+  }
+  if (request.bodyFile || request.multipart?.some((part) => part.file))
+    throw new Error(FILES_UNAVAILABLE);
   const controller = new AbortController();
-  const timeout = setTimeout(
-    () => controller.abort(),
-    options.timeoutSeconds * 1000,
-  );
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, options.timeoutSeconds * 1000);
+  const abort = () => controller.abort();
+  signal?.addEventListener("abort", abort, { once: true });
   const start = performance.now();
   try {
     const headers = new Headers();
     request.headers.forEach(({ key, value }) => headers.append(key, value));
+    let body: BodyInit | null = request.body;
+    if (request.multipart) {
+      const form = new FormData();
+      request.multipart.forEach(({ key, value }) => form.append(key, value));
+      body = form;
+    }
     const result = await fetch(request.url, {
       method: request.method,
       headers,
-      body: request.body,
+      body,
       signal: controller.signal,
       credentials: "omit",
       cache: "no-store",
@@ -121,12 +155,14 @@ export async function sendRequest(
       ...(result.redirected ? { finalUrl: result.url } : {}),
     };
   } catch (error) {
-    if (controller.signal.aborted)
+    if (timedOut)
       throw new Error(
         `Request timed out after ${options.timeoutSeconds} seconds.`,
       );
+    if (controller.signal.aborted) throw new Error(CANCELED);
     throw error;
   } finally {
     clearTimeout(timeout);
+    signal?.removeEventListener("abort", abort);
   }
 }

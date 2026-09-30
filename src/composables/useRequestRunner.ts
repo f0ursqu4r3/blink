@@ -42,6 +42,7 @@ export function useRequestRunner(
 ) {
   let alive = true;
   let clock: ReturnType<typeof setInterval> | undefined;
+  let controller: AbortController | undefined;
   // The URL actually sent, captured at send time so a later edit to the
   // draft (or an unresolved token placeholder) does not change the name
   // suggested for a saved response body.
@@ -63,7 +64,9 @@ export function useRequestRunner(
   });
 
   const curl = computed(() =>
-    prepared.value.request ? toCurl(prepared.value.request) : "",
+    prepared.value.request
+      ? toCurl(prepared.value.request, toValue(optionsSource))
+      : "",
   );
 
   /**
@@ -97,9 +100,12 @@ export function useRequestRunner(
     clock = setInterval(() => {
       session.elapsed = performance.now() - start;
     }, 100);
+    controller = new AbortController();
     try {
       const options = toValue(optionsSource) ?? defaultTransportOptions();
-      const result = await sendRequest(request, options);
+      const result = await sendRequest(request, options, {
+        signal: controller.signal,
+      });
       // A result for an unmounted view has no owner, so free its body.
       if (alive) session.response = result;
       else releaseResponse(result);
@@ -107,9 +113,15 @@ export function useRequestRunner(
       if (alive)
         session.error = cause instanceof Error ? cause.message : String(cause);
     } finally {
+      controller = undefined;
       clearInterval(clock);
       if (alive) session.busy = false;
     }
+  }
+
+  /** Stop the running send. Its error reads "Request canceled.". */
+  function cancel() {
+    controller?.abort();
   }
 
   onScopeDispose(() => {
@@ -117,5 +129,5 @@ export function useRequestRunner(
     clearInterval(clock);
   });
 
-  return { prepared, curl, stale, send, sentUrl };
+  return { prepared, curl, stale, send, cancel, sentUrl };
 }

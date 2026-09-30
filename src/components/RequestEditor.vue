@@ -10,6 +10,7 @@ import {
   Braces,
   Check,
   ChevronDown,
+  FileUp,
   KeyRound,
   LoaderCircle,
   Network,
@@ -31,7 +32,16 @@ import {
 import KeyValueEditor from "./KeyValueEditor.vue";
 import CodeEditor from "./CodeEditor.vue";
 import TokenInput from "./TokenInput.vue";
-import { activePairs, supportsBody, type Draft } from "@/lib/request";
+import {
+  activePairs,
+  fileName,
+  formatBytes,
+  pair,
+  supportsBody,
+  type BodyMode,
+  type Draft,
+} from "@/lib/request";
+import { pickRequestFile, type PickedFile } from "@/lib/request-files";
 import type {
   AuthorizationConfig,
   ResolvedRequestContext,
@@ -112,6 +122,44 @@ const bodyPlaceholder = computed(() =>
       : "Request body",
 );
 const variablesPlaceholder = '{\n  "id": "1"\n}';
+const bodyModeOptions: { value: BodyMode; label: string }[] = [
+  { value: "none", label: "None" },
+  { value: "json", label: "JSON" },
+  { value: "text", label: "Text" },
+  { value: "graphql", label: "GraphQL" },
+  { value: "form", label: "Form URL-encoded" },
+  { value: "multipart", label: "Multipart form" },
+  { value: "file", label: "File" },
+];
+/** Modes edited as text in the body editor. */
+const textBody = computed(() =>
+  ["json", "text", "graphql"].includes(draft.value.bodyMode),
+);
+const formBody = computed(
+  () => draft.value.bodyMode === "form" || draft.value.bodyMode === "multipart",
+);
+// Form rows start with one blank row, like query and header rows.
+watch(
+  formBody,
+  (form) => {
+    if (form && !draft.value.form) draft.value.form = [pair()];
+  },
+  { immediate: true },
+);
+const bodyFileError = ref("");
+const pickedFile = ref<PickedFile | null>(null);
+async function chooseBodyFile() {
+  bodyFileError.value = "";
+  try {
+    const picked = await pickRequestFile();
+    if (!picked) return;
+    pickedFile.value = picked;
+    draft.value.bodyFile = picked.path;
+  } catch (cause) {
+    bodyFileError.value =
+      cause instanceof Error ? cause.message : String(cause);
+  }
+}
 const bodyAllowed = computed(() => supportsBody(draft.value.method));
 const schemaLoading = ref(false);
 const schemaError = ref("");
@@ -133,7 +181,7 @@ const schemaStatus = computed(() =>
 watch(currentSchemaKey, () => (schemaError.value = ""));
 
 async function loadSchema() {
-  if (props.busy || schemaLoading.value) return;
+  if (schemaLoading.value) return;
   schemaLoading.value = true;
   schemaError.value = "";
   try {
@@ -156,7 +204,6 @@ const authSelectValue = computed(() => {
 });
 
 function setAuthType(value: string) {
-  if (props.busy) return;
   if (value === "inherit") {
     draft.value = { ...draft.value, localAuth: undefined };
   } else if (value === "none") {
@@ -202,7 +249,6 @@ const formattable = computed(
   () => draft.value.bodyMode === "json" || draft.value.bodyMode === "graphql",
 );
 async function formatBody() {
-  if (props.busy) return;
   if (draft.value.bodyMode === "graphql") return formatGraphqlBody();
   const body = draft.value.body;
   try {
@@ -280,7 +326,6 @@ function setVariables(value: string) {
   formatError.value = "";
 }
 function clearBody() {
-  if (props.busy) return;
   draft.value.body = "";
   formatError.value = "";
 }
@@ -325,12 +370,7 @@ function clearBody() {
         value="query"
         class="flex-1 min-h-0 overflow-auto -outline-offset-2"
       >
-        <KeyValueEditor
-          v-model="draft.query"
-          label="Query"
-          :disabled="busy"
-          :tokens="ctx"
-        />
+        <KeyValueEditor v-model="draft.query" label="Query" :tokens="ctx" />
         <div class="px-4 py-2">
           <HelpTooltip
             text="Enabled rows are appended to the URL. Duplicate keys are preserved."
@@ -348,12 +388,7 @@ function clearBody() {
         value="headers"
         class="flex-1 min-h-0 overflow-auto -outline-offset-2"
       >
-        <KeyValueEditor
-          v-model="draft.headers"
-          label="Header"
-          :disabled="busy"
-          :tokens="ctx"
-        />
+        <KeyValueEditor v-model="draft.headers" label="Header" :tokens="ctx" />
         <div class="px-4 py-2">
           <HelpTooltip
             text="Body mode sets Content-Type unless a header overrides it."
@@ -381,14 +416,16 @@ function clearBody() {
               <select
                 :id="`${id}-body-mode`"
                 v-model="draft.bodyMode"
-                :disabled="busy"
                 class="h-7 px-2 font-mono text-xs pointer-coarse:min-h-11 pointer-coarse:text-base"
                 @contextmenu.stop
               >
-                <option value="none">None</option>
-                <option value="json">JSON</option>
-                <option value="text">Text</option>
-                <option value="graphql">GraphQL</option>
+                <option
+                  v-for="mode in bodyModeOptions"
+                  :key="mode.value"
+                  :value="mode.value"
+                >
+                  {{ mode.label }}
+                </option>
               </select>
               <div class="ml-auto flex min-w-0 items-center gap-1">
                 <template v-if="draft.bodyMode === 'graphql'">
@@ -401,7 +438,7 @@ function clearBody() {
                         ? `${schemaStatus}. Fetch again with this request's URL, headers, and auth`
                         : 'Fetch schema with this request\'s URL, headers, and auth'
                     "
-                    :disabled="busy || schemaLoading || !draft.url.trim()"
+                    :disabled="schemaLoading || !draft.url.trim()"
                     @click="loadSchema"
                   >
                     <LoaderCircle
@@ -431,7 +468,7 @@ function clearBody() {
                       ? 'Format GraphQL'
                       : 'Format JSON'
                   "
-                  :disabled="busy || !draft.body"
+                  :disabled="!draft.body"
                   @click="formatBody"
                 >
                   <Braces :size="14" aria-hidden="true" />
@@ -441,25 +478,22 @@ function clearBody() {
           </ContextMenuTrigger>
           <ContextMenuContent>
             <ContextMenuSub>
-              <ContextMenuSubTrigger
-                data-testid="body-menu-type"
-                :disabled="busy"
-              >
+              <ContextMenuSubTrigger data-testid="body-menu-type">
                 Body type
               </ContextMenuSubTrigger>
               <ContextMenuSubContent>
                 <ContextMenuRadioGroup
                   :model-value="draft.bodyMode"
                   @update:model-value="
-                    (mode) =>
-                      !busy && (draft.bodyMode = mode as typeof draft.bodyMode)
+                    (mode) => (draft.bodyMode = mode as typeof draft.bodyMode)
                   "
                 >
-                  <ContextMenuRadioItem value="none">None</ContextMenuRadioItem>
-                  <ContextMenuRadioItem value="json">JSON</ContextMenuRadioItem>
-                  <ContextMenuRadioItem value="text">Text</ContextMenuRadioItem>
-                  <ContextMenuRadioItem value="graphql">
-                    GraphQL
+                  <ContextMenuRadioItem
+                    v-for="mode in bodyModeOptions"
+                    :key="mode.value"
+                    :value="mode.value"
+                  >
+                    {{ mode.label }}
                   </ContextMenuRadioItem>
                 </ContextMenuRadioGroup>
               </ContextMenuSubContent>
@@ -467,7 +501,7 @@ function clearBody() {
             <ContextMenuSeparator />
             <ContextMenuItem
               data-testid="body-menu-format"
-              :disabled="busy || !formattable || !draft.body"
+              :disabled="!formattable || !draft.body"
               @select="formatBody"
             >
               {{
@@ -477,7 +511,7 @@ function clearBody() {
             <ContextMenuItem
               data-testid="body-menu-clear"
               variant="destructive"
-              :disabled="busy || !draft.body"
+              :disabled="!draft.body"
               @select="clearBody"
             >
               Clear body
@@ -490,7 +524,48 @@ function clearBody() {
         >
           {{ draft.method }} sends no body. Your draft is retained.
         </p>
-        <template v-if="draft.bodyMode !== 'none'">
+        <KeyValueEditor
+          v-if="formBody && draft.form"
+          v-model="draft.form"
+          label="Form"
+          :files="draft.bodyMode === 'multipart'"
+          :tokens="ctx"
+          data-form-editor
+        />
+        <div
+          v-else-if="draft.bodyMode === 'file'"
+          class="flex flex-col gap-2 px-4 py-3 text-xs"
+          data-body-file
+        >
+          <div class="flex items-center gap-2.5 min-w-0">
+            <Button variant="secondary" class="h-7" @click="chooseBodyFile">
+              <FileUp :size="13" aria-hidden="true" />
+              {{ draft.bodyFile ? "Change file" : "Choose file" }}
+            </Button>
+            <span
+              v-if="draft.bodyFile"
+              class="font-mono truncate"
+              :title="draft.bodyFile"
+            >
+              {{ fileName(draft.bodyFile) }}
+              <span
+                v-if="pickedFile?.path === draft.bodyFile"
+                class="text-muted-foreground"
+              >
+                · {{ formatBytes(pickedFile.sizeBytes) }}
+              </span>
+            </span>
+            <span v-else class="text-muted-foreground">No file chosen.</span>
+          </div>
+          <p v-if="bodyFileError" class="text-destructive" role="alert">
+            {{ bodyFileError }}
+          </p>
+          <p class="text-muted-foreground text-[0.6875rem]">
+            Blink reads the file when you send. Content-Type defaults to
+            application/octet-stream.
+          </p>
+        </div>
+        <template v-else-if="textBody">
           <label :id="`${id}-body-label`" class="sr-only" :for="`${id}-body`">{{
             draft.bodyMode === "graphql" ? "GraphQL query" : "Request body"
           }}</label>
@@ -498,7 +573,6 @@ function clearBody() {
             v-if="draft.bodyMode === 'text'"
             :id="`${id}-body`"
             v-model="draft.body"
-            :disabled="busy"
             class="flex-1 min-h-45 w-full resize-none border-0 rounded-none p-4 font-mono text-[0.8125rem] leading-[1.75] bg-transparent tab-2 pointer-coarse:text-base"
             spellcheck="false"
             autocomplete="off"
@@ -513,7 +587,6 @@ function clearBody() {
             :id="`${id}-body`"
             :model-value="draft.body"
             :language="draft.bodyMode === 'graphql' ? 'graphql' : 'json'"
-            :disabled="busy"
             :placeholder="bodyPlaceholder"
             :schema="
               draft.bodyMode === 'graphql' ? cachedSchema?.schema : undefined
@@ -566,7 +639,6 @@ function clearBody() {
                 :id="`${id}-variables`"
                 :model-value="draft.variables ?? ''"
                 language="json"
-                :disabled="busy"
                 :placeholder="variablesPlaceholder"
                 :aria-labelledby="`${id}-variables-label`"
                 test-id="variables-editor"
@@ -615,7 +687,6 @@ function clearBody() {
                 :id="`${id}-auth-type`"
                 :value="authSelectValue"
                 class="h-7 px-2 font-mono text-xs pointer-coarse:min-h-11 pointer-coarse:text-base"
-                :disabled="busy"
                 @change="
                   setAuthType(($event.target as HTMLSelectElement).value)
                 "
@@ -657,7 +728,6 @@ function clearBody() {
                     (draft.localAuth as { type: 'bearer'; token: string }).token
                   "
                   type="password"
-                  :disabled="busy"
                   autocomplete="off"
                   spellcheck="false"
                   placeholder="Bearer token"
@@ -681,7 +751,6 @@ function clearBody() {
                       }
                     ).username
                   "
-                  :disabled="busy"
                   autocomplete="off"
                   spellcheck="false"
                   class="h-7.5 min-w-0 px-2 font-mono pointer-coarse:min-h-11 pointer-coarse:text-base"
@@ -705,7 +774,6 @@ function clearBody() {
                     ).password
                   "
                   type="password"
-                  :disabled="busy"
                   autocomplete="off"
                   class="h-7.5 min-w-0 px-2 font-mono pointer-coarse:min-h-11 pointer-coarse:text-base"
                   @contextmenu.stop
@@ -726,16 +794,16 @@ function clearBody() {
               :model-value="authSelectValue"
               @update:model-value="(value) => setAuthType(value as string)"
             >
-              <ContextMenuRadioItem value="inherit" :disabled="busy">
+              <ContextMenuRadioItem value="inherit">
                 Inherit
               </ContextMenuRadioItem>
-              <ContextMenuRadioItem value="none" :disabled="busy">
+              <ContextMenuRadioItem value="none">
                 No auth
               </ContextMenuRadioItem>
-              <ContextMenuRadioItem value="bearer" :disabled="busy">
+              <ContextMenuRadioItem value="bearer">
                 Bearer token
               </ContextMenuRadioItem>
-              <ContextMenuRadioItem value="basic" :disabled="busy">
+              <ContextMenuRadioItem value="basic">
                 Basic auth
               </ContextMenuRadioItem>
             </ContextMenuRadioGroup>

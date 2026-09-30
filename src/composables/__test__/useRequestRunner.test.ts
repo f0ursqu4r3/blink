@@ -7,7 +7,14 @@
  * backward-compatible no-context usage.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
-import { ref, computed, effectScope, nextTick, type EffectScope } from "vue";
+import {
+  ref,
+  reactive,
+  computed,
+  effectScope,
+  nextTick,
+  type EffectScope,
+} from "vue";
 import { useRequestRunner } from "@/composables/useRequestRunner";
 import { createSession, requestFingerprint } from "@/lib/session";
 import type { ResolvedRequestContext } from "@/lib/authorization";
@@ -269,5 +276,49 @@ describe("transport options and body release", () => {
     await pending;
     expect(vi.mocked(releaseResponse)).toHaveBeenCalledWith(late);
     expect(session.response).toBeNull();
+  });
+
+  it("cancel aborts the running send and reports it", async () => {
+    vi.mocked(sendRequest).mockImplementationOnce(
+      (_request, _options, controls) =>
+        new Promise((_done, fail) =>
+          controls?.signal?.addEventListener("abort", () =>
+            fail(new Error("Request canceled.")),
+          ),
+        ),
+    );
+    const session = createSession();
+    session.draft.url = "https://example.test/";
+    const { send, cancel } = scope.run(() => useRequestRunner(session))!;
+    const pending = send();
+    expect(session.busy).toBe(true);
+    cancel();
+    await pending;
+    expect(session.busy).toBe(false);
+    expect(session.error).toBe("Request canceled.");
+  });
+
+  it("keeps the sent request when the draft changes during a send", async () => {
+    let resolve!: (value: unknown) => void;
+    vi.mocked(sendRequest).mockImplementationOnce(
+      () => new Promise((done) => (resolve = done)) as never,
+    );
+    const session = reactive(createSession());
+    session.draft.url = "https://example.test/a";
+    const { send, stale } = scope.run(() => useRequestRunner(session))!;
+    const pending = send();
+    session.draft.url = "https://example.test/b";
+    resolve({
+      status: 200,
+      statusText: "OK",
+      durationMs: 1,
+      sizeBytes: 0,
+      headers: [],
+      body: "",
+    });
+    await pending;
+    const calls = vi.mocked(sendRequest).mock.calls;
+    expect(calls[calls.length - 1][0].url).toBe("https://example.test/a");
+    expect(stale.value).toBe(true);
   });
 });

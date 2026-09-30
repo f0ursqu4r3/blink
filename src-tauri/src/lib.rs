@@ -1,25 +1,48 @@
+use std::collections::HashMap;
 use std::io::Write;
 use std::sync::{
     atomic::{AtomicUsize, Ordering},
-    Arc,
+    Arc, Mutex,
 };
 use std::time::{Duration, Instant};
 
-use reqwest::{header::HeaderName, header::HeaderValue, redirect::Policy, Client, Method};
+use reqwest::{
+    header::HeaderName, header::HeaderValue, multipart, redirect::Policy, Client, Method, Proxy,
+};
 use serde::{Deserialize, Serialize};
 
+use request_files::FileGrants;
 use response_store::{ResponseStore, STORE_ERROR};
+use tokio::sync::oneshot;
 
 const MIB: usize = 1024 * 1024;
 const DOWNLOAD_LIMIT: u64 = 1024 * 1024 * 1024;
+const UPLOAD_LIMIT: u64 = 1024 * 1024 * 1024;
+const CANCELED: &str = "Request canceled.";
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Default, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct RequestInput {
     method: String,
     url: String,
     headers: Vec<HeaderInput>,
     body: Option<String>,
+    /// Send this file as the body. Replaces `body`.
+    #[serde(default)]
+    body_file: Option<String>,
+    /// Send a multipart form. Replaces `body`.
+    #[serde(default)]
+    multipart: Option<Vec<MultipartInput>>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MultipartInput {
+    key: String,
+    /// Text, or a file path when `file` is set.
+    value: String,
+    #[serde(default)]
+    file: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -47,7 +70,7 @@ struct ResponseOutput {
     redirect_count: Option<usize>,
 }
 
-#[derive(Debug, Clone, Copy, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TransportOptions {
     timeout_seconds: u64,
@@ -56,6 +79,15 @@ struct TransportOptions {
     max_redirects: usize,
     #[serde(rename = "inspectionLimitMiB")]
     inspection_limit_mib: usize,
+    #[serde(default = "default_verify_tls")]
+    verify_tls: bool,
+    /// Empty uses the system proxy settings.
+    #[serde(default)]
+    proxy_url: String,
+}
+
+fn default_verify_tls() -> bool {
+    true
 }
 
 impl Default for TransportOptions {
@@ -66,6 +98,8 @@ impl Default for TransportOptions {
             follow_redirects: false,
             max_redirects: 10,
             inspection_limit_mib: 4,
+            verify_tls: true,
+            proxy_url: String::new(),
         }
     }
 }
@@ -105,27 +139,101 @@ fn build_client(options: &TransportOptions, redirects: Arc<AtomicUsize>) -> Resu
     } else {
         Policy::none()
     };
-    Client::builder()
+    let mut builder = Client::builder()
         .timeout(Duration::from_secs(options.timeout_seconds))
         .connect_timeout(Duration::from_secs(options.connect_timeout_seconds))
         .redirect(policy)
+        .danger_accept_invalid_certs(!options.verify_tls);
+    let proxy_url = options.proxy_url.trim();
+    if !proxy_url.is_empty() {
+        let valid = reqwest::Url::parse(proxy_url)
+            .is_ok_and(|url| matches!(url.scheme(), "http" | "https" | "socks5" | "socks5h"));
+        if !valid {
+            return Err("Invalid proxy URL.".to_string());
+        }
+        builder = builder.proxy(Proxy::all(proxy_url).map_err(|_| "Invalid proxy URL.")?);
+    }
+    builder
         .build()
         .map_err(|error| error.without_url().to_string())
+}
+
+/// Requests that are still running, by the id the frontend gave them.
+#[derive(Default)]
+struct InFlight(Mutex<HashMap<String, oneshot::Sender<()>>>);
+
+impl InFlight {
+    /// Run `task` until it finishes or `cancel` is called with `id`.
+    /// Dropping the task closes the connection and deletes a partial body.
+    async fn run<T>(
+        &self,
+        id: String,
+        task: impl std::future::Future<Output = Result<T, String>>,
+    ) -> Result<T, String> {
+        let (sender, receiver) = oneshot::channel();
+        self.0.lock().unwrap().insert(id.clone(), sender);
+        let result = tokio::select! {
+            result = task => result,
+            _ = receiver => Err(CANCELED.to_string()),
+        };
+        self.0.lock().unwrap().remove(&id);
+        result
+    }
+
+    fn cancel(&self, id: &str) {
+        if let Some(sender) = self.0.lock().unwrap().remove(id) {
+            let _ = sender.send(());
+        }
+    }
 }
 
 #[tauri::command]
 async fn send_request(
     request: RequestInput,
     options: TransportOptions,
+    request_id: String,
     store: tauri::State<'_, ResponseStore>,
+    grants: tauri::State<'_, FileGrants>,
+    in_flight: tauri::State<'_, InFlight>,
 ) -> Result<ResponseOutput, String> {
-    execute(request, options, &store, DOWNLOAD_LIMIT).await
+    in_flight
+        .run(
+            request_id,
+            execute(request, options, &store, &grants, DOWNLOAD_LIMIT),
+        )
+        .await
+}
+
+#[tauri::command]
+fn cancel_request(request_id: String, in_flight: tauri::State<'_, InFlight>) {
+    in_flight.cancel(&request_id);
+}
+
+/// Read a granted file for upload.
+async fn read_upload(grants: &FileGrants, path: &str) -> Result<(String, Vec<u8>), String> {
+    let file = grants.check(path)?;
+    let name = file
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let size = tokio::fs::metadata(&file)
+        .await
+        .map_err(|_| format!("Cannot read {name}."))?
+        .len();
+    if size > UPLOAD_LIMIT {
+        return Err(format!("{name} exceeds the 1 GiB upload limit."));
+    }
+    let bytes = tokio::fs::read(&file)
+        .await
+        .map_err(|_| format!("Cannot read {name}."))?;
+    Ok((name, bytes))
 }
 
 async fn execute(
     mut request: RequestInput,
     options: TransportOptions,
     store: &ResponseStore,
+    grants: &FileGrants,
     download_limit: u64,
 ) -> Result<ResponseOutput, String> {
     options.validate()?;
@@ -136,6 +244,12 @@ async fn execute(
     if let Some(body) = &mut request.body {
         *body = resolve_environment_references(body)?;
     }
+    for part in request.multipart.iter_mut().flatten() {
+        part.key = resolve_environment_references(&part.key)?;
+        if !part.file {
+            part.value = resolve_environment_references(&part.value)?;
+        }
+    }
     let url = reqwest::Url::parse(&request.url)
         .map_err(|_| "Enter an absolute HTTP or HTTPS URL.".to_string())?;
     if !matches!(url.scheme(), "http" | "https") {
@@ -144,14 +258,8 @@ async fn execute(
     if !url.username().is_empty() || url.password().is_some() {
         return Err("Use the Auth tab instead of credentials in the URL.".to_string());
     }
-    if !matches!(
-        request.method.as_str(),
-        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
-    ) {
-        return Err("Unsupported HTTP method.".to_string());
-    }
     let method = Method::from_bytes(request.method.as_bytes())
-        .map_err(|_| format!("Unsupported HTTP method: {}", request.method))?;
+        .map_err(|_| "Invalid HTTP method.".to_string())?;
     let has_body = method != Method::GET && method != Method::HEAD;
     let redirects = Arc::new(AtomicUsize::new(0));
     let client = build_client(&options, redirects.clone())?;
@@ -170,7 +278,20 @@ async fn execute(
     }
 
     if has_body {
-        if let Some(body) = request.body {
+        if let Some(parts) = request.multipart {
+            let mut form = multipart::Form::new();
+            for part in parts {
+                form = if part.file {
+                    let (name, bytes) = read_upload(grants, &part.value).await?;
+                    form.part(part.key, multipart::Part::bytes(bytes).file_name(name))
+                } else {
+                    form.text(part.key, part.value)
+                };
+            }
+            builder = builder.multipart(form);
+        } else if let Some(path) = request.body_file {
+            builder = builder.body(read_upload(grants, &path).await?.1);
+        } else if let Some(body) = request.body {
             builder = builder.body(body);
         }
     }
@@ -299,6 +420,7 @@ fn network_error(error: reqwest::Error, options: &TransportOptions) -> String {
 
 mod app_state;
 mod ghostty_themes;
+mod request_files;
 #[cfg(test)]
 mod request_tests;
 mod response_store;
@@ -317,6 +439,10 @@ pub fn run() {
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .setup(|app| {
             app.manage(app_state::AppState::new(app.path().app_data_dir()?));
+            app.manage(FileGrants::load(
+                app.path().app_data_dir()?.join("file-grants.json"),
+            ));
+            app.manage(InFlight::default());
             app.manage(ResponseStore::new(
                 app.path().app_cache_dir()?.join("responses"),
             ));
@@ -336,6 +462,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             send_request,
+            cancel_request,
+            request_files::pick_request_file,
             app_state::load_app_state,
             app_state::save_app_state,
             app_state::app_state_ready,

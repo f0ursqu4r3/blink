@@ -1,8 +1,9 @@
-import { bodyModes, methods, type BodyMode, type Method } from "./request";
+import { bodyModes, isMethod, type BodyMode, type Method } from "./request";
 import type { RequestSession } from "./session";
 import type { RequestGroup } from "./groups";
 import {
   defaultTransportOptions,
+  proxyUrlError,
   transportFieldErrors,
   type TransportOptions,
 } from "./transport-options";
@@ -30,12 +31,15 @@ export function validPreferences(
   if (!value || typeof value !== "object" || Array.isArray(value)) return false;
   const p = value as Record<string, unknown>;
   return (
-    methods.includes(p.defaultMethod as Method) &&
+    isMethod(p.defaultMethod) &&
     bodyModes.includes(p.defaultBodyMode as BodyMode) &&
     typeof p.pretty === "boolean" &&
     typeof p.wrap === "boolean" &&
     typeof p.confirmCloseDrafts === "boolean" &&
     typeof p.followRedirects === "boolean" &&
+    typeof p.verifyTls === "boolean" &&
+    typeof p.proxyUrl === "string" &&
+    proxyUrlError(p.proxyUrl) === "" &&
     Object.keys(transportFieldErrors(p as TransportOptions)).length === 0
   );
 }
@@ -52,7 +56,7 @@ export function normalizePreferences(
 
   // Check that all non-transport fields are present and valid
   if (
-    !methods.includes(input.defaultMethod as Method) ||
+    !isMethod(input.defaultMethod) ||
     !bodyModes.includes(input.defaultBodyMode as BodyMode) ||
     typeof input.pretty !== "boolean" ||
     typeof input.wrap !== "boolean" ||
@@ -86,6 +90,8 @@ export const transportOptions = (
   followRedirects: preferences.followRedirects,
   maxRedirects: preferences.maxRedirects,
   inspectionLimitMiB: preferences.inspectionLimitMiB,
+  verifyTls: preferences.verifyTls,
+  proxyUrl: preferences.proxyUrl,
 });
 
 export function resolveNewRequestDefaults(

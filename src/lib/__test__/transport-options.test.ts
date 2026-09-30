@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   defaultTransportOptions,
+  proxyUrlError,
   transportFieldErrors,
 } from "../transport-options";
 
@@ -12,11 +13,14 @@ describe("transport options", () => {
       followRedirects: false,
       maxRedirects: 10,
       inspectionLimitMiB: 4,
+      verifyTls: true,
+      proxyUrl: "",
     });
     expect(transportFieldErrors(defaultTransportOptions())).toEqual({});
   });
   it("rejects values out of range, decimals and NaN", () => {
     const errors = transportFieldErrors({
+      ...defaultTransportOptions(),
       timeoutSeconds: 601,
       connectTimeoutSeconds: 1.5,
       followRedirects: true,
@@ -38,5 +42,16 @@ describe("transport options", () => {
         connectTimeoutSeconds: 6,
       }),
     ).toEqual({ connectTimeoutSeconds: "Enter a whole number from 1 to 5." });
+  });
+  it("accepts an empty, http, https, or socks5 proxy URL", () => {
+    for (const url of [
+      "",
+      " ",
+      "http://127.0.0.1:8080",
+      "socks5h://proxy:1080",
+    ])
+      expect(proxyUrlError(url)).toBe("");
+    for (const url of ["proxy:8080", "ftp://proxy", "http://"])
+      expect(proxyUrlError(url)).toContain("proxy URL");
   });
 });

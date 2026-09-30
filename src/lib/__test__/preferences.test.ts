@@ -133,7 +133,7 @@ describe("new request preferences", () => {
     null,
     [],
     {},
-    { ...defaultPreferences(), defaultMethod: "TRACE" },
+    { ...defaultPreferences(), defaultMethod: "BAD METHOD" },
     { ...defaultPreferences(), defaultBodyMode: "xml" },
     { ...defaultPreferences(), pretty: "true" },
     { ...defaultPreferences(), wrap: 1 },
@@ -147,7 +147,7 @@ describe("new request preferences", () => {
   });
 
   it.each([
-    { defaultMethod: "TRACE" },
+    { defaultMethod: "BAD METHOD" },
     { defaultMethod: null },
     { defaultUrl: false },
     { defaultUrl: null },
@@ -250,7 +250,20 @@ describe("transport preferences", () => {
       followRedirects: false,
       maxRedirects: 10,
       inspectionLimitMiB: 4,
+      verifyTls: true,
+      proxyUrl: "",
     });
+  });
+  it("rejects a proxy URL the desktop transport cannot use", () => {
+    expect(
+      validPreferences({ ...defaultPreferences(), proxyUrl: "ftp://proxy" }),
+    ).toBe(false);
+    expect(
+      validPreferences({
+        ...defaultPreferences(),
+        proxyUrl: "socks5://127.0.0.1:1080",
+      }),
+    ).toBe(true);
   });
   it("loads a v4 workspace saved before the transport fields", () => {
     const session = createSession(createDraft());
@@ -263,6 +276,8 @@ describe("transport preferences", () => {
       "followRedirects",
       "maxRedirects",
       "inspectionLimitMiB",
+      "verifyTls",
+      "proxyUrl",
     ])
       delete encoded.preferences[key];
     expect(decodeWorkspace(JSON.stringify(encoded)).preferences).toEqual(

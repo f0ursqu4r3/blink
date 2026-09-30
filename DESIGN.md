@@ -2,7 +2,7 @@
 
 ## Scene
 
-A developer is comparing HTTP exchanges across temporary request tabs. Blink
+A developer is comparing HTTP exchanges across open request tabs. Blink
 feels like an industrial shipboard terminal: dark, compact, precise, and quiet.
 The visual reference is Weyland-Yutani equipment, not a branded replica. Avoid fake
 telemetry, decorative warnings, scanline overlays, and cinematic animations.
@@ -41,13 +41,21 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
 
 ## Interaction rules
 
-- Send is available only for valid HTTP(S) request data.
+- Send is available only for valid HTTP(S) request data. The method field
+  accepts any HTTP token and suggests the common methods.
 - Treat duplicate query and header rows as intentional; preserve their order.
 - Query rows append to the URL. Do not silently rewrite the URL field.
 - Validate JSON before sending; preserve large numeric values when formatting.
+- Read request files only after the user picks them in Blink's own open
+  dialog. Never read a file path that the webview supplies.
+- Pasting a cURL command into the URL field imports it into the draft. List
+  the ignored options so nothing is dropped without notice.
+- Show a warning in the status bar while TLS verification is off.
 - Keep errors close to the request bar or response panel. Never label a
   completed HTTP error response as a transport failure.
-- Disable request edits while sending. Ask before deleting a request with
+- Keep request edits available while sending. Send becomes Cancel
+  (`Cmd/Ctrl+.`). Edits made during a send mark its response as previous.
+  Ask before deleting a request with
   content.
 - The Browser tree owns requests; tabs only reference open requests. Closing a
   tab never deletes a request.

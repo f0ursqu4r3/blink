@@ -1,6 +1,6 @@
 # Blink
 
-Blink is a fast, private REST API client for one-off requests. It runs as a
+Blink is a fast, private HTTP client for professional API work. It runs as a
 Tauri desktop app. It does not require an account or cloud service. The local
 Browser sidebar organizes the request tabs in the current session.
 
@@ -14,12 +14,19 @@ Browser sidebar organizes the request tabs in the current session.
 - Run requests in the background while working in another tab.
 - Duplicate a complete draft without copying its response or sending it.
 - See methods, endpoint paths, hosts, and request status in compact tabs.
-- Send `GET`, `POST`, `PUT`, `PATCH`, `DELETE`, `HEAD`, and `OPTIONS` requests.
-- Edit query parameters, headers, and JSON, text, or GraphQL request bodies.
+- Send any HTTP method. The method field suggests `GET`, `POST`, `PUT`,
+  `PATCH`, `DELETE`, `HEAD`, and `OPTIONS`, and accepts others such as `PURGE`.
+- Edit query parameters, headers, and JSON, text, GraphQL, URL-encoded form,
+  multipart form, or file request bodies. Multipart parts can be text or
+  files.
   GraphQL bodies take a query and optional JSON variables. Format tidies JSON
   bodies, GraphQL queries, and GraphQL variables.
 - Use Bearer tokens or Basic authentication.
-- Export shell-quoted cURL commands. These include any entered credentials.
+- Export shell-quoted cURL commands. These include any entered credentials
+  and the timeout, redirect, TLS, and proxy settings.
+- Paste a cURL command into the URL field to import it. Blink lists the
+  options it ignored.
+- Cancel a running request. The draft stays editable while it runs.
 - Inspect response status, duration, headers, and body, including error responses.
 - Switch between pretty JSON and raw text. Large JSON numbers stay exact.
 - Copy response bodies and toggle line wrapping.
@@ -35,6 +42,17 @@ inspection limit shows a truncated preview. Binary bodies show a summary in
 place of the text. Use **Save response body…** to write the full body to a
 file, up to 1 GiB. Stored bodies do not survive a restart. After a restart,
 only complete text responses can be saved.
+
+The same settings control TLS and proxies. Blink trusts the system
+certificate store, so company and local development CAs work. **Verify TLS
+certificates** is on by default; while it is off, the status bar shows TLS
+VERIFY OFF. **Proxy URL** accepts `http`, `https`, or `socks5` URLs. Empty uses
+the system proxy settings. TLS and proxy settings apply only to the desktop
+app.
+
+File bodies and multipart file parts are desktop only. Blink reads a file
+only after you pick it in its open dialog. It remembers picked files so saved
+requests keep working after a restart. Uploads are limited to 1 GiB per file.
 
 ## Request tabs
 
@@ -52,6 +70,7 @@ never send automatically.
 | Close active tab         | `Cmd/Ctrl+W`                  |
 | Next or previous request | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Send active request      | `Cmd/Ctrl+Enter`              |
+| Cancel running request   | `Cmd/Ctrl+.`                  |
 | Focus URL                | `Cmd/Ctrl+L`                  |
 | Application settings     | `Cmd/Ctrl+,`                  |
 
@@ -125,9 +144,11 @@ erasure of filesystem blocks or backups.
 
 On macOS, the snapshot is stored at
 `~/Library/Application Support/com.kyle.blink/workspace-v1.json`.
+The paths of files you picked for request bodies are stored beside it in
+`file-grants.json`.
 Other desktop systems use Tauri's application data directory. Native saves
 write a temporary file, sync it, then replace the snapshot atomically.
-The versioned format supports up to 128 tabs, 128 groups, and a 64 MiB total
+The versioned format supports up to 10,000 requests, 10,000 groups, and a 64 MiB total
 snapshot. Existing version 1 snapshots restore into Ungrouped. Versions 1, 2,
 and 3 remain readable; the next save writes version 3 with preferences.
 

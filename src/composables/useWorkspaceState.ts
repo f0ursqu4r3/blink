@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createSession, type RequestSession } from "@/lib/session";
 import { releaseResponse } from "@/lib/response-body";
-import { methods } from "@/lib/request";
+import { isMethod } from "@/lib/request";
 import {
   createGroup,
   deleteGroupAndPromoteContents,
@@ -441,7 +441,7 @@ export function useWorkspaceState() {
   ) {
     const group = groups.value.find((g) => g.id === groupId);
     if (!group) return;
-    if (defaultMethod !== undefined && !methods.includes(defaultMethod)) return;
+    if (defaultMethod !== undefined && !isMethod(defaultMethod)) return;
     if (
       defaultUrl !== undefined &&
       (typeof defaultUrl !== "string" || defaultUrl.length > 65536)

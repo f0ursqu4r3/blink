@@ -125,15 +125,15 @@ describe("RequestEditor – GraphQL body", () => {
     expect(wrapper.find("[data-testid='body-editor']").exists()).toBe(false);
     expect(wrapper.find("textarea[id$='-body']").exists()).toBe(true);
   });
-  it("disables the code editors while busy", async () => {
+  it("keeps the code editors editable while a request is sending", async () => {
     const { wrapper } = mountEditor("graphql");
     await wrapper.setProps({ busy: true });
     expect(
       wrapper.find("[data-testid='body-editor']").attributes("disabled"),
-    ).toBeDefined();
+    ).toBeUndefined();
     expect(
       wrapper.find("[data-testid='variables-editor']").attributes("disabled"),
-    ).toBeDefined();
+    ).toBeUndefined();
   });
   it("clears the format error when the body is edited", async () => {
     const { wrapper } = mountEditor("json");
@@ -156,11 +156,9 @@ describe("RequestEditor – GraphQL body", () => {
     await wrapper.setProps({ modelValue: { ...draft, bodyMode: "graphql" } });
     expect(fetchButton(wrapper)).toBeDefined();
   });
-  it("disables Fetch schema while busy or without a URL", async () => {
+  it("disables Fetch schema without a URL", async () => {
     const { wrapper, draft } = mountEditor("graphql");
-    await wrapper.setProps({ busy: true });
-    expect(fetchButton(wrapper)!.attributes("disabled")).toBeDefined();
-    await wrapper.setProps({ busy: false, modelValue: { ...draft, url: " " } });
+    await wrapper.setProps({ modelValue: { ...draft, url: " " } });
     expect(fetchButton(wrapper)!.attributes("disabled")).toBeDefined();
   });
   it("loads a schema and passes it to the query editor", async () => {

@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref } from "vue";
-import { ArrowUpRight, Check, ChevronDown, Terminal } from "lucide-vue-next";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { ArrowUpRight, Check, Square, Terminal, X } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -15,6 +15,7 @@ import { shortcutLabel } from "@/lib/shortcut";
 import RequestEditor from "./RequestEditor.vue";
 import ResponsePanel from "./ResponsePanel.vue";
 import { methods } from "@/lib/request";
+import { isCurlCommand, parseCurl } from "@/lib/curl-import";
 import type { RequestSession } from "@/lib/session";
 import type { RequestGroup } from "@/lib/groups";
 import type { TransportOptions } from "@/lib/transport-options";
@@ -76,7 +77,7 @@ const inheritedSource = computed(() => {
   return undefined;
 });
 
-const { prepared, curl, stale, send, sentUrl } = useRequestRunner(
+const { prepared, curl, stale, send, cancel, sentUrl } = useRequestRunner(
   props.session,
   resolvedCtx,
   () => props.transport,
@@ -111,6 +112,36 @@ const panelWidth = computed(() =>
 const panelStyle = computed(() => ({
   "--request-panel-width": `${panelWidth.value}px`,
 }));
+const importNotice = ref("");
+const importError = ref("");
+/** Pasting a cURL command into the URL field replaces the draft with it. */
+function pasteUrl(event: ClipboardEvent) {
+  const text = event.clipboardData?.getData("text/plain") ?? "";
+  if (!isCurlCommand(text)) return;
+  event.preventDefault();
+  importNotice.value = "";
+  importError.value = "";
+  try {
+    const { draft, ignored } = parseCurl(text);
+    Object.assign(props.session.draft, draft);
+    importNotice.value = ignored.length
+      ? `Imported cURL command. Ignored: ${ignored.join(" ")}`
+      : "Imported cURL command.";
+  } catch (cause) {
+    importError.value = cause instanceof Error ? cause.message : String(cause);
+  }
+}
+watch(
+  () => props.session.draft.url,
+  () => {
+    importError.value = "";
+  },
+);
+
+/** Methods are case-sensitive tokens; type them as uppercase. */
+function setMethod(value: string) {
+  props.session.draft.method = value.trim().toUpperCase();
+}
 async function focusUrl() {
   await nextTick();
   urlInput.value?.focus();
@@ -129,6 +160,14 @@ function onKey(event: KeyboardEvent) {
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
     void send();
+  }
+  if (
+    event.key === "." &&
+    (event.metaKey || event.ctrlKey) &&
+    props.session.busy
+  ) {
+    event.preventDefault();
+    cancel();
   }
   if (event.key.toLowerCase() === "l" && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
@@ -210,22 +249,25 @@ function resizeWithKeyboard(event: KeyboardEvent) {
               <label :for="`${prefix}-method`" class="sr-only">
                 HTTP method
               </label>
-              <select
+              <input
                 :id="`${prefix}-method`"
                 data-method
-                v-model="session.draft.method"
-                :disabled="session.busy"
-                class="h-full w-23.5 px-3 pr-6.5 appearance-none border-0 bg-transparent text-inherit font-mono font-semibold text-[0.6875rem]"
-              >
-                <option v-for="method in methods" :key="method">
-                  {{ method }}
-                </option>
-              </select>
-              <ChevronDown
-                :size="12"
-                aria-hidden="true"
-                class="absolute top-2.5 right-2 pointer-events-none text-muted-foreground pointer-coarse:top-3.75"
+                :value="session.draft.method"
+                :list="`${prefix}-methods`"
+                spellcheck="false"
+                autocomplete="off"
+                autocapitalize="characters"
+                class="h-full w-23.5 px-3 border-0 bg-transparent text-inherit font-mono font-semibold text-[0.6875rem]"
+                @input="setMethod(($event.target as HTMLInputElement).value)"
+                @focus="($event.target as HTMLInputElement).select()"
               />
+              <datalist :id="`${prefix}-methods`">
+                <option
+                  v-for="method in methods"
+                  :key="method"
+                  :value="method"
+                />
+              </datalist>
             </div>
             <label :for="`${prefix}-url`" class="sr-only">Request URL</label>
             <TokenInput
@@ -234,7 +276,6 @@ function resizeWithKeyboard(event: KeyboardEvent) {
               ref="urlInput"
               v-model="session.draft.url"
               :tokens="resolvedCtx"
-              :disabled="session.busy"
               :aria-describedby="
                 session.draft.url && prepared.error
                   ? `${prefix}-validation`
@@ -244,7 +285,8 @@ function resizeWithKeyboard(event: KeyboardEvent) {
               inputmode="url"
               spellcheck="false"
               autocomplete="off"
-              placeholder="https://api.example.com/v1/resource"
+              placeholder="https://api.example.com/v1/resource or paste a cURL command"
+              @paste="pasteUrl"
               class="flex-1 min-w-0 bg-transparent border-0 px-3 font-mono text-xs pointer-coarse:text-base"
             />
           </div>
@@ -264,13 +306,28 @@ function resizeWithKeyboard(event: KeyboardEvent) {
             </span>
           </Button>
           <Button
+            v-if="session.busy"
+            type="button"
+            data-cancel
+            variant="secondary"
+            class="send-button h-8.5 px-3"
+            @click="cancel()"
+          >
+            <Square :size="12" aria-hidden="true" />
+            <span>Cancel</span>
+            <kbd class="opacity-65 text-[0.625rem] ml-2.5 max-[900px]:hidden">
+              {{ shortcut }} .
+            </kbd>
+          </Button>
+          <Button
+            v-else
             type="submit"
             data-send
             class="send-button h-8.5 px-3"
-            :disabled="!prepared.request || session.busy"
+            :disabled="!prepared.request"
           >
             <ArrowUpRight :size="15" aria-hidden="true" />
-            <span>{{ session.busy ? "Sending" : "Send" }}</span>
+            <span>Send</span>
             <kbd class="opacity-65 text-[0.625rem] ml-2.5 max-[900px]:hidden">
               {{ shortcut }} ↵
             </kbd>
@@ -279,8 +336,19 @@ function resizeWithKeyboard(event: KeyboardEvent) {
       </ContextMenuTrigger>
       <ContextMenuContent>
         <ContextMenuItem
+          v-if="session.busy"
+          data-testid="ctx-cancel"
+          @select="cancel()"
+        >
+          Cancel request
+          <ContextMenuShortcut>{{
+            shortcutLabel(["mod", "."])
+          }}</ContextMenuShortcut>
+        </ContextMenuItem>
+        <ContextMenuItem
+          v-else
           data-testid="ctx-send"
-          :disabled="session.busy || !prepared.request"
+          :disabled="!prepared.request"
           @select="send()"
         >
           Send
@@ -314,6 +382,30 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         </ContextMenuCheckboxItem>
       </ContextMenuContent>
     </ContextMenu>
+    <p
+      v-if="importError"
+      data-import-error
+      class="px-3.5 py-2 text-destructive border-b border-border font-mono text-[0.6875rem] leading-[1.6]"
+      role="alert"
+    >
+      {{ importError }}
+    </p>
+    <p
+      v-else-if="importNotice"
+      data-import-notice
+      class="flex items-center gap-2 px-3.5 py-2 text-muted-foreground border-b border-border font-mono text-[0.6875rem] leading-[1.6]"
+      role="status"
+    >
+      <span class="min-w-0 flex-1">{{ importNotice }}</span>
+      <button
+        type="button"
+        class="hover:text-foreground"
+        aria-label="Dismiss import notice"
+        @click="importNotice = ''"
+      >
+        <X :size="12" aria-hidden="true" />
+      </button>
+    </p>
     <p
       v-if="session.draft.url && prepared.error"
       :id="`${prefix}-validation`"

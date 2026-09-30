@@ -79,7 +79,7 @@ describe("workspace preference lifecycle", () => {
   it("rejects invalid preferences without poisoning the saved workspace", async () => {
     state.setPreferences({
       ...defaultPreferences(),
-      defaultMethod: "TRACE" as Method,
+      defaultMethod: "BAD METHOD" as Method,
     });
     expect(state.preferences.value).toEqual(defaultPreferences());
     expect(await state.flush()).toBe(true);
@@ -90,7 +90,7 @@ describe("workspace preference lifecycle", () => {
     state.setGroupNewRequestDefaults(group.id, "POST", "https://example.test");
     state.setGroupNewRequestDefaults(
       group.id,
-      "TRACE" as Method,
+      "BAD METHOD" as Method,
       "x".repeat(65537),
     );
     expect(state.groups.value[0]).toMatchObject({

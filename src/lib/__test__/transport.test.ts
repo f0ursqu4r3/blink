@@ -42,7 +42,7 @@ describe("browser preview transport", () => {
       vi.fn().mockResolvedValue(new Response(new Uint8Array(65))),
     );
     await expect(
-      sendRequest(request, defaultTransportOptions(), 64),
+      sendRequest(request, defaultTransportOptions(), { downloadLimit: 64 }),
     ).rejects.toThrow("1 GiB download limit");
   });
   it("truncates the preview at the inspection limit", async () => {
@@ -102,6 +102,41 @@ describe("browser preview transport", () => {
     await vi.advanceTimersByTimeAsync(5_000);
     await result;
     expect(vi.getTimerCount()).toBe(0);
+  });
+
+  it("cancels a request when the signal aborts", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url, options) =>
+          new Promise((_resolve, reject) => {
+            options.signal.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            );
+          }),
+      ),
+    );
+    const controller = new AbortController();
+    const result = sendRequest(request, defaultTransportOptions(), {
+      signal: controller.signal,
+    });
+    controller.abort();
+    await expect(result).rejects.toThrow("Request canceled.");
+  });
+
+  it("sends multipart text parts as FormData and refuses files", async () => {
+    const fetch = vi.fn().mockResolvedValue(new Response("ok"));
+    vi.stubGlobal("fetch", fetch);
+    await sendRequest({
+      ...request,
+      method: "POST",
+      multipart: [{ key: "a", value: "1", file: false }],
+    });
+    const body = fetch.mock.calls[0][1].body as FormData;
+    expect(body.get("a")).toBe("1");
+    await expect(
+      sendRequest({ ...request, method: "PUT", bodyFile: "/tmp/a" }),
+    ).rejects.toThrow("desktop app");
   });
 });
 

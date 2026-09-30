@@ -2,6 +2,7 @@ import { buildResolvedRequestContext } from "./authorization";
 import type { RequestGroup } from "./groups";
 import { buildRequest, toCurl } from "./request";
 import type { RequestSession } from "./session";
+import type { TransportOptions } from "./transport-options";
 
 /**
  * The cURL command for a session, resolved as a send resolves it. Empty when
@@ -11,6 +12,7 @@ export function sessionCurl(
   session: RequestSession,
   groups: RequestGroup[],
   globals: Record<string, string>,
+  options?: TransportOptions,
 ) {
   try {
     const ctx = buildResolvedRequestContext(
@@ -19,7 +21,7 @@ export function sessionCurl(
       groups,
       globals,
     );
-    return toCurl(buildRequest(session.draft, ctx));
+    return toCurl(buildRequest(session.draft, ctx), options);
   } catch {
     return "";
   }

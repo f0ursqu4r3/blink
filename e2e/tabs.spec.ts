@@ -39,7 +39,7 @@ test("parallel sends stay in their own tabs and duplicates are independent", asy
   await pane
     .getByLabel("Request URL", { exact: true })
     .fill("https://example.test/v1/diagnostics");
-  await pane.getByLabel("HTTP method").selectOption("POST");
+  await pane.getByLabel("HTTP method").fill("POST");
   await pane
     .getByRole("tablist", { name: "Request options" })
     .getByRole("tab", { name: "Body" })

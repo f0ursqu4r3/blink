@@ -25,6 +25,14 @@ describe("workspace v4 open tabs", () => {
     expect(result.activeId).toBe(c.id);
   });
 
+  it("restores more than 128 requests", () => {
+    const sessions = Array.from({ length: 300 }, () => createSession());
+    const ids = sessions.map((session) => session.id);
+    const result = decodeWorkspace(encode(sessions, ids[0], ids));
+    expect(result.sessions).toHaveLength(300);
+    expect(result.openIds).toHaveLength(300);
+  });
+
   it("allows no open tabs with a null active id", () => {
     const session = createSession();
     const result = decodeWorkspace(encode([session], null, []));

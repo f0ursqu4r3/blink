@@ -1,7 +1,12 @@
 import { interpolate } from "./interpolation";
 import type { InterpolationContext } from "./interpolation";
 import type { ResolvedRequestContext } from "./authorization";
+import {
+  defaultTransportOptions,
+  type TransportOptions,
+} from "./transport-options";
 
+/** Common methods, offered as suggestions. Any HTTP token is valid. */
 export const methods = [
   "GET",
   "POST",
@@ -11,10 +16,29 @@ export const methods = [
   "HEAD",
   "OPTIONS",
 ] as const;
-export type Method = (typeof methods)[number];
-export type Pair = { id: number; key: string; value: string; enabled: boolean };
+export type Method = string;
+const TOKEN_RE = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;
+/** An HTTP method is any token (RFC 9110), such as PURGE or PROPFIND. */
+export const isMethod = (value: unknown): value is Method =>
+  typeof value === "string" && value.length <= 64 && TOKEN_RE.test(value);
+export type Pair = {
+  id: number;
+  key: string;
+  value: string;
+  enabled: boolean;
+  /** Multipart rows only: `value` is the path of a picked file. */
+  file?: boolean;
+};
 export type Header = { key: string; value: string };
-export const bodyModes = ["none", "json", "text", "graphql"] as const;
+export const bodyModes = [
+  "none",
+  "json",
+  "text",
+  "graphql",
+  "form",
+  "multipart",
+  "file",
+] as const;
 export type BodyMode = (typeof bodyModes)[number];
 export type Draft = {
   method: Method;
@@ -25,6 +49,10 @@ export type Draft = {
   body: string;
   /** GraphQL variables as JSON text. Used only in graphql body mode. */
   variables?: string;
+  /** Rows for form and multipart body modes. */
+  form?: Pair[];
+  /** Path of the picked file for file body mode. */
+  bodyFile?: string;
   auth: "none" | "bearer" | "basic";
   token: string;
   username: string;
@@ -32,11 +60,16 @@ export type Draft = {
   /** Structured local auth override. Undefined = inherit from group. */
   localAuth?: import("./authorization").AuthorizationConfig | undefined;
 };
+export type MultipartPart = { key: string; value: string; file: boolean };
 export type RequestInput = {
   method: Method;
   url: string;
   headers: Header[];
   body: string | null;
+  /** Send this file as the body. The desktop app reads it. */
+  bodyFile?: string;
+  /** Send a multipart form. `body` is null. */
+  multipart?: MultipartPart[];
 };
 export type ApiResponse = {
   status: number;
@@ -82,12 +115,16 @@ export const activePairs = (rows: Pair[]) =>
   rows.filter((row) => row.enabled && row.key.trim());
 export const supportsBody = (method: string) =>
   method !== "GET" && method !== "HEAD";
+/** The last segment of a file path, for labels. */
+export const fileName = (path: string) => path.split(/[\\/]/).pop() || path;
 
 export function buildRequest(
   draft: Draft,
   ctx?: ResolvedRequestContext | InterpolationContext,
 ): RequestInput {
   const interp = ctx ? (s: string) => interpolate(s, ctx) : (s: string) => s;
+  if (!isMethod(draft.method))
+    throw new Error("Enter a method name without spaces, such as GET.");
 
   const rawUrl = interp(draft.url.trim());
 
@@ -164,9 +201,47 @@ export function buildRequest(
     }
   }
 
-  let body =
-    supportsBody(draft.method) && draft.bodyMode !== "none" ? draft.body : null;
-  if (body !== null && ctx) {
+  const sendsBody = supportsBody(draft.method) && draft.bodyMode !== "none";
+  const contentType = headers.some(
+    (h) => h.key.toLowerCase() === "content-type",
+  );
+  if (sendsBody && draft.bodyMode === "multipart") {
+    if (contentType)
+      throw new Error(
+        "Remove the Content-Type header. Multipart bodies set their own boundary.",
+      );
+    const multipart = activePairs(draft.form ?? []).map((row) => {
+      if (row.file && !row.value)
+        throw new Error(`Choose a file for the ${row.key} part.`);
+      return {
+        key: interp(row.key),
+        value: row.file ? row.value : interp(row.value),
+        file: !!row.file,
+      };
+    });
+    return { method: draft.method, url, headers, body: null, multipart };
+  }
+  if (sendsBody && draft.bodyMode === "file") {
+    if (!draft.bodyFile) throw new Error("Choose a file to send as the body.");
+    if (!contentType)
+      headers.push({ key: "Content-Type", value: "application/octet-stream" });
+    return {
+      method: draft.method,
+      url,
+      headers,
+      body: null,
+      bodyFile: draft.bodyFile,
+    };
+  }
+  let body = sendsBody ? draft.body : null;
+  if (body !== null && draft.bodyMode === "form") {
+    body = new URLSearchParams(
+      activePairs(draft.form ?? []).map(({ key, value }) => [
+        interp(key),
+        interp(value),
+      ]),
+    ).toString();
+  } else if (body !== null && ctx) {
     body = interp(body);
   }
   if (body !== null && draft.bodyMode === "json") {
@@ -197,31 +272,51 @@ export function buildRequest(
       variables === undefined ? { query: body } : { query: body, variables },
     );
   }
-  if (
-    body !== null &&
-    !headers.some((h) => h.key.toLowerCase() === "content-type")
-  )
+  if (body !== null && !contentType)
     headers.push({
       key: "Content-Type",
       value:
         draft.bodyMode === "json" || draft.bodyMode === "graphql"
           ? "application/json"
-          : "text/plain; charset=utf-8",
+          : draft.bodyMode === "form"
+            ? "application/x-www-form-urlencoded"
+            : "text/plain; charset=utf-8",
     });
   return { method: draft.method, url, headers, body };
 }
 
 const quote = (value: string) => "'" + value.replace(/'/g, "'\"'\"'") + "'";
-export function toCurl(request: RequestInput) {
+/** A cURL command that sends what Blink sends with these transport options. */
+export function toCurl(
+  request: RequestInput,
+  options: TransportOptions = defaultTransportOptions(),
+) {
   const lines = [
-    "curl --disable --globoff --max-time 30",
+    `curl --disable --globoff --max-time ${options.timeoutSeconds} --connect-timeout ${options.connectTimeoutSeconds}`,
+    ...(options.followRedirects
+      ? [`--location --max-redirs ${options.maxRedirects}`]
+      : []),
+    ...(options.verifyTls ? [] : ["--insecure"]),
+    ...(options.proxyUrl ? [`--proxy ${quote(options.proxyUrl)}`] : []),
     request.method === "HEAD" ? "--head" : `--request ${request.method}`,
     `--url ${quote(request.url)}`,
   ];
   request.headers.forEach(({ key, value }) =>
     lines.push(`--header ${quote(`${key}: ${value}`)}`),
   );
-  if (request.body !== null) lines.push(`--data-raw ${quote(request.body)}`);
+  if (request.multipart)
+    request.multipart.forEach(({ key, value, file }) =>
+      // --form-string keeps a leading @ or < in a text value literal.
+      lines.push(
+        file
+          ? `--form ${quote(`${key}=@${value}`)}`
+          : `--form-string ${quote(`${key}=${value}`)}`,
+      ),
+    );
+  else if (request.bodyFile)
+    lines.push(`--data-binary ${quote(`@${request.bodyFile}`)}`);
+  else if (request.body !== null)
+    lines.push(`--data-raw ${quote(request.body)}`);
   return lines.join(" \\\n  ");
 }
 export function formatBytes(bytes: number) {

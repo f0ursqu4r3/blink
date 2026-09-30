@@ -56,6 +56,8 @@ test("application settings save, tooltip, and modal keyboard lifecycle", async (
   await expect(dialog).toBeVisible();
 
   const help = dialog.getByRole("button", { name: "Token syntax help" });
+  // Reka closes a tooltip when its container scrolls, so scroll first.
+  await help.scrollIntoViewIfNeeded();
   await help.click();
   await expect(page.getByText(/Workspace-global tokens use/)).toBeVisible();
   await page.keyboard.press("Escape");

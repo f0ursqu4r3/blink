@@ -34,11 +34,17 @@ export function reserveSessionId(id: number) {
 }
 export function draftFingerprint(draft: Draft) {
   const rows = (items: Draft["query"]) =>
-    items.map(({ key, value, enabled }) => ({ key, value, enabled }));
+    items.map(({ key, value, enabled, file }) => ({
+      key,
+      value,
+      enabled,
+      file,
+    }));
   return JSON.stringify({
     ...draft,
     query: rows(draft.query),
     headers: rows(draft.headers),
+    form: draft.form && rows(draft.form),
   });
 }
 
@@ -60,6 +66,8 @@ export function requestFingerprint(
     url: request.url,
     headers: request.headers,
     body: request.body,
+    bodyFile: request.bodyFile,
+    multipart: request.multipart,
     _authType: authType,
   });
 }
@@ -72,7 +80,11 @@ export function hasDraft(session: RequestSession) {
 }
 export function createSession(source?: Draft): RequestSession {
   const cloneRows = (rows: Draft["query"]) =>
-    rows.map((row) => ({ ...pair(row.key, row.value), enabled: row.enabled }));
+    rows.map((row) => ({
+      ...pair(row.key, row.value),
+      enabled: row.enabled,
+      ...(row.file ? { file: true } : {}),
+    }));
   return {
     id: ++sequence,
     groupId: null,
@@ -82,6 +94,7 @@ export function createSession(source?: Draft): RequestSession {
           localAuth: source.localAuth ? { ...source.localAuth } : undefined,
           query: cloneRows(source.query),
           headers: cloneRows(source.headers),
+          form: source.form && cloneRows(source.form),
         }
       : createDraft(),
     response: null,

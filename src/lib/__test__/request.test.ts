@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildRequest, createDraft, pair, toCurl } from "../request";
 import { formatJson } from "../json";
+import { defaultTransportOptions } from "../transport-options";
 
 describe("request construction", () => {
   const draft = () => ({
@@ -169,5 +170,126 @@ describe("request construction", () => {
     expect(formatJson('{"v":0.1234567890123456789}')).toContain(
       "0.1234567890123456789",
     );
+  });
+});
+
+describe("methods and body modes", () => {
+  const draft = (changes: Partial<ReturnType<typeof createDraft>>) => ({
+    ...createDraft(),
+    url: "https://api.test/items",
+    headers: [],
+    ...changes,
+  });
+
+  it("sends a custom method with a body", () => {
+    const request = buildRequest(
+      draft({ method: "PURGE", bodyMode: "text", body: "x" }),
+    );
+    expect(request.method).toBe("PURGE");
+    expect(request.body).toBe("x");
+  });
+
+  it("rejects a method that is not an HTTP token", () => {
+    expect(() => buildRequest(draft({ method: "GET ME" }))).toThrow(
+      "method name",
+    );
+  });
+
+  it("encodes enabled form rows as application/x-www-form-urlencoded", () => {
+    const off = { ...pair("skip", "1"), enabled: false };
+    const request = buildRequest(
+      draft({
+        method: "POST",
+        bodyMode: "form",
+        form: [pair("name", "{{who}}"), pair("q", "a b&c"), off],
+      }),
+      { definitions: { who: "Ada" } },
+    );
+    expect(request.body).toBe("name=Ada&q=a+b%26c");
+    expect(request.headers).toContainEqual({
+      key: "Content-Type",
+      value: "application/x-www-form-urlencoded",
+    });
+  });
+
+  it("builds multipart parts and leaves the boundary to the transport", () => {
+    const file = { ...pair("upload", "/tmp/photo.png"), file: true };
+    const request = buildRequest(
+      draft({
+        method: "POST",
+        bodyMode: "multipart",
+        form: [pair("title", "{{who}}"), file],
+      }),
+      { definitions: { who: "Ada" } },
+    );
+    expect(request.body).toBeNull();
+    expect(request.multipart).toEqual([
+      { key: "title", value: "Ada", file: false },
+      { key: "upload", value: "/tmp/photo.png", file: true },
+    ]);
+    expect(request.headers).toEqual([]);
+    expect(toCurl(request)).toContain(`--form-string 'title=Ada'`);
+    expect(toCurl(request)).toContain(`--form 'upload=@/tmp/photo.png'`);
+  });
+
+  it("rejects a Content-Type header on a multipart body", () => {
+    expect(() =>
+      buildRequest(
+        draft({
+          method: "POST",
+          bodyMode: "multipart",
+          headers: [pair("Content-Type", "multipart/form-data")],
+        }),
+      ),
+    ).toThrow("Remove the Content-Type header");
+  });
+
+  it("requires a picked file for a file part and for a file body", () => {
+    const empty = { ...pair("upload", ""), file: true };
+    expect(() =>
+      buildRequest(
+        draft({ method: "POST", bodyMode: "multipart", form: [empty] }),
+      ),
+    ).toThrow("Choose a file for the upload part.");
+    expect(() =>
+      buildRequest(draft({ method: "POST", bodyMode: "file" })),
+    ).toThrow("Choose a file");
+  });
+
+  it("sends a file body as octet-stream unless a Content-Type is set", () => {
+    const request = buildRequest(
+      draft({ method: "PUT", bodyMode: "file", bodyFile: "/tmp/a.bin" }),
+    );
+    expect(request.bodyFile).toBe("/tmp/a.bin");
+    expect(request.headers).toContainEqual({
+      key: "Content-Type",
+      value: "application/octet-stream",
+    });
+    expect(toCurl(request)).toContain(`--data-binary '@/tmp/a.bin'`);
+  });
+});
+
+describe("cURL export options", () => {
+  const request = buildRequest({ ...createDraft(), url: "https://api.test/" });
+  it("uses the configured timeouts and redirect policy", () => {
+    const curl = toCurl(request, {
+      ...defaultTransportOptions(),
+      timeoutSeconds: 90,
+      connectTimeoutSeconds: 5,
+      followRedirects: true,
+      maxRedirects: 3,
+    });
+    expect(curl).toContain("--max-time 90 --connect-timeout 5");
+    expect(curl).toContain("--location --max-redirs 3");
+    expect(curl).not.toContain("--insecure");
+  });
+  it("adds --insecure and --proxy when set", () => {
+    const curl = toCurl(request, {
+      ...defaultTransportOptions(),
+      verifyTls: false,
+      proxyUrl: "http://127.0.0.1:8080",
+    });
+    expect(curl).toContain("--insecure");
+    expect(curl).toContain("--proxy 'http://127.0.0.1:8080'");
   });
 });

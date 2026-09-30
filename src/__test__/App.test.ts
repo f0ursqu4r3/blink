@@ -171,7 +171,7 @@ describe("compact request console", () => {
     expect(app.get("[data-response-body]").text()).toContain("Denied");
   });
 
-  it("locks the draft during a request and handles an empty response", async () => {
+  it("keeps the draft editable during a request and handles an empty response", async () => {
     let resolve!: (response: Response) => void;
     const fetch = vi.fn(
       () =>
@@ -183,16 +183,59 @@ describe("compact request console", () => {
     const app = render();
     await app.get("[data-request-url]").setValue("https://example.test");
     await app.get("[data-send]").trigger("click");
-    expect(app.get("[data-request-url]").attributes("disabled")).toBeDefined();
-    expect(app.get("[data-send]").attributes("disabled")).toBeDefined();
+    expect(
+      app.get("[data-request-url]").attributes("disabled"),
+    ).toBeUndefined();
+    expect(app.find("[data-send]").exists()).toBe(false);
+    expect(app.find("[data-cancel]").exists()).toBe(true);
     await app.get(".request-bar").trigger("submit");
     expect(fetch).toHaveBeenCalledOnce();
     resolve(new Response(null, { status: 204, statusText: "No Content" }));
     await flushPromises();
     expect(app.text()).toContain("Empty response body");
-    expect(
-      app.get("[data-request-url]").attributes("disabled"),
-    ).toBeUndefined();
+    expect(app.find("[data-send]").exists()).toBe(true);
+  });
+  it("imports a pasted cURL command into the draft", async () => {
+    const app = render();
+    const url = app.get("[data-request-url]");
+    const paste = new Event("paste", { bubbles: true, cancelable: true });
+    Object.defineProperty(paste, "clipboardData", {
+      value: {
+        getData: () =>
+          "curl -sX POST https://api.test/items -H 'X-A: 1' -d '{\"a\":1}'",
+      },
+    });
+    url.element.dispatchEvent(paste);
+    await flushPromises();
+    expect(paste.defaultPrevented).toBe(true);
+    expect(app.get<HTMLInputElement>("input[data-method]").element.value).toBe(
+      "POST",
+    );
+    expect(app.get("[data-import-notice]").text()).toContain("Ignored: -s");
+    await app.get(".curl-button").trigger("click");
+    expect(app.get("[data-curl-preview]").text()).toContain(
+      "--header 'X-A: 1'",
+    );
+  });
+  it("cancels a running request", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        (_url: string, init: RequestInit) =>
+          new Promise<Response>((_resolve, reject) =>
+            init.signal!.addEventListener("abort", () =>
+              reject(new DOMException("Aborted", "AbortError")),
+            ),
+          ),
+      ),
+    );
+    const app = render();
+    await app.get("[data-request-url]").setValue("https://example.test");
+    await app.get("[data-send]").trigger("click");
+    await app.get("[data-cancel]").trigger("click");
+    await flushPromises();
+    expect(app.get('[role="alert"]').text()).toContain("Request canceled.");
+    expect(app.find("[data-send]").exists()).toBe(true);
   });
   it("reports clipboard failures rather than claiming a copy succeeded", async () => {
     vi.stubGlobal("navigator", {

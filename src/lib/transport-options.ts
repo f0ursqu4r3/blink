@@ -7,9 +7,17 @@ export type TransportOptions = {
   followRedirects: boolean;
   maxRedirects: number;
   inspectionLimitMiB: number;
+  /** Off accepts invalid and self-signed certificates. Desktop only. */
+  verifyTls: boolean;
+  /** Empty uses the system proxy settings. Desktop only. */
+  proxyUrl: string;
 };
 
-export type TransportField = Exclude<keyof TransportOptions, "followRedirects">;
+export type TransportField =
+  | "timeoutSeconds"
+  | "connectTimeoutSeconds"
+  | "maxRedirects"
+  | "inspectionLimitMiB";
 
 export const defaultTransportOptions = (): TransportOptions => ({
   timeoutSeconds: 30,
@@ -17,6 +25,8 @@ export const defaultTransportOptions = (): TransportOptions => ({
   followRedirects: false,
   maxRedirects: 10,
   inspectionLimitMiB: 4,
+  verifyTls: true,
+  proxyUrl: "",
 });
 
 export const transportRanges: Record<
@@ -45,4 +55,21 @@ export function transportFieldErrors(options: TransportOptions) {
       errors[field] = `Enter a whole number from ${min} to ${max}.`;
   }
   return errors;
+}
+
+/** An error for a proxy URL the desktop transport cannot use, or "". */
+export function proxyUrlError(value: string) {
+  const url = value.trim();
+  if (!url) return "";
+  try {
+    const { protocol, hostname } = new URL(url);
+    if (
+      ["http:", "https:", "socks5:", "socks5h:"].includes(protocol) &&
+      hostname
+    )
+      return "";
+  } catch {
+    // Reported below.
+  }
+  return "Enter an http, https, or socks5 proxy URL, such as http://127.0.0.1:8080.";
 }

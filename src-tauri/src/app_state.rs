@@ -67,12 +67,14 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
         && value
             .get("activeId")
             .is_some_and(|v| v.is_null() || v.is_u64());
+    // Any HTTP token, so custom methods such as PURGE are valid.
     let valid_method = |value: &serde_json::Value| {
         value.as_str().is_some_and(|method| {
-            matches!(
-                method,
-                "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS"
-            )
+            !method.is_empty()
+                && method.len() <= 64
+                && method
+                    .bytes()
+                    .all(|byte| byte.is_ascii_alphanumeric() || b"!#$%&'*+-.^_`|~".contains(&byte))
         })
     };
     let group_defaults_valid =
@@ -92,7 +94,12 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
         p.get("defaultMethod").is_some_and(valid_method)
             && p.get("defaultBodyMode")
                 .and_then(|v| v.as_str())
-                .is_some_and(|mode| matches!(mode, "none" | "json" | "text" | "graphql"))
+                .is_some_and(|mode| {
+                    matches!(
+                        mode,
+                        "none" | "json" | "text" | "graphql" | "form" | "multipart" | "file"
+                    )
+                })
             && p.get("pretty").is_some_and(|v| v.is_boolean())
             && p.get("wrap").is_some_and(|v| v.is_boolean())
             && p.get("confirmCloseDrafts").is_some_and(|v| v.is_boolean())
@@ -203,7 +210,7 @@ mod tests {
         save(&path, &valid).unwrap();
         assert_eq!(load(&path).unwrap().as_deref(), Some(valid.as_str()));
         for (field, invalid) in [
-            ("defaultMethod", serde_json::json!("TRACE")),
+            ("defaultMethod", serde_json::json!("BAD METHOD")),
             ("defaultBodyMode", serde_json::json!("xml")),
             ("pretty", serde_json::json!("false")),
             ("wrap", serde_json::json!(1)),
@@ -229,7 +236,7 @@ mod tests {
         save(&path, &valid).unwrap();
         assert_eq!(load(&path).unwrap().as_deref(), Some(valid.as_str()));
         for (field, invalid) in [
-            ("defaultMethod", serde_json::json!("TRACE")),
+            ("defaultMethod", serde_json::json!("BAD METHOD")),
             ("defaultMethod", serde_json::Value::Null),
             ("defaultUrl", serde_json::json!(false)),
             ("defaultUrl", serde_json::json!("x".repeat(65537))),

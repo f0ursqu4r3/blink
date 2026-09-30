@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { nextTick, ref } from "vue";
-import { Plus, X } from "lucide-vue-next";
+import { FileUp, Plus, X } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -13,7 +13,8 @@ import {
 import { useClipboard } from "@/composables/useClipboard";
 import TokenInput from "./TokenInput.vue";
 import type { InterpolationContext } from "@/lib/interpolation";
-import { pair, type Pair } from "@/lib/request";
+import { fileName, pair, type Pair } from "@/lib/request";
+import { pickRequestFile } from "@/lib/request-files";
 const rows = defineModel<Pair[]>({ required: true });
 const props = defineProps<{
   label: string;
@@ -22,7 +23,10 @@ const props = defineProps<{
   hideEnabled?: boolean;
   /** Tokens to color and suggest in values. */
   tokens?: InterpolationContext;
+  /** Let rows send a picked file as their value, for multipart bodies. */
+  files?: boolean;
 }>();
+const fileError = ref("");
 const editor = ref<HTMLElement | null>(null);
 const { copyError, copy } = useClipboard();
 function focusRow(index: number) {
@@ -51,6 +55,7 @@ function duplicateRow(id: number) {
   const src = rows.value[idx];
   const copy = pair(src.key, src.value);
   copy.enabled = src.enabled;
+  if (src.file) copy.file = true;
   const next = [...rows.value];
   next.splice(idx + 1, 0, copy);
   rows.value = next;
@@ -84,6 +89,38 @@ function addRow() {
   const next = [...rows.value, pair()];
   rows.value = next;
   focusRow(next.length - 1);
+}
+/** Pick a file for row `id`, or for a new file row when `id` is undefined. */
+async function chooseFile(id?: number) {
+  if (!canEdit()) return;
+  fileError.value = "";
+  let picked;
+  try {
+    picked = await pickRequestFile();
+  } catch (cause) {
+    fileError.value = cause instanceof Error ? cause.message : String(cause);
+    return;
+  }
+  if (!picked) return;
+  if (id === undefined) {
+    const row = {
+      ...pair(picked.name.replace(/\.[^.]*$/, ""), picked.path),
+      file: true,
+    };
+    rows.value = [...rows.value, row];
+    focusRow(rows.value.length - 1);
+    return;
+  }
+  rows.value = rows.value.map((row) =>
+    row.id === id ? { ...row, value: picked.path, file: true } : row,
+  );
+}
+/** Switch a row between a text value and a file. The value is cleared. */
+function toggleFile(id: number) {
+  if (!canEdit()) return;
+  rows.value = rows.value.map((row) =>
+    row.id === id ? { ...row, value: "", file: !row.file } : row,
+  );
 }
 </script>
 
@@ -167,7 +204,27 @@ function addRow() {
                   <td
                     class="h-8.5 border-b border-l border-border pointer-coarse:h-11"
                   >
+                    <button
+                      v-if="row.file"
+                      type="button"
+                      data-row-file
+                      :aria-label="`${label} file ${index + 1}`"
+                      :title="row.value || undefined"
+                      :disabled="disabled"
+                      class="flex w-full h-8.25 items-center gap-1.5 px-2.5 font-mono text-xs text-left hover:bg-muted pointer-coarse:h-11"
+                      :class="{
+                        'text-muted-foreground': !row.enabled || !row.value,
+                      }"
+                      @contextmenu.stop
+                      @click="chooseFile(row.id)"
+                    >
+                      <FileUp :size="12" aria-hidden="true" class="shrink-0" />
+                      <span class="truncate">{{
+                        row.value ? fileName(row.value) : "Choose file…"
+                      }}</span>
+                    </button>
                     <TokenInput
+                      v-else
                       :aria-label="`${label} value ${index + 1}`"
                       @contextmenu.stop
                       :model-value="row.value"
@@ -205,6 +262,15 @@ function addRow() {
                   @select="toggleRow(row.id)"
                 >
                   Enabled
+                </ContextMenuCheckboxItem>
+                <ContextMenuCheckboxItem
+                  v-if="files"
+                  data-testid="kv-row-ctx-file"
+                  :model-value="!!row.file"
+                  :disabled="disabled"
+                  @select="toggleFile(row.id)"
+                >
+                  File value
                 </ContextMenuCheckboxItem>
                 <ContextMenuItem
                   data-testid="kv-row-ctx-duplicate"
@@ -269,17 +335,26 @@ function addRow() {
         </template>
       </ContextMenuContent>
     </ContextMenu>
-    <p v-if="copyError" class="px-3 py-1 text-xs text-destructive" role="alert">
-      {{ copyError }}
-    </p>
-    <Button
-      variant="ghost"
-      class="m-2"
-      data-add-row
-      :disabled="disabled"
-      @click="addRow"
+    <p
+      v-if="copyError || fileError"
+      class="px-3 py-1 text-xs text-destructive"
+      role="alert"
     >
-      <Plus :size="13" aria-hidden="true" />Add row
-    </Button>
+      {{ copyError || fileError }}
+    </p>
+    <div class="flex gap-1 m-2">
+      <Button variant="ghost" data-add-row :disabled="disabled" @click="addRow">
+        <Plus :size="13" aria-hidden="true" />Add row
+      </Button>
+      <Button
+        v-if="files"
+        variant="ghost"
+        data-add-file
+        :disabled="disabled"
+        @click="chooseFile()"
+      >
+        <FileUp :size="13" aria-hidden="true" />Add file
+      </Button>
+    </div>
   </div>
 </template>

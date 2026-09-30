@@ -18,6 +18,7 @@ import {
 import type { Pair } from "../lib/request";
 import { definitionsToRows, rowsToDefinitions } from "../lib/definitions";
 import {
+  proxyUrlError,
   transportFieldErrors,
   type TransportField,
 } from "../lib/transport-options";
@@ -78,6 +79,9 @@ function relevantErrors(prefs: WorkspacePreferences) {
 const fieldErrors = computed(() =>
   submitted.value ? relevantErrors(preferences.value) : {},
 );
+const proxyError = computed(() =>
+  submitted.value ? proxyUrlError(preferences.value.proxyUrl) : "",
+);
 watch(
   () => props.open,
   (open, wasOpen) => {
@@ -116,9 +120,11 @@ function save() {
   if (
     !definitions ||
     theme.error.value ||
-    Object.keys(relevantErrors(preferences.value)).length
+    Object.keys(relevantErrors(preferences.value)).length ||
+    proxyUrlError(preferences.value.proxyUrl)
   )
     return;
+  preferences.value.proxyUrl = preferences.value.proxyUrl.trim();
   if (
     !preferences.value.followRedirects &&
     transportFieldErrors(preferences.value).maxRedirects
@@ -283,6 +289,56 @@ function save() {
                 </p>
                 <p v-else-if="field.help" class="text-[0.6875rem]">
                   {{ field.help }}
+                </p>
+              </div>
+              <div class="col-span-full grid gap-1.5 text-muted-foreground">
+                <label for="app-proxy-url">Proxy URL</label>
+                <input
+                  id="app-proxy-url"
+                  v-model="preferences.proxyUrl"
+                  type="text"
+                  spellcheck="false"
+                  autocomplete="off"
+                  placeholder="System proxy"
+                  :aria-invalid="proxyError ? 'true' : undefined"
+                  :aria-describedby="
+                    proxyError ? 'app-proxy-url-error' : undefined
+                  "
+                  class="h-8 w-full min-w-0 border border-input rounded-sm px-2 bg-background text-foreground font-mono aria-invalid:border-destructive"
+                />
+                <p
+                  v-if="proxyError"
+                  id="app-proxy-url-error"
+                  class="text-destructive"
+                >
+                  {{ proxyError }}
+                </p>
+                <p v-else class="text-[0.6875rem]">
+                  http, https, or socks5. Empty uses the system proxy settings.
+                  Desktop only.
+                </p>
+              </div>
+              <div class="col-span-full grid gap-1">
+                <label class="flex items-center gap-2"
+                  ><input
+                    id="app-verify-tls"
+                    v-model="preferences.verifyTls"
+                    type="checkbox"
+                    class="accent-primary"
+                  />
+                  Verify TLS certificates</label
+                >
+                <p
+                  v-if="!preferences.verifyTls"
+                  class="text-warning text-[0.6875rem]"
+                  role="status"
+                >
+                  Blink accepts invalid and self-signed certificates for every
+                  request. Turn this on again when you finish.
+                </p>
+                <p v-else class="text-muted-foreground text-[0.6875rem]">
+                  Blink trusts the system certificate store, including company
+                  and local development CAs.
                 </p>
               </div>
             </fieldset>
