@@ -24,7 +24,7 @@
 - A menu action uses the same mutation path as its button or keyboard command.
 - In the Browser request menu, **Move to**, **Delete**, and **Authorization** act on the multi-selection when the target is in it. **Open**, **Duplicate**, **Close tab**, **Copy URL**, and **Copy as cURL** act on the target only.
 - Commands: `bun run test`, `bun run lint`, `bun run build`. The dev server is already running on port 1420; do not start a second one.
-- Commit after each task. End each commit message with `Co-Authored-By: Claude Opus 5.5 (1M context) <noreply@anthropic.com>`.
+- Commit after each task.
 
 ## Review Focus
 
