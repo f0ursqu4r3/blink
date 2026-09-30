@@ -217,6 +217,27 @@ describe("compact request console", () => {
       "--header 'X-A: 1'",
     );
   });
+  it("toggles the request and response layout from the title bar", async () => {
+    const app = render();
+    const toggle = app.get("[data-title-layout]");
+    const panels = () => app.get("[data-request-pane] .panels");
+    expect(toggle.attributes("aria-pressed")).toBe("false");
+    expect(panels().attributes("data-layout")).toBe("horizontal");
+    expect(app.get("[data-panel-resize]").attributes("aria-orientation")).toBe(
+      "vertical",
+    );
+    await toggle.trigger("click");
+    expect(toggle.attributes("aria-pressed")).toBe("true");
+    expect(toggle.attributes("aria-label")).toBe(
+      "Place request and response side by side",
+    );
+    expect(panels().attributes("data-layout")).toBe("vertical");
+    expect(app.get("[data-panel-resize]").attributes("aria-orientation")).toBe(
+      "horizontal",
+    );
+    await toggle.trigger("click");
+    expect(panels().attributes("data-layout")).toBe("horizontal");
+  });
   it("cancels a running request", async () => {
     vi.stubGlobal(
       "fetch",

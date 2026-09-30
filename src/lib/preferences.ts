@@ -8,12 +8,17 @@ import {
   type TransportOptions,
 } from "./transport-options";
 
+/** Side by side, or request above response. */
+export const paneLayouts = ["horizontal", "vertical"] as const;
+export type PaneLayout = (typeof paneLayouts)[number];
+
 export type WorkspacePreferences = {
   defaultMethod: Method;
   defaultBodyMode: BodyMode;
   pretty: boolean;
   wrap: boolean;
   confirmCloseDrafts: boolean;
+  paneLayout: PaneLayout;
 } & TransportOptions;
 
 export const defaultPreferences = (): WorkspacePreferences => ({
@@ -22,6 +27,7 @@ export const defaultPreferences = (): WorkspacePreferences => ({
   pretty: true,
   wrap: false,
   confirmCloseDrafts: true,
+  paneLayout: "horizontal",
   ...defaultTransportOptions(),
 });
 
@@ -36,6 +42,7 @@ export function validPreferences(
     typeof p.pretty === "boolean" &&
     typeof p.wrap === "boolean" &&
     typeof p.confirmCloseDrafts === "boolean" &&
+    paneLayouts.includes(p.paneLayout as PaneLayout) &&
     typeof p.followRedirects === "boolean" &&
     typeof p.verifyTls === "boolean" &&
     typeof p.proxyUrl === "string" &&
@@ -72,6 +79,8 @@ export function normalizePreferences(
     pretty: input.pretty,
     wrap: input.wrap,
     confirmCloseDrafts: input.confirmCloseDrafts,
+    // Added after v4 shipped: older workspaces open side by side.
+    paneLayout: input.paneLayout ?? "horizontal",
   };
 
   // Add transport fields (use provided values, or defaults)

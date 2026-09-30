@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { HardDrive, PanelLeft, Settings } from "lucide-vue-next";
+import {
+  Columns2,
+  HardDrive,
+  PanelLeft,
+  Rows2,
+  Settings,
+} from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import RequestTabs from "@/components/RequestTabs.vue";
 import RequestBrowser from "@/components/RequestBrowser.vue";
@@ -159,6 +165,18 @@ function handleSaveGroupSettings(
   groupSettingsOpen.value = false;
 }
 
+const stacked = computed(() => preferences.value.paneLayout === "vertical");
+const layoutToggleLabel = computed(() =>
+  stacked.value
+    ? "Place request and response side by side"
+    : "Stack request above response",
+);
+function toggleLayout() {
+  setPreferences({
+    ...preferences.value,
+    paneLayout: stacked.value ? "horizontal" : "vertical",
+  });
+}
 function toggleBrowser() {
   if (narrow.value) {
     mobileBrowserOpen.value = !mobileBrowserOpen.value;
@@ -379,7 +397,18 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         :groups="groups"
         @select="selectFromSearch"
       />
-      <div class="flex justify-end pr-2" data-tauri-drag-region>
+      <div class="flex justify-end gap-0.5 pr-2" data-tauri-drag-region>
+        <Button
+          variant="ghost"
+          :aria-pressed="stacked"
+          :aria-label="layoutToggleLabel"
+          :title="layoutToggleLabel"
+          data-title-layout
+          @click="toggleLayout"
+        >
+          <Rows2 v-if="stacked" :size="14" aria-hidden="true" />
+          <Columns2 v-else :size="14" aria-hidden="true" />
+        </Button>
         <Button
           variant="ghost"
           aria-label="Application settings"
@@ -474,6 +503,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           :groups="groups"
           :global-definitions="globalDefinitions"
           :transport="transport"
+          :layout="preferences.paneLayout"
         />
       </div>
     </div>

@@ -254,6 +254,18 @@ describe("transport preferences", () => {
       proxyUrl: "",
     });
   });
+  it("opens older workspaces side by side and rejects unknown layouts", () => {
+    const saved: Record<string, unknown> = { ...defaultPreferences() };
+    delete saved.paneLayout;
+    expect(normalizePreferences(saved)?.paneLayout).toBe("horizontal");
+    expect(
+      normalizePreferences({ ...defaultPreferences(), paneLayout: "vertical" })
+        ?.paneLayout,
+    ).toBe("vertical");
+    expect(
+      normalizePreferences({ ...defaultPreferences(), paneLayout: "diagonal" }),
+    ).toBeNull();
+  });
   it("rejects a proxy URL the desktop transport cannot use", () => {
     expect(
       validPreferences({ ...defaultPreferences(), proxyUrl: "ftp://proxy" }),

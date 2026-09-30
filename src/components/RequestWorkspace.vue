@@ -19,6 +19,7 @@ import { isCurlCommand, parseCurl } from "@/lib/curl-import";
 import type { RequestSession } from "@/lib/session";
 import type { RequestGroup } from "@/lib/groups";
 import type { TransportOptions } from "@/lib/transport-options";
+import type { PaneLayout } from "@/lib/preferences";
 import {
   buildResolvedRequestContext,
   resolveAuthorization,
@@ -33,6 +34,8 @@ const props = defineProps<{
   groups?: RequestGroup[];
   globalDefinitions?: Record<string, string>;
   transport?: TransportOptions;
+  /** Side by side (default), or request above response. */
+  layout?: PaneLayout;
 }>();
 
 const resolvedCtx = computed(() =>
@@ -86,12 +89,17 @@ const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
 const urlInput = ref<InstanceType<typeof TokenInput>>();
 const workspace = ref<HTMLElement>();
+const panels = ref<HTMLElement>();
 const requestPanelWidth = ref(420);
+const requestPanelHeight = ref(280);
+const stacked = computed(() => props.layout === "vertical");
 const resizing = ref(false);
 const prefix = `request-${props.session.id}`;
 const shortcut = /Mac/i.test(navigator.platform) ? "⌘" : "Ctrl";
 const minimumPanelWidth = 280;
 const minimumResponseWidth = 340;
+const minimumPanelHeight = 160;
+const minimumResponseHeight = 200;
 const resizeHandleWidth = 8;
 const maximumPanelWidth = computed(() =>
   Math.max(
@@ -109,9 +117,40 @@ const panelWidth = computed(() =>
     ),
   ),
 );
+const maximumPanelHeight = computed(() =>
+  Math.max(
+    minimumPanelHeight,
+    (panels.value?.clientHeight ?? 600) -
+      minimumResponseHeight -
+      resizeHandleWidth,
+  ),
+);
+const panelHeight = computed(() =>
+  Math.round(
+    Math.min(
+      maximumPanelHeight.value,
+      Math.max(minimumPanelHeight, requestPanelHeight.value),
+    ),
+  ),
+);
 const panelStyle = computed(() => ({
   "--request-panel-width": `${panelWidth.value}px`,
+  "--request-panel-height": `${panelHeight.value}px`,
 }));
+/** The handle's range and value along the split axis. */
+const resizeRange = computed(() =>
+  stacked.value
+    ? {
+        min: minimumPanelHeight,
+        max: maximumPanelHeight.value,
+        now: panelHeight.value,
+      }
+    : {
+        min: minimumPanelWidth,
+        max: maximumPanelWidth.value,
+        now: panelWidth.value,
+      },
+);
 const importNotice = ref("");
 const importError = ref("");
 /** Pasting a cURL command into the URL field replaces the draft with it. */
@@ -194,10 +233,23 @@ function setPanelWidth(width: number) {
     Math.max(minimumPanelWidth, width),
   );
 }
-function resizePointer(event: PointerEvent) {
-  setPanelWidth(
-    event.clientX - (workspace.value?.getBoundingClientRect().left ?? 0),
+function setPanelHeight(height: number) {
+  requestPanelHeight.value = Math.min(
+    maximumPanelHeight.value,
+    Math.max(minimumPanelHeight, height),
   );
+}
+function setPanelSize(size: number) {
+  if (stacked.value) setPanelHeight(size);
+  else setPanelWidth(size);
+}
+function resizePointer(event: PointerEvent) {
+  const box = panels.value?.getBoundingClientRect();
+  if (stacked.value) setPanelHeight(event.clientY - (box?.top ?? 0));
+  else
+    setPanelWidth(
+      event.clientX - (workspace.value?.getBoundingClientRect().left ?? 0),
+    );
 }
 function stopResize() {
   resizing.value = false;
@@ -213,10 +265,14 @@ function startResize(event: PointerEvent) {
 }
 function resizeWithKeyboard(event: KeyboardEvent) {
   const step = event.shiftKey ? 48 : 16;
-  if (event.key === "ArrowLeft") setPanelWidth(panelWidth.value - step);
-  else if (event.key === "ArrowRight") setPanelWidth(panelWidth.value + step);
-  else if (event.key === "Home") setPanelWidth(minimumPanelWidth);
-  else if (event.key === "End") setPanelWidth(maximumPanelWidth.value);
+  const [less, more] = stacked.value
+    ? ["ArrowUp", "ArrowDown"]
+    : ["ArrowLeft", "ArrowRight"];
+  const { min, max, now } = resizeRange.value;
+  if (event.key === less) setPanelSize(now - step);
+  else if (event.key === more) setPanelSize(now + step);
+  else if (event.key === "Home") setPanelSize(min);
+  else if (event.key === "End") setPanelSize(max);
   else return;
   event.preventDefault();
 }
@@ -473,8 +529,10 @@ function resizeWithKeyboard(event: KeyboardEvent) {
       </ContextMenuContent>
     </ContextMenu>
     <div
+      ref="panels"
       class="panels grid min-h-0 flex-1"
-      :class="{ resizing }"
+      :class="{ resizing, stacked }"
+      :data-layout="stacked ? 'vertical' : 'horizontal'"
       :style="panelStyle"
     >
       <RequestEditor
@@ -487,14 +545,17 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :transport="transport"
       />
       <div
-        class="panel-resize relative z-1 -mx-0.75 cursor-col-resize -outline-offset-2 max-[900px]:hidden"
+        class="panel-resize relative z-1 -outline-offset-2 max-[900px]:hidden"
+        :class="
+          stacked ? '-my-0.75 cursor-row-resize' : '-mx-0.75 cursor-col-resize'
+        "
         data-panel-resize
         role="separator"
         aria-label="Resize panels"
-        aria-orientation="vertical"
-        :aria-valuemin="minimumPanelWidth"
-        :aria-valuemax="maximumPanelWidth"
-        :aria-valuenow="panelWidth"
+        :aria-orientation="stacked ? 'horizontal' : 'vertical'"
+        :aria-valuemin="resizeRange.min"
+        :aria-valuemax="resizeRange.max"
+        :aria-valuenow="resizeRange.now"
         tabindex="0"
         @pointerdown="startResize"
         @keydown="resizeWithKeyboard"
@@ -560,5 +621,33 @@ function resizeWithKeyboard(event: KeyboardEvent) {
 }
 .panels.resizing {
   user-select: none;
+}
+/* Stacked: request above response, the handle between them. Narrow
+   windows already stack without a handle. */
+@media (min-width: 901px) {
+  .panels.stacked {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows:
+      minmax(160px, var(--request-panel-height)) 8px
+      minmax(200px, 1fr);
+  }
+  .panels.stacked > :first-child {
+    border-right: 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .panels.stacked .panel-resize::after {
+    top: 3px;
+    bottom: auto;
+    left: 0;
+    right: 0;
+    width: auto;
+    height: 1px;
+  }
+  .panels.stacked .panel-resize:hover::after,
+  .panels.stacked .panel-resize:focus-visible::after,
+  .panels.stacked.resizing .panel-resize::after {
+    width: auto;
+    height: 2px;
+  }
 }
 </style>

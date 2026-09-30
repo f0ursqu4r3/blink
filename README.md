@@ -34,6 +34,9 @@ Browser sidebar organizes the request tabs in the current session.
 - Restore open tabs and application state after restart. Nothing is sent until
   you press Send.
 - Distinguish a previous response from an edited, unsent draft.
+- Place the request and response side by side or stack them. Use the layout
+  button beside Settings in the title bar. Blink restores the layout after a
+  restart.
 
 Application Settings → Requests controls the timeout (default 30 s total,
 10 s to connect), whether redirects are followed (default off; up to 20 hops),
