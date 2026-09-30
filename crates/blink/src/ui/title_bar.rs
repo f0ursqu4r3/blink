@@ -52,53 +52,54 @@ pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> AnyElement {
                 .flex()
                 .items_center()
                 .size_full()
+                // The side columns grow from zero with their spacing inside,
+                // so the command center stays centered (`grid-cols-[1fr_auto_1fr]`).
                 .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .justify_start()
-                        .ml_1()
-                        // Leave room for the traffic lights.
-                        .when(mac, |this| this.pl(px(72.)))
-                        .child(
-                            icon_button("title-browser", IconName::PanelLeft, browser_label)
-                                .on_click(move |_, window, cx| on_toggle_browser(window, cx)),
-                        ),
+                    div().flex_1().flex().justify_start().child(
+                        div()
+                            .ml_1()
+                            // Leave room for the traffic lights.
+                            .when(mac, |this| this.pl(px(72.)))
+                            .child(
+                                icon_button("title-browser", IconName::PanelLeft, browser_label)
+                                    .on_click(move |_, window, cx| on_toggle_browser(window, cx)),
+                            ),
+                    ),
                 )
                 .child(props.command_center)
                 .child(
-                    div()
-                        .flex_1()
-                        .flex()
-                        .justify_end()
-                        .gap(px(2.))
-                        .pr_2()
-                        .child(
-                            icon_button(
-                                "title-layout",
-                                if props.stacked {
-                                    IconName::Rows2
-                                } else {
-                                    IconName::Columns2
-                                },
-                                format!(
-                                    "{layout_label} · {}",
-                                    blink_core::shortcut::shortcut_label(
-                                        &["mod", "\\"],
-                                        blink_core::shortcut::IS_MAC
-                                    )
-                                ),
+                    div().flex_1().flex().justify_end().child(
+                        div()
+                            .flex()
+                            .gap(px(2.))
+                            .pr_2()
+                            .child(
+                                icon_button(
+                                    "title-layout",
+                                    if props.stacked {
+                                        IconName::Rows2
+                                    } else {
+                                        IconName::Columns2
+                                    },
+                                    format!(
+                                        "{layout_label} · {}",
+                                        blink_core::shortcut::shortcut_label(
+                                            &["mod", "\\"],
+                                            blink_core::shortcut::IS_MAC
+                                        )
+                                    ),
+                                )
+                                .on_click(move |_, window, cx| on_toggle_layout(window, cx)),
                             )
-                            .on_click(move |_, window, cx| on_toggle_layout(window, cx)),
-                        )
-                        .child(
-                            icon_button(
-                                "title-settings",
-                                IconName::Settings,
-                                "Application settings · Cmd/Ctrl+,",
-                            )
-                            .on_click(move |_, window, cx| on_settings(window, cx)),
-                        ),
+                            .child(
+                                icon_button(
+                                    "title-settings",
+                                    IconName::Settings,
+                                    "Application settings · Cmd/Ctrl+,",
+                                )
+                                .on_click(move |_, window, cx| on_settings(window, cx)),
+                            ),
+                    ),
                 ),
         )
         .into_any_element()

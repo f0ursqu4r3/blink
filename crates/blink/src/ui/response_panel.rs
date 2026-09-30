@@ -649,11 +649,21 @@ fn alert_text(text: impl Into<SharedString>, cx: &App) -> Div {
         .child(text.into())
 }
 
-/// A 28 px ghost icon button, as the Vue `size-7` buttons.
-fn tool_button(id: &'static str, icon: IconName, tooltip: &'static str) -> Button {
+/// The Vue `variant="ghost"` button: monospace 12 px medium text in the
+/// muted color, foreground on hover.
+fn ghost_button(id: impl Into<ElementId>, cx: &App) -> Button {
     Button::new(id)
         .ghost()
-        .small()
+        .xsmall()
+        .font_family(theme::MONO)
+        .text_size(r(12.))
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(theme::colors(cx).muted_foreground)
+}
+
+/// A 28 px ghost icon button, as the Vue `size-7` buttons.
+fn tool_button(cx: &App, id: &'static str, icon: IconName, tooltip: &'static str) -> Button {
+    ghost_button(id, cx)
         .w(r(28.))
         .h(r(28.))
         .icon(Icon::new(icon).size(r(14.)))
@@ -661,10 +671,8 @@ fn tool_button(id: &'static str, icon: IconName, tooltip: &'static str) -> Butto
 }
 
 /// A small 22 px icon button in the find field.
-fn find_button(id: &'static str, icon: IconName, tooltip: &'static str) -> Button {
-    Button::new(id)
-        .ghost()
-        .xsmall()
+fn find_button(cx: &App, id: &'static str, icon: IconName, tooltip: &'static str) -> Button {
+    ghost_button(id, cx)
         .w(r(22.))
         .h(r(22.))
         .icon(Icon::new(icon).size(r(13.)))
@@ -772,8 +780,9 @@ impl ResponsePanel {
                     .child(header_status(session)),
             )
             .child(
-                Button::new("response-history")
-                    .ghost()
+                ghost_button("response-history", cx)
+                    .text_size(r(10.))
+                    .gap(r(4.))
                     .ml(r(8.))
                     .mr(r(-8.))
                     .h(r(24.))
@@ -781,7 +790,9 @@ impl ResponsePanel {
                     .compact()
                     .tooltip("Request history")
                     .icon(Icon::new(IconName::RotateCcwClock).size(r(13.)))
-                    .when(count > 0, |this| this.label(count.to_string()))
+                    .when(count > 0, |this| {
+                        this.child(div().text_size(r(10.)).child(count.to_string()))
+                    })
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_history(window, cx))),
             )
     }
@@ -908,9 +919,9 @@ impl ResponsePanel {
             .items_center()
             .when(body_tab && (parsed || truncated) && !binary, |this| {
                 this.child(
-                    Button::new("response-pretty")
-                        .ghost()
-                        .small()
+                    ghost_button("response-pretty", cx)
+                        .h(r(28.))
+                        .px(r(10.))
                         .label(if pretty && !truncated {
                             "Pretty"
                         } else {
@@ -925,11 +936,11 @@ impl ResponsePanel {
             })
             .when(body_tab && !binary, |this| {
                 this.child(
-                    tool_button("response-wrap", IconName::TextWrap, "Wrap lines")
+                    tool_button(cx, "response-wrap", IconName::TextWrap, "Wrap lines")
                         .on_click(cx.listener(|this, _, window, cx| this.toggle_wrap(window, cx))),
                 )
                 .child(
-                    tool_button(
+                    tool_button(cx, 
                         "response-find",
                         IconName::Search,
                         "Find and filter response · Cmd/Ctrl+F",
@@ -938,9 +949,7 @@ impl ResponsePanel {
                 )
             })
             .child(
-                Button::new("response-save")
-                    .ghost()
-                    .small()
+                ghost_button("response-save", cx)
                     .w(r(28.))
                     .h(r(28.))
                     .icon(Icon::new(IconName::Download).size(r(14.)))
@@ -953,7 +962,7 @@ impl ResponsePanel {
                     .on_click(cx.listener(|this, _, window, cx| this.save_body(window, cx))),
             )
             .child(
-                tool_button(
+                tool_button(cx, 
                     "response-copy",
                     if copied {
                         IconName::Check
@@ -1058,7 +1067,9 @@ impl ResponsePanel {
                 div().flex_1().min_w_0().child(
                     Input::new(&self.search)
                         .appearance(false)
+                        .text_color(colors.foreground)
                         .h(r(26.))
+                        .px(r(7.))
                         .font_family(theme::MONO)
                         .text_size(r(11.)),
                 ),
@@ -1077,7 +1088,7 @@ impl ResponsePanel {
             })
             .when(!self.filter_lines, |this| {
                 this.child(
-                    find_button(
+                    find_button(cx, 
                         "find-previous",
                         IconName::ChevronUp,
                         "Previous match · Shift+Enter",
@@ -1086,13 +1097,13 @@ impl ResponsePanel {
                     .on_click(cx.listener(|this, _, _, cx| this.find_step(-1, cx))),
                 )
                 .child(
-                    find_button("find-next", IconName::ChevronDown, "Next match · Enter")
+                    find_button(cx, "find-next", IconName::ChevronDown, "Next match · Enter")
                         .disabled(count == 0)
                         .on_click(cx.listener(|this, _, _, cx| this.find_step(1, cx))),
                 )
             })
             .child(
-                find_button(
+                find_button(cx, 
                     "filter-lines",
                     IconName::ListFilter,
                     "Show only matching lines",
@@ -1132,8 +1143,10 @@ impl ResponsePanel {
                                     .child(
                                         Input::new(&self.jq_input)
                                             .appearance(false)
+                                            .text_color(colors.foreground)
                                             .disabled(truncated)
                                             .h(r(26.))
+                                            .px(r(7.))
                                             .font_family(theme::MONO)
                                             .text_size(r(11.)),
                                     )
@@ -1144,16 +1157,16 @@ impl ResponsePanel {
                                     }),
                             )
                             .child(
-                                Button::new("run-jq")
-                                    .ghost()
-                                    .small()
+                                ghost_button("run-jq", cx)
+                                    .h(r(28.))
+                                    .px(r(10.))
                                     .label("Run jq")
                                     .disabled(jq_empty || truncated)
                                     .on_click(cx.listener(|this, _, _, cx| this.execute_jq(cx))),
                             )
                             .when(self.jq_output.is_some(), |this| {
                                 this.child(
-                                    tool_button("clear-jq", IconName::X, "Clear jq result")
+                                    tool_button(cx, "clear-jq", IconName::X, "Clear jq result")
                                         .on_click(cx.listener(|this, _, _, cx| {
                                             this.set_jq_output(None);
                                             this.sync_body(cx);
@@ -1231,6 +1244,12 @@ impl ResponsePanel {
                 )))
                 .child(
                     Button::new("binary-save")
+                        .xsmall()
+                        .font_family(theme::MONO)
+                        .text_size(r(12.))
+                        .font_weight(FontWeight::MEDIUM)
+                        .h(r(28.))
+                        .px(r(10.))
                         .label("Save…")
                         .disabled(!savable || self.saving)
                         .on_click(cx.listener(|this, _, window, cx| this.save_body(window, cx))),

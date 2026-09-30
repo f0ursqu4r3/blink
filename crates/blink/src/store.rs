@@ -36,6 +36,8 @@ pub struct Store {
     pub exit_blocked: bool,
     /// Quitting: the UI is inert until the last save lands.
     pub closing: bool,
+    /// The user chose Quit without saving: the exit writes nothing.
+    discard_on_exit: bool,
     revision: u64,
     /// Autosave key of the last snapshot handed to the writer.
     saved_key: String,
@@ -71,6 +73,7 @@ impl Store {
             saving: false,
             exit_blocked: false,
             closing: false,
+            discard_on_exit: false,
             revision: 0,
             saved_key: String::new(),
             pending: None,
@@ -121,6 +124,11 @@ impl Store {
                         this.ready = true;
                         this.saved_key = this.workspace.autosave_key();
                         cx.emit(StoreEvent::Restored);
+                        // As the Vue watcher did when `ready` turned true:
+                        // write the restored state at once, so an older
+                        // snapshot version is upgraded and interrupted
+                        // requests are saved idle.
+                        this.flush(cx);
                     }
                     Err(error) => this.error = error,
                 }
@@ -260,7 +268,8 @@ impl Store {
     /// restore never overwrites the existing file. Returns false when the
     /// save failed and quitting must wait for the user.
     pub fn save_before_exit(&mut self, cx: &mut Context<Self>) -> bool {
-        if !self.ready {
+        // Already saved by an earlier exit step, or the user discards changes.
+        if !self.ready || self.closing || self.discard_on_exit {
             return true;
         }
         self.closing = true;
@@ -273,6 +282,20 @@ impl Store {
                 cx.notify();
                 false
             }
+        }
+    }
+
+    /// Quit now and write nothing: the storage notice's Quit without saving.
+    pub fn quit_without_saving(&mut self, cx: &mut Context<Self>) {
+        self.discard_on_exit = true;
+        cx.quit();
+    }
+
+    /// Save the latest snapshot, then quit. A failed save blocks quitting and
+    /// the storage notice offers Retry and Quit without saving.
+    pub fn quit(&mut self, cx: &mut Context<Self>) {
+        if self.save_before_exit(cx) {
+            cx.quit();
         }
     }
 

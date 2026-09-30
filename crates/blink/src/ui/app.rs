@@ -8,6 +8,7 @@ use blink_core::import::parse_import;
 use blink_core::model::{CodeTarget, PaneLayout};
 use blink_core::preferences::step_zoom;
 use blink_core::workspace_state::{IMPORT_LIMIT_BYTES, IMPORT_TOO_LARGE, import_failed_notice};
+use gpui_kit::component::button::ButtonVariants as _;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -15,7 +16,7 @@ use crate::actions::*;
 use crate::store::{Store, StoreEvent};
 use crate::theme;
 use crate::ui::browser::Browser;
-use crate::ui::command_center::CommandCenter;
+use crate::ui::command_center::{CommandCenter, Picked};
 use crate::ui::request_pane::RequestPane;
 use crate::ui::tabs::RequestTabs;
 use crate::ui::title_bar::{self, TitleBarProps};
@@ -23,7 +24,7 @@ use crate::ui::{cookies_dialog, group_settings, settings_dialog, status_bar};
 
 /// The frame gap (`gap-1.5`).
 pub const FRAME_GAP: f32 = 6.0;
-/// Below this width the Browser opens as an overlay (`max-[760px]`).
+/// At or below this width the Browser opens as an overlay (`max-[760px]`).
 pub const NARROW_WIDTH: f32 = 760.0;
 
 pub struct BlinkApp {
@@ -56,9 +57,16 @@ impl BlinkApp {
                 this.mobile_browser_open = false;
                 cx.notify();
             }),
+            // A search pick closes the narrow overlay and focuses its tab
+            // (`selectFromSearch`).
+            cx.subscribe_in(&command_center, window, |this, _, _: &Picked, window, cx| {
+                this.mobile_browser_open = false;
+                this.focus_tabs(window, cx);
+                cx.notify();
+            }),
             cx.observe_window_activation(window, |this, window, cx| {
                 if !window.is_window_active() {
-                    crate::save_window_state(&this.store.read(cx).engine, window);
+                    crate::save_window_state(&this.store.read(cx).engine, window, cx);
                 }
             }),
             cx.subscribe_in(&store, window, |this, _, event, window, cx| {
@@ -83,21 +91,20 @@ impl BlinkApp {
         app
     }
 
-    /// Create panes for new requests and drop panes of deleted ones.
+    /// Create panes for new requests and drop panes of deleted ones. A new
+    /// pane that is active focuses its URL, as `RequestWorkspace` did on mount.
     fn sync_panes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        let ids: Vec<u64> = self
-            .store
-            .read(cx)
-            .workspace
-            .sessions
-            .iter()
-            .map(|session| session.id)
-            .collect();
+        let workspace = &self.store.read(cx).workspace;
+        let active_id = workspace.shown_active_id();
+        let ids: Vec<u64> = workspace.sessions.iter().map(|session| session.id).collect();
         self.panes.retain(|id, _| ids.contains(id));
         for id in ids {
             if !self.panes.contains_key(&id) {
                 let store = self.store.clone();
                 let pane = cx.new(|cx| RequestPane::new(store, id, window, cx));
+                if Some(id) == active_id {
+                    pane.update(cx, |pane, cx| pane.focus_url(window, cx));
+                }
                 self.panes.insert(id, pane);
             }
         }
@@ -109,7 +116,7 @@ impl BlinkApp {
     }
 
     fn narrow(window: &Window) -> bool {
-        window.viewport_size().width < px(NARROW_WIDTH)
+        window.viewport_size().width <= px(NARROW_WIDTH)
     }
 
     fn browser_visible(&self, window: &Window) -> bool {
@@ -175,10 +182,16 @@ impl BlinkApp {
         }
     }
 
-    fn on_close_tab(&mut self, _: &CloseTab, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_close_tab(&mut self, _: &CloseTab, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(id) = self.store.read(cx).workspace.shown_active_id() {
             self.update_workspace(cx, |workspace| workspace.close(id));
+            self.focus_tabs(window, cx);
         }
+    }
+
+    /// Focus the active tab, as `close`, `closeMany`, and `reopenTab` did.
+    fn focus_tabs(&self, window: &mut Window, cx: &mut Context<Self>) {
+        self.tabs.focus_handle(cx).focus(window, cx);
     }
 
     fn on_next_tab(&mut self, _: &NextTab, _: &mut Window, cx: &mut Context<Self>) {
@@ -243,8 +256,10 @@ impl BlinkApp {
         settings_dialog::open(self.store.clone(), window, cx);
     }
 
-    fn on_reopen(&mut self, _: &ReopenClosedTab, _: &mut Window, cx: &mut Context<Self>) {
-        self.update_workspace(cx, |workspace| workspace.reopen_tab());
+    fn on_reopen(&mut self, _: &ReopenClosedTab, window: &mut Window, cx: &mut Context<Self>) {
+        if self.update_workspace(cx, |workspace| workspace.reopen_tab()).is_some() {
+            self.focus_tabs(window, cx);
+        }
     }
 
     fn on_undo(&mut self, _: &UndoDelete, _: &mut Window, cx: &mut Context<Self>) {
@@ -307,7 +322,7 @@ impl BlinkApp {
         self.update_workspace(cx, |workspace| workspace.collapse_all_groups());
     }
 
-    fn on_import(&mut self, _: &ImportFile, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_import(&mut self, _: &ImportFile, window: &mut Window, cx: &mut Context<Self>) {
         if !self.ready(cx) {
             return;
         }
@@ -318,7 +333,7 @@ impl BlinkApp {
             prompt: None,
         });
         let store = self.store.clone();
-        cx.spawn(async move |this, cx| {
+        cx.spawn_in(window, async move |this, cx| {
             let Ok(Ok(Some(paths))) = paths.await else {
                 return;
             };
@@ -338,11 +353,15 @@ impl BlinkApp {
                     if size > IMPORT_LIMIT_BYTES {
                         return Err(IMPORT_TOO_LARGE.to_string());
                     }
-                    std::fs::read_to_string(&path).map_err(|error| error.to_string())
+                    // As `File.text()`: invalid UTF-8 becomes U+FFFD.
+                    std::fs::read(&path)
+                        .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+                        .map_err(|error| error.to_string())
                 })
                 .await;
             let result = text.and_then(|text| parse_import(&text, &name));
-            this.update(cx, |this, cx| {
+            this.update_in(cx, |this, window, cx| {
+                let imported = result.is_ok();
                 store.update(cx, |store, cx| match result {
                     Ok(result) => {
                         let notice = store.update_workspace(cx, |workspace| workspace.import(&result));
@@ -352,7 +371,10 @@ impl BlinkApp {
                         store.notify_import(import_failed_notice(&error), true, String::new(), cx)
                     }
                 });
-                this.sidebar_collapsed = false;
+                // As `importFile`: only a successful import shows the Browser.
+                if imported {
+                    this.show_browser(window);
+                }
                 cx.notify();
             })
             .ok();
@@ -371,8 +393,10 @@ impl BlinkApp {
         self.browser.update(cx, |browser, cx| browser.reveal(id, cx));
     }
 
-    fn on_quit(&mut self, _: &Quit, _: &mut Window, cx: &mut Context<Self>) {
-        cx.quit();
+    /// Save first; a failed save blocks quitting (`beforeExit`).
+    fn on_quit(&mut self, _: &Quit, window: &mut Window, cx: &mut Context<Self>) {
+        crate::save_window_state(&self.store.read(cx).engine, window, cx);
+        self.store.update(cx, |store, cx| store.quit(cx));
     }
 
     // ── Commands ────────────────────────────────────────────────────────────
@@ -590,10 +614,12 @@ impl BlinkApp {
                     .filter(|open| Some(*open) != active_id)
                     .collect();
                 self.update_workspace(cx, |workspace| workspace.close_many(&ids));
+                self.focus_tabs(window, cx);
             }
             "close-all-tabs" => {
                 let ids = self.store.read(cx).workspace.visible_ids();
                 self.update_workspace(cx, |workspace| workspace.close_many(&ids));
+                self.focus_tabs(window, cx);
             }
             "reopen-tab" => self.on_reopen(&ReopenClosedTab, window, cx),
             "find" => self.on_find(&FindInResponse, window, cx),
@@ -665,7 +691,9 @@ impl BlinkApp {
 
     // ── Rendering ───────────────────────────────────────────────────────────
 
-    fn render_editor(&self, cx: &mut Context<Self>) -> impl IntoElement {
+    /// The editor frame; narrow windows drop its rounding and side borders
+    /// (`max-[760px]:rounded-none max-[760px]:border-x-0`).
+    fn render_editor(&self, narrow: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = theme::colors(cx);
         let store = self.store.read(cx);
         let active = store.workspace.shown_active_id();
@@ -678,8 +706,8 @@ impl BlinkApp {
             .min_w_0()
             .min_h_0()
             .overflow_hidden()
-            .rounded(px(8.))
-            .border_1()
+            .when(!narrow, |this| this.rounded(px(8.)).border_1())
+            .when(narrow, |this| this.border_y_1())
             .border_color(colors.border)
             .bg(colors.background)
             .child(self.tabs.clone())
@@ -698,6 +726,7 @@ impl BlinkApp {
                         .child("No open requests. Select a request in the browser.")
                         .child(
                             gpui_kit::component::button::Button::new("empty-new-request")
+                                .secondary()
                                 .label("New request")
                                 .on_click(|_, window, cx| {
                                     window.dispatch_action(Box::new(NewRequest), cx)
@@ -806,7 +835,7 @@ impl Render for BlinkApp {
                         .when(browser_visible && !narrow, |this| {
                             this.child(self.browser.clone())
                         })
-                        .child(self.render_editor(cx))
+                        .child(self.render_editor(narrow, cx))
                         .when(browser_visible && narrow, |this| {
                             this.child(
                                 div()

@@ -12,12 +12,12 @@ use blink_core::transport_options::{
 use gpui_kit::component::WindowExt as _;
 use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::select::Select;
-use gpui_kit::component::{Sizable as _, h_flex, v_flex};
+use gpui_kit::component::{h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use self::form::{
-    Choice, ChoiceSelect, check, choice_select, dialog_footer, dialog_header, field_label,
+    Choice, ChoiceSelect, check, u, choice_select, dialog_footer, dialog_header, field_label,
     footer_button, note, section_heading, section_heading_with_help, selected,
 };
 use self::theme_settings::ThemeSettings;
@@ -31,20 +31,25 @@ pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
     theme::update_theme(cx, |theme| theme.state.revert());
     let settings = cx.new(|cx| Settings::new(store, window, cx));
     let method = settings.read(cx).method.clone();
-    window.open_dialog(cx, move |dialog, _, cx| {
+    window.open_dialog(cx, move |dialog, window, cx| {
         let confirm = settings.clone();
         let save = settings.clone();
         let colors = theme::colors(cx);
+        let viewport = window.viewport_size().height;
         dialog
-            .w(px(560.))
+            // `w-[min(560px,…)]` at the current zoom; centered with at most
+            // `max-h-[90dvh]`, so the top margin is 5% of the viewport.
+            .w(u(560.).to_pixels(window.rem_size()))
+            .margin_top(viewport * 0.05)
+            .max_h(viewport * 0.9)
             .p_0()
             .close_button(false)
             .overlay_closable(false)
             .title(dialog_header("Application Settings", cx).w_full())
-            .child(div().mt(px(-8.)).child(settings.clone()))
+            .child(div().mt(u(-8.)).child(settings.clone()))
             .footer(
                 dialog_footer(cx)
-                    .mt(px(-8.))
+                    .mt(u(-8.))
                     .child(
                         footer_button("settings-cancel", "Cancel", false).on_click(
                             |_, window, cx| {
@@ -322,18 +327,17 @@ impl Settings {
         let disabled = field == TransportField::MaxRedirects && !self.follow_redirects;
         let error = errors.get(&field).cloned();
         v_flex()
-            .gap(px(6.))
+            .gap(u(6.))
             .child(field_label(label, cx))
             .child(
                 Input::new(input)
-                    .small()
-                    .h(px(32.))
                     .font_family(theme::MONO)
+                    .text_size(u(12.))
                     .disabled(disabled)
                     .when(error.is_some(), |this| this.border_color(colors.destructive)),
             )
             .map(|this| match (error, help) {
-                (Some(error), _) => this.child(note(error, colors.destructive).text_size(px(12.))),
+                (Some(error), _) => this.child(note(error, colors.destructive).text_size(u(12.))),
                 (None, Some(help)) => this.child(note(help, colors.muted_foreground)),
                 _ => this,
             })
@@ -353,7 +357,7 @@ impl Render for Settings {
             (TransportFieldErrors::new(), String::new())
         };
         let muted = colors.muted_foreground;
-        let two_columns = || div().grid().grid_cols(2).gap(px(12.)).text_size(px(12.));
+        let two_columns = || div().grid().grid_cols(2).gap(u(12.)).text_size(u(12.));
 
         let defaults = two_columns()
             .child(div().col_span_full().child(section_heading_with_help(
@@ -364,15 +368,15 @@ impl Render for Settings {
             )))
             .child(
                 v_flex()
-                    .gap(px(6.))
+                    .gap(u(6.))
                     .child(field_label("Method", cx))
-                    .child(Select::new(&self.method).small().h(px(32.)).font_family(theme::MONO)),
+                    .child(Select::new(&self.method).font_family(theme::MONO).text_size(u(12.))),
             )
             .child(
                 v_flex()
-                    .gap(px(6.))
+                    .gap(u(6.))
                     .child(field_label("Body mode", cx))
-                    .child(Select::new(&self.body_mode).small().h(px(32.)).font_family(theme::MONO)),
+                    .child(Select::new(&self.body_mode).font_family(theme::MONO).text_size(u(12.))),
             )
             .child(check("app-pretty", "Format responses", self.pretty).on_click(cx.listener(
                 |this, checked: &bool, _, cx| {
@@ -393,7 +397,7 @@ impl Render for Settings {
         let requests = two_columns()
             .border_t_1()
             .border_color(colors.border)
-            .pt(px(12.))
+            .pt(u(12.))
             .child(div().col_span_full().child(section_heading_with_help(
                 "requests-help",
                 "Requests",
@@ -413,13 +417,12 @@ impl Render for Settings {
             .child(
                 v_flex()
                     .col_span_full()
-                    .gap(px(6.))
+                    .gap(u(6.))
                     .child(field_label("Proxy URL", cx))
                     .child(
                         Input::new(&self.proxy_url)
-                            .small()
-                            .h(px(32.))
                             .font_family(theme::MONO)
+                            .text_size(u(12.))
                             .when(!proxy_error.is_empty(), |this| {
                                 this.border_color(colors.destructive)
                             }),
@@ -431,14 +434,14 @@ impl Render for Settings {
                                 muted,
                             ))
                         } else {
-                            this.child(note(proxy_error, colors.destructive).text_size(px(12.)))
+                            this.child(note(proxy_error, colors.destructive).text_size(u(12.)))
                         }
                     }),
             )
             .child(
                 v_flex()
                     .col_span_full()
-                    .gap(px(4.))
+                    .gap(u(4.))
                     .child(
                         check("app-verify-tls", "Verify TLS certificates", self.verify_tls)
                             .on_click(cx.listener(|this, checked: &bool, _, cx| {
@@ -461,11 +464,11 @@ impl Render for Settings {
             .child(
                 v_flex()
                     .col_span_full()
-                    .gap(px(4.))
+                    .gap(u(4.))
                     .child(
                         h_flex()
                             .justify_between()
-                            .gap(px(8.))
+                            .gap(u(8.))
                             .child(
                                 check("app-store-cookies", "Store and send cookies", self.store_cookies)
                                     .on_click(cx.listener(|this, checked: &bool, _, cx| {
@@ -476,7 +479,7 @@ impl Render for Settings {
                             .child(
                                 div()
                                     .id("manage-cookies")
-                                    .text_size(px(11.))
+                                    .text_size(u(11.))
                                     .text_color(muted)
                                     .underline()
                                     .cursor_pointer()
@@ -494,11 +497,11 @@ impl Render for Settings {
             );
 
         let workspace = v_flex()
-            .gap(px(8.))
+            .gap(u(8.))
             .border_t_1()
             .border_color(colors.border)
-            .pt(px(12.))
-            .text_size(px(12.))
+            .pt(u(12.))
+            .text_size(u(12.))
             .child(section_heading("Workspace", cx))
             .child(
                 check(
@@ -513,10 +516,10 @@ impl Render for Settings {
             );
 
         let tokens = v_flex()
-            .gap(px(8.))
+            .gap(u(8.))
             .border_t_1()
             .border_color(colors.border)
-            .pt(px(12.))
+            .pt(u(12.))
             .child(section_heading_with_help(
                 "token-help-global",
                 "Global tokens",
@@ -528,14 +531,14 @@ impl Render for Settings {
                     .overflow_hidden()
                     .border_1()
                     .border_color(colors.input)
-                    .rounded(px(2.))
+                    .rounded(u(2.))
                     .bg(colors.background)
                     .child(self.tokens.clone()),
             );
 
         v_flex()
-            .p(px(16.))
-            .gap(px(16.))
+            .p(u(16.))
+            .gap(u(16.))
             .text_color(colors.foreground)
             .child(defaults)
             .child(requests)
@@ -546,7 +549,7 @@ impl Render for Settings {
                 this.child(
                     div()
                         .font_family(theme::MONO)
-                        .text_size(px(12.))
+                        .text_size(u(12.))
                         .text_color(colors.destructive)
                         .child(self.token_error.clone()),
                 )

@@ -264,6 +264,9 @@ impl Render for WebSocketPanel {
                     .small()
                     .w(r(28.))
                     .h(r(28.))
+                    .text_color(colors.muted_foreground)
+                    .w(r(28.))
+                    .h(r(28.))
                     .icon(Icon::new(IconName::Eraser).size(r(13.)))
                     .tooltip("Clear messages")
                     .disabled(messages.is_empty())
@@ -337,7 +340,6 @@ impl Render for WebSocketPanel {
                     this.child(
                         div()
                             .p(r(16.))
-                            .font_family(theme::SANS)
                             .text_size(r(12.))
                             .text_color(colors.muted_foreground)
                             .child("Connect to open the socket. Messages you send and receive show here."),
@@ -373,6 +375,11 @@ impl Render for WebSocketPanel {
             .child(
                 Button::new("socket-send")
                     .primary()
+                    .xsmall()
+                    .h(r(28.))
+                    .px(r(10.))
+                    .font_family(theme::MONO)
+                    .font_weight(FontWeight::MEDIUM)
                     .icon(Icon::new(IconName::SendHorizontal).size(r(14.)))
                     .label("Send")
                     .disabled(!open || !has_message)

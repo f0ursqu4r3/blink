@@ -18,7 +18,7 @@ use gpui_kit::component::Icon;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::actions::{RunCommandId, SearchRequests};
+use crate::actions::{COMMAND_CENTER_CONTEXT, RunCommandId, SearchRequests};
 use crate::store::Store;
 use crate::theme;
 use crate::ui::status_bar::css;
@@ -28,6 +28,9 @@ enum Choice {
     Request(u64),
     Command { id: String, disabled: bool },
 }
+
+/// A request was picked from the search list.
+pub struct Picked;
 
 pub struct CommandCenter {
     store: Entity<Store>,
@@ -160,6 +163,7 @@ impl CommandCenter {
                 self.store.update(cx, |store, cx| {
                     store.update_workspace(cx, |workspace| workspace.select(id))
                 });
+                cx.emit(Picked);
             }
             Choice::Command { disabled: true, .. } => {}
             Choice::Command { id, .. } => {
@@ -231,7 +235,13 @@ impl CommandCenter {
             .on_click(|_, window, cx| window.dispatch_action(Box::new(SearchRequests), cx))
             .child(Icon::new(IconName::Search).size(css(13.)))
             .child(div().flex_1().child("Search requests"))
-            .child(div().text_size(css(10.)).child("⌘P"))
+            // `kbd` uses the monospace font.
+            .child(
+                div()
+                    .font_family(theme::MONO)
+                    .text_size(css(10.))
+                    .child("⌘P"),
+            )
     }
 
     fn render_popover(&self, width: Pixels, cx: &mut Context<Self>) -> impl IntoElement {
@@ -284,6 +294,7 @@ impl CommandCenter {
                             row.child(
                                 div()
                                     .flex_shrink_0()
+                                    .font_family(theme::MONO)
                                     .text_size(css(10.))
                                     .text_color(colors.muted_foreground)
                                     .child(shortcut_label(&keys, IS_MAC)),
@@ -345,6 +356,7 @@ impl CommandCenter {
         let empty = rows.is_empty();
         div()
             .id("command-center-popover")
+            .key_context(COMMAND_CENTER_CONTEXT)
             .w(width)
             .overflow_hidden()
             .rounded(css(8.))
@@ -358,7 +370,9 @@ impl CommandCenter {
                 spread_radius: px(0.),
                 inset: false,
             }])
+            // `text-xs` sets a 1rem line height.
             .text_size(css(12.))
+            .line_height(css(16.))
             .occlude()
             .font_family(theme::SANS)
             // A press inside keeps focus in the search field.
@@ -460,6 +474,8 @@ fn center_width(window: &Window) -> Pixels {
     (px(420.) * zoom).min(window.viewport_size().width * 0.5)
 }
 
+impl EventEmitter<Picked> for CommandCenter {}
+
 impl Render for CommandCenter {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let width = center_width(window);
@@ -476,8 +492,20 @@ impl Render for CommandCenter {
             .h(css(26.))
             .flex_shrink_0()
             .when(!self.open, |this| this.child(self.render_trigger(cx)))
+            // The open popover hangs from the middle of the bar: with the
+            // trigger hidden, the Vue container had no height and was
+            // centered in the 40 px bar.
             .when(self.open, |this| {
-                this.child(deferred(anchored().child(self.render_popover(width, cx))).with_priority(1))
+                this.child(
+                    deferred(
+                        anchored().child(
+                            div()
+                                .pt(css(13.))
+                                .child(self.render_popover(width, cx)),
+                        ),
+                    )
+                    .with_priority(1),
+                )
             })
     }
 }

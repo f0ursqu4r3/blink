@@ -115,10 +115,10 @@ pub fn status_color(status: u16, cx: &App) -> Hsla {
 
 /// System sans-serif for chrome, as `--font-sans`.
 pub const SANS: &str = ".SystemUIFont";
-/// `ui-monospace` resolves to SF Mono on macOS, whose system family name is
-/// `.SF NS Mono`.
+/// `ui-monospace` resolves to SF Mono on macOS. The static SF Mono faces
+/// register under the family name `SF Mono` (see [`register_mono`]).
 pub const MONO: &str = if cfg!(target_os = "macos") {
-    ".SF NS Mono"
+    "SF Mono"
 } else {
     "monospace"
 };
@@ -160,16 +160,33 @@ impl AppTheme {
     }
 }
 
+/// Terminal.app ships the static SF Mono faces, one file per weight.
+const MONO_FONT_DIR: &str = "/System/Applications/Utilities/Terminal.app/Contents/Resources/Fonts";
+/// The weights and styles the webview's `ui-monospace` offered.
+const MONO_FACES: [&str; 12] = [
+    "Light",
+    "LightItalic",
+    "Regular",
+    "RegularItalic",
+    "Medium",
+    "MediumItalic",
+    "Semibold",
+    "SemiboldItalic",
+    "Bold",
+    "BoldItalic",
+    "Heavy",
+    "HeavyItalic",
+];
+
 /// SF Mono ships with macOS as a hidden system font that name lookup does
 /// not find, so register its files as the webview's `ui-monospace` did.
+/// The system copy (`SFNSMono.ttf`) is a variable font: loaded from memory,
+/// GPUI sees only its default instance, so every weight renders regular.
+/// Register the static faces instead, which give one font per weight.
 fn register_mono(cx: &App) {
-    let files = [
-        "/System/Library/Fonts/SFNSMono.ttf",
-        "/System/Library/Fonts/SFNSMonoItalic.ttf",
-    ];
-    let fonts: Vec<_> = files
+    let fonts: Vec<_> = MONO_FACES
         .iter()
-        .filter_map(|path| std::fs::read(path).ok())
+        .filter_map(|face| std::fs::read(format!("{MONO_FONT_DIR}/SF-Mono-{face}.otf")).ok())
         .map(std::borrow::Cow::Owned)
         .collect();
     if !fonts.is_empty() {
@@ -177,8 +194,49 @@ fn register_mono(cx: &App) {
     }
 }
 
+/// Render text as the webview did with `-webkit-font-smoothing:
+/// antialiased`: no stroke dilation. GPUI reads the app's
+/// `AppleFontSmoothing` value once, before the first glyph, and only `0`
+/// turns dilation off, so set it for this app.
+#[cfg(target_os = "macos")]
+fn disable_font_smoothing() {
+    use std::ffi::{c_char, c_void};
+    #[link(name = "CoreFoundation", kind = "framework")]
+    unsafe extern "C" {
+        static kCFPreferencesCurrentApplication: *const c_void;
+        fn CFStringCreateWithCString(
+            alloc: *const c_void,
+            text: *const c_char,
+            encoding: u32,
+        ) -> *const c_void;
+        fn CFNumberCreate(alloc: *const c_void, kind: isize, value: *const c_void) -> *const c_void;
+        fn CFPreferencesSetAppValue(key: *const c_void, value: *const c_void, app: *const c_void);
+        fn CFRelease(value: *const c_void);
+    }
+    const UTF8: u32 = 0x0800_0100;
+    const SINT32: isize = 3;
+    let zero: i32 = 0;
+    // SAFETY: each object is created here, checked for null, and released
+    // after use; the preference call copies what it keeps.
+    unsafe {
+        let key = CFStringCreateWithCString(std::ptr::null(), c"AppleFontSmoothing".as_ptr(), UTF8);
+        let value = CFNumberCreate(std::ptr::null(), SINT32, (&raw const zero).cast());
+        if !key.is_null() && !value.is_null() {
+            CFPreferencesSetAppValue(key, value, kCFPreferencesCurrentApplication);
+        }
+        if !value.is_null() {
+            CFRelease(value);
+        }
+        if !key.is_null() {
+            CFRelease(key);
+        }
+    }
+}
+
 /// Load the saved theme and apply it.
 pub fn init(engine: &Engine, cx: &mut App) {
+    #[cfg(target_os = "macos")]
+    disable_font_smoothing();
     register_mono(cx);
     let path = engine.paths().data_dir.join(THEME_FILE);
     let state = ThemeState::new(std::fs::read_to_string(&path).ok().as_deref());

@@ -38,18 +38,14 @@ pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
                     .px(px(16.))
                     .py(px(12.))
                     .child(
-                        Button::new("clear-cookies")
-                            .label("Clear all")
-                            .small()
+                        secondary_button("clear-cookies", "Clear all")
                             .disabled(empty)
                             .on_click(move |_, _, cx| {
                                 clear.update(cx, |jar, cx| jar.clear(cx));
                             }),
                     )
                     .child(
-                        Button::new("close-cookies")
-                            .label("Close")
-                            .small()
+                        secondary_button("close-cookies", "Close")
                             .on_click(|_, window, cx| window.close_dialog(cx)),
                     ),
             )
@@ -57,6 +53,19 @@ pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
     window.defer(cx, move |window, cx| {
         filter.update(cx, |input, cx| input.focus(window, cx));
     });
+}
+
+/// A Vue `variant="secondary"` button: `h-7 px-2.5 font-mono text-xs
+/// font-medium`, bordered.
+fn secondary_button(id: &'static str, label: &'static str) -> Button {
+    Button::new(id)
+        .outline()
+        .xsmall()
+        .h(px(28.))
+        .px(px(10.))
+        .font_family(theme::MONO)
+        .font_weight(FontWeight::MEDIUM)
+        .label(label)
 }
 
 /// Cookies whose domain, name, or value contains `query`, without case.
@@ -316,6 +325,8 @@ impl Render for CookieJar {
                         Button::new(SharedString::from(format!("delete-{key}")))
                             .ghost()
                             .small()
+                            .size(px(28.))
+                            .text_color(colors.muted_foreground)
                             .icon(Icon::new(IconName::X).size(px(13.)))
                             .accessibility_label(label)
                             .on_click(cx.listener(move |this, _, _, cx| this.delete(&target, cx))),

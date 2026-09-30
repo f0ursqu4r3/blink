@@ -5,25 +5,40 @@ use std::{
     fs,
     io::{Read, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, Mutex,
+        atomic::{AtomicU64, Ordering},
+    },
 };
 
 const LIMIT: u64 = 64 * 1024 * 1024;
 pub const FILE_NAME: &str = "workspace-v1.json";
 
-/// The snapshot path and a lock so saves and loads never overlap.
+/// The snapshot path and a lock so saves and loads never overlap. Each save
+/// takes a ticket when it is requested; a save whose ticket is older than the
+/// last written one is skipped, so a slow background save can never replace
+/// a newer snapshot (such as the one written on quit).
 #[derive(Clone)]
 pub struct Storage {
     path: PathBuf,
-    lock: Arc<Mutex<()>>,
+    /// The ticket of the last written snapshot.
+    lock: Arc<Mutex<u64>>,
+    tickets: Arc<AtomicU64>,
 }
 
 impl Storage {
     pub fn new(directory: &Path) -> Self {
         Self {
             path: directory.join(FILE_NAME),
-            lock: Arc::new(Mutex::new(())),
+            lock: Arc::new(Mutex::new(0)),
+            tickets: Arc::new(AtomicU64::new(0)),
         }
+    }
+
+    /// Reserve the order of a save. Take it when the save is requested, not
+    /// when it runs.
+    pub fn ticket(&self) -> u64 {
+        self.tickets.fetch_add(1, Ordering::SeqCst) + 1
     }
 
     /// Blocking: run on a blocking thread.
@@ -35,13 +50,24 @@ impl Storage {
         load(&self.path)
     }
 
-    /// Blocking: run on a blocking thread.
+    /// Blocking: save now, after every save requested before it.
     pub fn save(&self, content: &str) -> Result<(), String> {
-        let _guard = self
+        self.save_ticketed(self.ticket(), content)
+    }
+
+    /// Blocking: run on a blocking thread. Skips the write when a newer
+    /// snapshot is already on disk.
+    pub fn save_ticketed(&self, ticket: u64, content: &str) -> Result<(), String> {
+        let mut written = self
             .lock
             .lock()
             .map_err(|_| "Workspace storage lock failed.")?;
-        save(&self.path, content)
+        if ticket < *written {
+            return Ok(());
+        }
+        save(&self.path, content)?;
+        *written = ticket;
+        Ok(())
     }
 }
 
@@ -261,6 +287,15 @@ mod tests {
             .is_err()
         );
         assert_eq!(load(&path).unwrap().as_deref(), Some(FIRST));
+    }
+    #[test]
+    fn an_older_ticket_never_replaces_a_newer_snapshot() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Storage::new(dir.path());
+        let older = storage.ticket();
+        storage.save(SECOND).unwrap();
+        storage.save_ticketed(older, FIRST).unwrap();
+        assert_eq!(storage.load().unwrap().as_deref(), Some(SECOND));
     }
     #[test]
     fn corrupt_reads_never_reset_the_file() {

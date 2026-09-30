@@ -294,8 +294,9 @@ impl Engine {
         content: String,
     ) -> impl Future<Output = Result<(), String>> + Send + 'static {
         let storage = self.0.storage.clone();
+        let ticket = storage.ticket();
         self.blocking(
-            move || storage.save(&content),
+            move || storage.save_ticketed(ticket, &content),
             "Workspace save task failed.",
         )
     }

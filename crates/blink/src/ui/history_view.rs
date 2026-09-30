@@ -173,6 +173,7 @@ impl HistoryView {
             .child(
                 Button::new("history-back")
                     .ghost()
+                    .text_color(theme::colors(cx).muted_foreground)
                     .small()
                     .w(r(28.))
                     .h(r(28.))
@@ -354,6 +355,7 @@ impl HistoryView {
             .child(
                 Button::new("history-clear")
                     .ghost()
+                    .text_color(theme::colors(cx).muted_foreground)
                     .small()
                     .w(r(28.))
                     .h(r(28.))
@@ -465,6 +467,7 @@ impl HistoryView {
                         .child(
                             Button::new(("compare-latest", entry.id))
                                 .ghost()
+                                .text_color(theme::colors(cx).muted_foreground)
                                 .small()
                                 .w(r(24.))
                                 .h(r(24.))

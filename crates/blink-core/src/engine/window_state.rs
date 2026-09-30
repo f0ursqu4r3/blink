@@ -6,14 +6,18 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-/// Window bounds in logical pixels.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+/// Window bounds in logical pixels, relative to the top left of the display
+/// the window is on.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct WindowBounds {
     pub x: f64,
     pub y: f64,
     pub width: f64,
     pub height: f64,
     pub maximized: bool,
+    /// The stable id of that display. None: the primary display.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub display: Option<String>,
 }
 
 pub struct WindowState {
@@ -63,9 +67,24 @@ mod tests {
             width: 1200.0,
             height: 800.0,
             maximized: true,
+            display: Some("37D8832A-2D66-02CA-B9F7-8F30A301B230".into()),
         };
         state.save(&bounds).unwrap();
         assert_eq!(state.load(), Some(bounds));
+    }
+
+    #[test]
+    fn a_file_without_a_display_loads_on_the_primary_display() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("window-state.json");
+        fs::write(
+            &path,
+            r#"{"x":10,"y":20,"width":900,"height":700,"maximized":false}"#,
+        )
+        .unwrap();
+        let bounds = WindowState::new(path).load().unwrap();
+        assert_eq!(bounds.display, None);
+        assert_eq!(bounds.width, 900.0);
     }
 
     #[test]

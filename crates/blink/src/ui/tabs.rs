@@ -23,6 +23,7 @@ use gpui_kit::*;
 use crate::actions::{DuplicateRequest, NewRequest};
 use crate::store::Store;
 use crate::theme;
+use crate::ui::browser::DragPreview;
 use crate::ui::app::NARROW_WIDTH;
 use crate::ui::status_bar::css;
 
@@ -31,40 +32,6 @@ use crate::ui::status_bar::css;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DraggedRequests {
     pub ids: Vec<u64>,
-}
-
-/// The chip that follows the pointer during a request drag.
-pub struct DragPreview {
-    pub method: String,
-    pub label: String,
-}
-
-impl Render for DragPreview {
-    fn render(&mut self, _: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let colors = theme::colors(cx);
-        div()
-            .flex()
-            .items_center()
-            .gap(css(8.))
-            .px(css(10.))
-            .py(css(4.))
-            .rounded(css(4.))
-            .border_1()
-            .border_color(colors.border)
-            .bg(colors.secondary)
-            .shadow_md()
-            .font_family(theme::MONO)
-            .text_size(css(11.))
-            .text_color(colors.foreground)
-            .child(
-                div()
-                    .text_size(css(9.))
-                    .font_weight(FontWeight::BOLD)
-                    .text_color(theme::method_color(&self.method, cx))
-                    .child(self.method.clone()),
-            )
-            .child(self.label.clone())
-    }
 }
 
 /// What one tab shows, read from the workspace before rendering.
@@ -145,6 +112,12 @@ impl RequestTabs {
 
     fn open_ids(&self, cx: &App) -> Vec<u64> {
         self.store.read(cx).workspace.visible_ids()
+    }
+
+    /// Focus the strip, as `App.vue` focused the active tab after a close,
+    /// a reopen, or a search pick, so the tab keys work next.
+    pub fn focus(&self, window: &mut Window, cx: &mut App) {
+        self.focus_handle.focus(window, cx);
     }
 
     fn select(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>) {
@@ -304,6 +277,7 @@ impl RequestTabs {
 
         let preview_method = method.clone();
         let preview_label = label.clone();
+        let close_label = label.clone();
 
         div()
             .id(("request-tab", id))
@@ -328,10 +302,13 @@ impl RequestTabs {
             })
             .when(!active, |this| this.hover(|style| style.bg(colors.accent)))
             .when(dragged, |this| this.opacity(0.4))
-            .on_drag(DraggedRequests { ids: vec![id] }, move |_, _, _, cx| {
+            // The same chip as a Browser drag (`DragPreview.vue`).
+            .on_drag(DraggedRequests { ids: vec![id] }, move |_, offset, _, cx| {
                 cx.new(|_| DragPreview {
-                    method: preview_method.clone(),
                     label: preview_label.clone(),
+                    method: Some(preview_method.clone()),
+                    folder: false,
+                    offset,
                 })
             })
             .on_drag_move(cx.listener(move |this, event: &DragMoveEvent<DraggedRequests>, _, cx| {
@@ -427,6 +404,7 @@ impl RequestTabs {
             .child(
                 div()
                     .id(("request-tab-close", id))
+                    .aria_label(format!("Close {close_label}"))
                     .flex()
                     .items_center()
                     .justify_center()
@@ -440,8 +418,9 @@ impl RequestTabs {
                     })
                     // A press on the close button never starts a drag.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
-                    .on_click(cx.listener(move |this, _, _, cx| {
+                    .on_click(cx.listener(move |this, _, window, cx| {
                         this.update_workspace(cx, |workspace| workspace.close(id));
+                        this.focus(window, cx);
                     }))
                     .child(Icon::new(IconName::X).size(css(12.))),
             )
@@ -452,6 +431,7 @@ impl RequestTabs {
     /// The tab context menu, in the VS Code order of `RequestTabs.vue`.
     fn tab_menu(&self, id: u64, workspace: &Workspace) -> MenuBuilder {
         let store = self.store.clone();
+        let strip = self.focus_handle.clone();
         let all = workspace.visible_ids();
         let others: Vec<u64> = all.iter().copied().filter(|other| *other != id).collect();
         let right: Vec<u64> = all
@@ -475,10 +455,13 @@ impl RequestTabs {
             })
             .unwrap_or_default();
         Box::new(move |menu, _, _| {
+            // Closing from the menu focuses the active tab, as `close` did.
             let change = |change: Box<dyn Fn(&mut Workspace)>| {
                 let store = store.clone();
-                move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
-                    store.update(cx, |store, cx| store.update_workspace(cx, |w| change(w)))
+                let strip = strip.clone();
+                move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
+                    store.update(cx, |store, cx| store.update_workspace(cx, |w| change(w)));
+                    strip.focus(window, cx);
                 }
             };
             let copy = |text: String| {
@@ -715,7 +698,7 @@ impl Focusable for RequestTabs {
 impl Render for RequestTabs {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = theme::colors(cx);
-        let narrow = window.viewport_size().width < px(NARROW_WIDTH);
+        let narrow = window.viewport_size().width <= px(NARROW_WIDTH);
         if !cx.has_active_drag() && (self.drop.is_some() || !self.dragging.is_empty()) {
             self.drop = None;
             self.dragging.clear();
@@ -825,6 +808,7 @@ impl Render for RequestTabs {
                     "New request · Cmd/Ctrl+T",
                     cx,
                 )
+                .aria_label("New request")
                 .on_click(|_, window, cx| window.dispatch_action(Box::new(NewRequest), cx)),
             )
             .child(
@@ -835,6 +819,7 @@ impl Render for RequestTabs {
                     "Duplicate request · Cmd/Ctrl+Shift+D",
                     cx,
                 )
+                .aria_label("Duplicate request")
                 .on_click(|_, window, cx| {
                     window.dispatch_action(Box::new(DuplicateRequest), cx)
                 }),

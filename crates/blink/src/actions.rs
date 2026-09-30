@@ -70,6 +70,14 @@ pub struct RunCommandId {
 /// Key context of the root view. Global shortcuts bind here so any focused
 /// descendant receives them.
 pub const APP_CONTEXT: &str = "BlinkApp";
+/// Key context of the open command center popover.
+pub const COMMAND_CENTER_CONTEXT: &str = "CommandCenter";
+/// App shortcuts: not while the command center or a menu is open, as
+/// `onKey` in `App.vue` returned early for those surfaces.
+const SHORTCUTS: &str = "BlinkApp && !CommandCenter && !PopupMenu";
+/// Undo delete and Escape unfocus: also not in text fields, which keep their
+/// own Cmd+Z and Escape (`isEditable`).
+const OUTSIDE_INPUTS: &str = "BlinkApp && !CommandCenter && !PopupMenu && !Input";
 
 /// The macOS menu bar, as Tauri's default menu gave the Vue app.
 fn menus() -> Vec<Menu> {
@@ -118,33 +126,31 @@ pub fn init(cx: &mut App) {
         }
     });
     cx.set_menus(menus());
-    let context = Some(APP_CONTEXT);
+    let context = Some(SHORTCUTS);
+    // The request and response keys of `RequestWorkspace.vue` and
+    // `ResponsePanel.vue` stood down only for dialogs and menus.
+    let pane = Some("BlinkApp && !PopupMenu");
     cx.bind_keys([
         KeyBinding::new("secondary-t", NewRequest, context),
         KeyBinding::new("secondary-shift-d", DuplicateRequest, context),
         KeyBinding::new("secondary-w", CloseTab, context),
         KeyBinding::new("ctrl-tab", NextTab, context),
         KeyBinding::new("ctrl-shift-tab", PreviousTab, context),
-        KeyBinding::new("secondary-enter", SendRequest, context),
-        KeyBinding::new("secondary-.", CancelRequest, context),
+        KeyBinding::new("secondary-enter", SendRequest, pane),
+        KeyBinding::new("secondary-.", CancelRequest, pane),
         KeyBinding::new("secondary-\\", ToggleLayout, context),
         KeyBinding::new("secondary-p", SearchRequests, context),
         KeyBinding::new("secondary-shift-p", RunCommand, context),
-        KeyBinding::new("secondary-l", FocusUrl, context),
+        KeyBinding::new("secondary-l", FocusUrl, pane),
         KeyBinding::new("secondary-,", OpenSettings, context),
         KeyBinding::new("secondary-shift-t", ReopenClosedTab, context),
         KeyBinding::new("secondary-=", ZoomIn, context),
         KeyBinding::new("secondary-+", ZoomIn, context),
         KeyBinding::new("secondary--", ZoomOut, context),
         KeyBinding::new("secondary-0", ZoomReset, context),
-        KeyBinding::new("secondary-f", FindInResponse, context),
-        KeyBinding::new("escape", Unfocus, context),
+        KeyBinding::new("secondary-f", FindInResponse, pane),
+        KeyBinding::new("secondary-z", UndoDelete, Some(OUTSIDE_INPUTS)),
+        KeyBinding::new("escape", Unfocus, Some(OUTSIDE_INPUTS)),
         KeyBinding::new("secondary-q", Quit, None),
     ]);
-    // Undo delete only outside text fields: inputs keep their own Cmd+Z.
-    cx.bind_keys([KeyBinding::new(
-        "secondary-z",
-        UndoDelete,
-        Some("BlinkApp && !Input"),
-    )]);
 }

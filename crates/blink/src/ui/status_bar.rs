@@ -46,7 +46,7 @@ pub fn transport_label(proxy: bool, timeout_seconds: u64, limit_mib: u64) -> Str
 /// The status bar for the current store state.
 pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyElement {
     let colors = theme::colors(cx);
-    let narrow = window.viewport_size().width < px(NARROW_WIDTH);
+    let narrow = window.viewport_size().width <= px(NARROW_WIDTH);
     let state = store.read(cx);
     let workspace = &state.workspace;
     let preferences = &workspace.preferences;
@@ -230,6 +230,20 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
         .into_any_element()
 }
 
+/// A `Button.vue` button: `h-7 px-2.5 font-mono text-xs font-medium`,
+/// secondary (bordered) or ghost.
+fn notice_button(id: &'static str, label: &'static str, secondary: bool) -> Button {
+    // XSmall sets the label to `text-xs`; the label ignores `text_size`.
+    let button = Button::new(id)
+        .label(label)
+        .xsmall()
+        .h(css(28.))
+        .px(css(10.))
+        .font_family(theme::MONO)
+        .font_weight(FontWeight::MEDIUM);
+    if secondary { button.outline() } else { button.ghost() }
+}
+
 /// Local state of the storage notice: the Start fresh confirmation.
 struct NoticeState {
     confirm_reset: bool,
@@ -297,45 +311,33 @@ pub fn render_storage_notice(store: &Entity<Store>, window: &mut Window, cx: &mu
                 }),
         )
         .child(
-            Button::new("storage-retry")
-                .secondary()
-                .small()
-                .label("Retry")
+            notice_button("storage-retry", "Retry", true)
                 .on_click(retry),
         )
         .when(!ready && !confirm_reset, |this| {
             this.child(
-                Button::new("storage-start-fresh")
-                    .ghost()
-                    .small()
-                    .label("Start fresh")
+                notice_button("storage-start-fresh", "Start fresh", false)
                     .on_click(set_confirm(true)),
             )
         })
         .when(!ready && confirm_reset, |this| {
             this.child("Replace the existing saved workspace?")
                 .child(
-                    Button::new("storage-replace")
-                        .secondary()
-                        .small()
-                        .label("Replace saved workspace")
+                    notice_button("storage-replace", "Replace saved workspace", true)
                         .on_click(replace),
                 )
                 .child(
-                    Button::new("storage-cancel-reset")
-                        .ghost()
-                        .small()
-                        .label("Cancel")
+                    notice_button("storage-cancel-reset", "Cancel", false)
                         .on_click(set_confirm(false)),
                 )
         })
         .when(exit_blocked, |this| {
             this.child(
-                Button::new("storage-quit")
-                    .ghost()
-                    .small()
-                    .label("Quit without saving")
-                    .on_click(|_, _, cx| cx.quit()),
+                notice_button("storage-quit", "Quit without saving", false)
+                    .on_click({
+                        let store = store.clone();
+                        move |_, _, cx| store.update(cx, |store, cx| store.quit_without_saving(cx))
+                    }),
             )
         })
         .into_any_element()

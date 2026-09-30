@@ -76,13 +76,26 @@ pub fn import_tauri_data(from: &Path, to: &Path) -> std::io::Result<bool> {
     if to.join(workspace).exists() || !from.join(workspace).is_file() {
         return Ok(false);
     }
-    fs::create_dir_all(to)?;
+    // Owner-only, as the workspace save creates it.
+    let mut builder = fs::DirBuilder::new();
+    builder.recursive(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::DirBuilderExt;
+        builder.mode(0o700);
+    }
+    builder.create(to)?;
     for name in IMPORTED {
         let source = from.join(name);
         let target = to.join(name);
         // Keep files this app already wrote, except the missing workspace.
         if source.is_file() && (name == workspace || !target.exists()) {
             fs::copy(&source, &target)?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                fs::set_permissions(&target, fs::Permissions::from_mode(0o600))?;
+            }
         }
     }
     Ok(true)
@@ -115,6 +128,13 @@ mod tests {
             fs::read_to_string(gpui.join("file-grants.json")).unwrap(),
             "grants"
         );
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+            assert_eq!(mode(&gpui), 0o700);
+            assert_eq!(mode(&gpui.join("workspace-v1.json")), 0o600);
+        }
 
         fs::write(gpui.join("workspace-v1.json"), "changed").unwrap();
         fs::write(tauri.join("workspace-v1.json"), "newer").unwrap();

@@ -10,6 +10,12 @@ use gpui_kit::*;
 
 use crate::theme;
 
+/// A size in CSS pixels at zoom 1. It scales with the root rem size, as
+/// the webview zoom scaled the Vue dialogs.
+pub fn u(value: f32) -> Rems {
+    rems(value / 16.)
+}
+
 /// One select option: a saved value and the label the user reads.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Choice {
@@ -83,11 +89,11 @@ pub fn dialog_header(title: &'static str, cx: &App) -> Div {
         .flex_shrink_0()
         .border_b_1()
         .border_color(theme::colors(cx).border)
-        .px(px(16.))
-        .py(px(12.))
+        .px(u(16.))
+        .py(u(12.))
         .child(
             div()
-                .text_size(px(14.))
+                .text_size(u(14.))
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme::colors(cx).foreground)
                 .child(title),
@@ -99,28 +105,29 @@ pub fn dialog_footer(cx: &App) -> Div {
     h_flex()
         .flex_shrink_0()
         .justify_end()
-        .gap(px(8.))
+        .gap(u(8.))
         .border_t_1()
         .border_color(theme::colors(cx).border)
-        .px(px(16.))
-        .py(px(12.))
+        .px(u(16.))
+        .py(u(12.))
 }
 
 /// A footer button: `h-7.5 px-3.5 font-mono text-xs`.
 pub fn footer_button(id: &'static str, label: &'static str, primary: bool) -> Button {
+    // XSmall sets the label to `text-xs`; the label ignores `text_size`.
     let button = Button::new(id)
         .label(label)
-        .h(px(30.))
-        .px(px(14.))
-        .font_family(theme::MONO)
-        .text_size(px(12.));
+        .xsmall()
+        .h(u(30.))
+        .px(u(14.))
+        .font_family(theme::MONO);
     if primary { button.primary() } else { button.outline() }
 }
 
 /// Uppercase section heading: `text-xs font-semibold uppercase`.
 pub fn section_heading(text: &'static str, cx: &App) -> Div {
     div()
-        .text_size(px(12.))
+        .text_size(u(12.))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(theme::colors(cx).muted_foreground)
         .child(text.to_uppercase())
@@ -134,7 +141,7 @@ pub fn section_heading_with_help(
     cx: &App,
 ) -> Div {
     h_flex()
-        .gap(px(6.))
+        .gap(u(6.))
         .child(section_heading(text, cx))
         .child(help_trigger(id, help, cx))
 }
@@ -148,11 +155,11 @@ pub fn help_trigger(id: &'static str, text: &'static str, cx: &App) -> Stateful<
         .flex_shrink_0()
         .items_center()
         .justify_center()
-        .size(px(20.))
+        .size(u(20.))
         .rounded_full()
         .border_1()
         .border_color(colors.input)
-        .text_size(px(10.))
+        .text_size(u(10.))
         .text_color(colors.muted_foreground)
         .cursor_pointer()
         .hover(move |style| style.bg(colors.accent).text_color(colors.foreground))
@@ -164,9 +171,9 @@ pub fn help_trigger(id: &'static str, text: &'static str, cx: &App) -> Stateful<
 pub fn help_tooltip(text: &'static str, window: &mut Window, cx: &mut App) -> AnyView {
     Tooltip::element(move |_, _| {
         div()
-            .max_w(px(288.))
+            .max_w(u(288.))
             .font_family(theme::MONO)
-            .text_size(px(11.))
+            .text_size(u(11.))
             .child(text)
     })
     .build(window, cx)
@@ -175,14 +182,14 @@ pub fn help_tooltip(text: &'static str, window: &mut Window, cx: &mut App) -> An
 /// A field label: muted 12 px text.
 pub fn field_label(text: impl Into<SharedString>, cx: &App) -> Div {
     div()
-        .text_size(px(12.))
+        .text_size(u(12.))
         .text_color(theme::colors(cx).muted_foreground)
         .child(text.into())
 }
 
 /// Small help or status text under a field: `text-[0.6875rem]`.
 pub fn note(text: impl Into<SharedString>, color: Hsla) -> Div {
-    div().text_size(px(11.)).text_color(color).child(text.into())
+    div().text_size(u(11.)).text_color(color).child(text.into())
 }
 
 /// A labeled checkbox at 12 px.
@@ -191,7 +198,7 @@ pub fn check(id: impl Into<ElementId>, label: &'static str, checked: bool) -> Ch
         .label(label)
         .checked(checked)
         .small()
-        .text_size(px(12.))
+        .text_size(u(12.))
 }
 
 #[cfg(test)]

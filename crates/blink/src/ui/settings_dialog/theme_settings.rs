@@ -11,7 +11,7 @@ use gpui_kit::component::{Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::form::{Choice, choice_index, field_label};
+use super::form::{Choice, choice_index, field_label, u};
 use crate::store::Store;
 use crate::theme::{self, AppTheme};
 
@@ -235,26 +235,25 @@ impl Render for ThemeSettings {
         let error_text = |text: String| {
             div()
                 .font_family(theme::MONO)
-                .text_size(px(12.))
+                .text_size(u(12.))
                 .text_color(colors.destructive)
                 .child(text)
         };
         v_flex()
-            .gap(px(8.))
+            .gap(u(8.))
             .border_t_1()
             .border_color(colors.border)
-            .pt(px(12.))
-            .text_size(px(12.))
+            .pt(u(12.))
+            .text_size(u(12.))
             .child(super::form::section_heading("Theme", cx))
             .child(
                 v_flex()
-                    .gap(px(6.))
+                    .gap(u(6.))
                     .child(field_label("Ghostty theme", cx))
                     .child(
                         Select::new(&self.theme_select)
-                            .small()
-                            .h(px(32.))
                             .font_family(theme::MONO)
+                            .text_size(u(12.))
                             .search_placeholder("Search themes"),
                     )
                     .when(!self.read_error.is_empty(), |this| {
@@ -263,30 +262,29 @@ impl Render for ThemeSettings {
             )
             .child(
                 v_flex()
-                    .gap(px(6.))
+                    .gap(u(6.))
                     .child(field_label("Ghostty colors", cx))
                     .child(
                         Textarea::new(&self.colors)
-                            .h(px(112.))
-                            .small()
-                            .font_family(theme::MONO),
+                            .h(u(112.))
+                            .font_family(theme::MONO)
+                            .text_size(u(12.)),
                     )
                     .when(!message.is_empty(), |this| this.child(error_text(message))),
             )
             .child(
                 h_flex()
                     .items_end()
-                    .gap(px(12.))
+                    .gap(u(12.))
                     .child(
                         v_flex()
                             .flex_1()
-                            .gap(px(6.))
+                            .gap(u(6.))
                             .child(field_label("Accent", cx))
                             .child(
                                 Select::new(&self.accent_select)
-                                    .small()
-                                    .h(px(32.))
                                     .font_family(theme::MONO)
+                                    .text_size(u(12.))
                                     .disabled(!has_draft),
                             ),
                     )
@@ -294,10 +292,11 @@ impl Render for ThemeSettings {
                         Button::new("theme-reset")
                             .outline()
                             .label("Reset to default")
-                            .h(px(32.))
-                            .px(px(12.))
+                            // XSmall sets the label to `text-xs`.
+                            .xsmall()
+                            .h(u(32.))
+                            .px(u(12.))
                             .font_family(theme::MONO)
-                            .text_size(px(12.))
                             .disabled(!has_draft)
                             .on_click(cx.listener(|this, _, window, cx| this.reset(window, cx))),
                     ),

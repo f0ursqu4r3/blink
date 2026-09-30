@@ -39,7 +39,8 @@ use crate::ui::dialogs;
 use crate::ui::tabs::DraggedRequests;
 use crate::ui::widgets::method_label;
 
-use drag::{DragPreview, DraggedGroup, edge_speed};
+pub use drag::DragPreview;
+use drag::{DraggedGroup, edge_speed};
 use rows::TreeRow;
 
 /// A size in CSS pixels at zoom 1. It scales with the root rem size, as the
@@ -51,7 +52,7 @@ pub(super) fn css(value: f32) -> Rems {
 /// Browser card width (`w-61`) and its minimum (`min-w-47`).
 const WIDTH: f32 = 244.;
 const MIN_WIDTH: f32 = 188.;
-/// Below this window width the Browser is an overlay without rounding.
+/// At or below this window width the Browser is an overlay without rounding.
 const NARROW_WIDTH: f32 = 760.;
 
 const REQUEST_ROW: f32 = 27.;
@@ -1122,6 +1123,8 @@ impl Browser {
         div()
             .ml(css(4.))
             .flex_shrink_0()
+            // The switch menu is sans like every menu; the badge text sets mono.
+            .font_family(theme::SANS)
             // No drag from the badge.
             .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
             .child(
@@ -1192,6 +1195,7 @@ impl Browser {
             .map(|group| group.name.clone())
             .unwrap_or_default();
         self.render_form_body(&format!("Create group in {name}"), cx)
+            .w_full()
             .h(css(FORM_ROW))
             .pl(css(rows::indent(level + 1)))
             .pr(css(9.))
@@ -1355,7 +1359,7 @@ impl Render for Browser {
                 .map(|item| size(px(0.), px(self.item_height(item) * zoom)))
                 .collect(),
         );
-        let narrow = window.viewport_size().width < px(NARROW_WIDTH);
+        let narrow = window.viewport_size().width <= px(NARROW_WIDTH);
         let top_form = (self.creating_parent == Some(None)).then(|| {
             self.render_form_body("Create top-level group", cx)
                 .px(css(8.))
