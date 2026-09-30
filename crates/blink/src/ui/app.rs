@@ -94,6 +94,13 @@ impl BlinkApp {
     /// Create panes for new requests and drop panes of deleted ones. A new
     /// pane that is active focuses its URL, as `RequestWorkspace` did on mount.
     fn sync_panes(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Panes exist only for restored requests. A pane made for the
+        // placeholder before the restore could share an id with a restored
+        // request and reset its saved tab and scroll as a new response.
+        if !self.store.read(cx).ready {
+            self.panes.clear();
+            return;
+        }
         let workspace = &self.store.read(cx).workspace;
         let active_id = workspace.shown_active_id();
         let ids: Vec<u64> = workspace.sessions.iter().map(|session| session.id).collect();
