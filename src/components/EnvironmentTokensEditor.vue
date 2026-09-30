@@ -69,7 +69,7 @@ const input =
           <th scope="col" class="sticky left-0 z-1 w-36 min-w-36 bg-muted px-2.5 font-medium">
             Name
           </th>
-          <th scope="col" class="w-40 min-w-40 border-l border-border px-2.5 font-medium">Value</th>
+          <th scope="col" class="min-w-40 border-l border-border px-2.5 font-medium">Value</th>
           <th
             v-for="column in columns"
             :key="column.id"
@@ -150,7 +150,7 @@ const input =
               </DropdownMenuContent>
             </DropdownMenu>
           </th>
-          <th class="w-8.5 border-l border-border p-0">
+          <th class="w-px border-l border-border p-0">
             <Button
               variant="ghost"
               class="size-8 p-0"
@@ -199,10 +199,10 @@ const input =
               :data-row-environment="column.id"
               @input="setValue(row, column.id, ($event.target as HTMLInputElement).value)" />
           </td>
-          <td class="h-8.5 w-8.5 border-b border-l border-border p-0">
+          <td class="h-8.5 w-px border-b border-l border-border p-0">
             <Button
               variant="ghost"
-              class="size-7 p-0"
+              class="size-8 p-0"
               :aria-label="`Remove token ${index + 1}`"
               @click="rows = rows.filter((candidate) => candidate !== row)">
               <X :size="13" aria-hidden="true" />
