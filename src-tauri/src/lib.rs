@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 
 use request_files::FileGrants;
 use response_store::{ResponseStore, STORE_ERROR};
+use timing::{Phases, TimedConnectLayer, TimedResolver, Timing};
 use tokio::sync::oneshot;
 
 const MIB: usize = 1024 * 1024;
@@ -68,6 +69,7 @@ struct ResponseOutput {
     final_url: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     redirect_count: Option<usize>,
+    timing: Timing,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -120,9 +122,13 @@ impl TransportOptions {
     }
 }
 
-/// Build a client for one request. `redirects` receives the hop count, so the
-/// client must not be shared between requests.
-fn build_client(options: &TransportOptions, redirects: Arc<AtomicUsize>) -> Result<Client, String> {
+/// Build a client for one request. `redirects` receives the hop count and
+/// `phases` the phase times, so the client must not be shared between requests.
+fn build_client(
+    options: &TransportOptions,
+    redirects: Arc<AtomicUsize>,
+    phases: Arc<Phases>,
+) -> Result<Client, String> {
     let policy = if options.follow_redirects {
         let max = options.max_redirects;
         Policy::custom(move |attempt| {
@@ -143,6 +149,8 @@ fn build_client(options: &TransportOptions, redirects: Arc<AtomicUsize>) -> Resu
         .timeout(Duration::from_secs(options.timeout_seconds))
         .connect_timeout(Duration::from_secs(options.connect_timeout_seconds))
         .redirect(policy)
+        .dns_resolver(Arc::new(TimedResolver(phases.clone())))
+        .connector_layer(TimedConnectLayer(phases))
         .danger_accept_invalid_certs(!options.verify_tls);
     let proxy_url = options.proxy_url.trim();
     if !proxy_url.is_empty() {
@@ -262,7 +270,8 @@ async fn execute(
         .map_err(|_| "Invalid HTTP method.".to_string())?;
     let has_body = method != Method::GET && method != Method::HEAD;
     let redirects = Arc::new(AtomicUsize::new(0));
-    let client = build_client(&options, redirects.clone())?;
+    let phases = Arc::new(Phases::default());
+    let client = build_client(&options, redirects.clone(), phases.clone())?;
     let mut builder = client.request(method, url);
 
     for header in request.headers {
@@ -301,6 +310,7 @@ async fn execute(
         .send()
         .await
         .map_err(|error| network_error(error, &options))?;
+    let headers_at = Instant::now();
     // The policy has run for every hop once `send` returns.
     let redirect_count = redirects.load(Ordering::Relaxed);
     let final_url = (redirect_count > 0).then(|| response.url().to_string());
@@ -335,6 +345,7 @@ async fn execute(
         }
     }
     let duration_ms = started_at.elapsed().as_millis();
+    let timing = phases.report(headers_at - started_at, headers_at.elapsed());
     let truncated = size > preview.len() as u64;
     let (body, binary) = decode_preview(preview);
     let body_id = store.insert(file);
@@ -351,6 +362,7 @@ async fn execute(
         body_id: Some(body_id),
         truncated,
         binary,
+        timing,
     })
 }
 
@@ -424,6 +436,7 @@ mod request_files;
 #[cfg(test)]
 mod request_tests;
 mod response_store;
+mod timing;
 
 fn save_window_state(app: &tauri::AppHandle) {
     use tauri_plugin_window_state::{AppHandleExt, StateFlags};

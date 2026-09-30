@@ -2,6 +2,7 @@ import { invoke, isTauri } from "@tauri-apps/api/core";
 import type { ApiResponse, RequestInput } from "./request";
 import { storeBlob } from "./response-body";
 import { FILES_UNAVAILABLE } from "./request-files";
+import { browserTiming } from "./timing";
 import {
   defaultTransportOptions,
   DOWNLOAD_LIMIT,
@@ -112,6 +113,7 @@ export async function sendRequest(
       redirect: options.followRedirects ? "follow" : "manual",
       referrerPolicy: "no-referrer",
     });
+    const headersAt = performance.now();
     if (result.type === "opaqueredirect")
       throw new Error(
         "Browser preview cannot inspect redirects. Use the desktop app.",
@@ -141,11 +143,26 @@ export async function sendRequest(
       offset += part.byteLength;
     }
     const { text, binary } = decodePreview(preview);
+    const end = performance.now();
+    const entries =
+      typeof performance.getEntriesByName === "function"
+        ? (performance.getEntriesByName(
+            result.url,
+            "resource",
+          ) as PerformanceResourceTiming[])
+        : [];
+    const entry = [...entries]
+      .reverse()
+      .find((candidate) => candidate.startTime >= start);
     const contentType = result.headers.get("content-type") ?? "";
     return {
       status: result.status,
       statusText: result.statusText,
-      durationMs: Math.round(performance.now() - start),
+      durationMs: Math.round(end - start),
+      timing: browserTiming(entry, {
+        waitMs: headersAt - start,
+        downloadMs: end - headersAt,
+      }),
       sizeBytes,
       headers: Array.from(result.headers, ([key, value]) => ({ key, value })),
       body: text,

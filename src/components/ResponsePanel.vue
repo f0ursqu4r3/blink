@@ -42,6 +42,7 @@ import { responseLanguage } from "@/lib/response-content";
 import CodeView from "./CodeView.vue";
 import JsonTreeView from "./JsonTreeView.vue";
 import HelpTooltip from "./HelpTooltip.vue";
+import TimingCard from "./TimingCard.vue";
 const props = withDefaults(
   defineProps<{
     response: ApiResponse | null;
@@ -334,8 +335,13 @@ function copyHeaderPair() {
           {{ response.statusText }}
         </span>
         <span class="border-l border-border pl-4">
-          {{ response.durationMs }}
-          <small class="text-muted-foreground"> ms</small>
+          <TimingCard
+            :timing="response.timing"
+            :duration-ms="response.durationMs"
+          >
+            {{ response.durationMs }}
+            <small class="text-muted-foreground"> ms</small>
+          </TimingCard>
         </span>
         <span class="border-l border-border pl-4">
           {{ formatBytes(response.sizeBytes) }}

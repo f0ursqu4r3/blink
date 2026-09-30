@@ -173,6 +173,11 @@ async fn get_omits_body_and_measures_full_response() {
     assert_eq!(result.body, "{\"ok\":true}");
     assert_eq!(result.size_bytes, result.body.len());
     assert!(result.duration_ms >= 70);
+    let timing = result.timing;
+    let phases = timing.dns_ms + timing.connect_ms + timing.wait_ms + timing.download_ms;
+    assert!(timing.dns_ms >= 0.0 && timing.connect_ms > 0.0);
+    // The phases cover the whole request, within rounding.
+    assert!((phases - result.duration_ms as f64).abs() < 2.0, "{phases} vs {}", result.duration_ms);
     assert!(result
         .headers
         .iter()

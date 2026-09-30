@@ -71,6 +71,16 @@ export type RequestInput = {
   /** Send a multipart form. `body` is null. */
   multipart?: MultipartPart[];
 };
+/** Milliseconds in each request phase. Phases the transport cannot see are absent. */
+export type ResponseTiming = {
+  dnsMs?: number;
+  /** TCP setup; includes any TLS handshake when `tlsMs` is absent. */
+  connectMs?: number;
+  tlsMs?: number;
+  /** From the request start (or the connection) until the response headers. */
+  waitMs: number;
+  downloadMs: number;
+};
 export type ApiResponse = {
   status: number;
   statusText: string;
@@ -88,6 +98,7 @@ export type ApiResponse = {
   finalUrl?: string;
   /** Desktop only. */
   redirectCount?: number;
+  timing?: ResponseTiming;
 };
 let nextId = 0;
 export function reservePairId(id: number) {

@@ -275,6 +275,8 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "tokio",
+ "tower-layer",
+ "tower-service",
 ]
 
 [[package]]

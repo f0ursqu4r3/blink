@@ -168,6 +168,12 @@ function validateResponse(input: unknown) {
       (response.finalUrl === undefined || text(response.finalUrl)) &&
       (response.redirectCount === undefined || numeric(response.redirectCount)),
   );
+  if (response.timing !== undefined) {
+    const timing = record(response.timing);
+    check(numeric(timing.waitMs) && numeric(timing.downloadMs));
+    for (const key of ["dnsMs", "connectMs", "tlsMs"])
+      check(timing[key] === undefined || numeric(timing[key]));
+  }
   for (const item of array(response.headers, 10_000)) {
     const header = record(item);
     check(text(header.key) && text(header.value));
