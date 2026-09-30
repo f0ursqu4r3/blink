@@ -25,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import {
+  displayMethod,
   sessionLabel,
   sessionHost,
   sessionStatus,
@@ -161,7 +162,7 @@ function pressTab(session: RequestSession, event: PointerEvent) {
     payload: () => ({ kind: "requests", ids: [session.id] }),
     preview: () => ({
       label: label(session),
-      method: session.draft.method,
+      method: displayMethod(session),
     }),
   });
 }
@@ -268,16 +269,16 @@ function navigate(event: KeyboardEvent, index: number) {
                   :aria-controls="`request-pane-${session.id}`"
                   :aria-selected="activeId === session.id"
                   :tabindex="activeId === session.id ? 0 : -1"
-                  :title="`${session.draft.method} ${label(session)} · ${host(session)} · ${sessionStatus(session)}`"
+                  :title="`${displayMethod(session)} ${label(session)} · ${host(session)} · ${sessionStatus(session)}`"
                   class="flex items-center gap-2.25 pl-3.5 pr-2 min-w-0 flex-1 text-left font-mono text-[0.6875rem] cursor-pointer"
                   @click="emit('select', session.id)"
                   @keydown="navigate($event, index)"
                 >
                   <span
                     class="method text-[0.5625rem] font-bold tracking-[0.04em]"
-                    :data-method="session.draft.method"
+                    :data-method="displayMethod(session)"
                   >
-                    {{ session.draft.method }}
+                    {{ displayMethod(session) }}
                   </span>
                   <span
                     class="flex flex-col justify-center min-w-0 flex-1 leading-[1.3]"
@@ -303,6 +304,14 @@ function navigate(event: KeyboardEvent, index: number) {
                     aria-label="Request failed"
                   >
                     !
+                  </span>
+                  <span
+                    v-else-if="session.socket?.state === 'open'"
+                    class="text-[0.5625rem] text-success"
+                    data-tab-socket-open
+                    title="WebSocket connected"
+                  >
+                    WS
                   </span>
                   <span
                     v-else-if="session.response"
@@ -438,8 +447,8 @@ function navigate(event: KeyboardEvent, index: number) {
             >
               <span
                 class="method w-11 shrink-0 font-mono text-[0.5625rem] font-bold tracking-[0.04em]"
-                :data-method="session.draft.method"
-                >{{ session.draft.method }}</span
+                :data-method="displayMethod(session)"
+                >{{ displayMethod(session) }}</span
               >
               <span class="truncate">{{ label(session) }}</span>
             </DropdownMenuItem>

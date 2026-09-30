@@ -1,6 +1,14 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
-import { ArrowUpRight, Check, Square, Terminal, X } from "lucide-vue-next";
+import {
+  ArrowUpRight,
+  Check,
+  Plug,
+  Square,
+  Terminal,
+  Unplug,
+  X,
+} from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -17,6 +25,9 @@ import {
 import { shortcutLabel } from "@/lib/shortcut";
 import RequestEditor from "./RequestEditor.vue";
 import ResponsePanel from "./ResponsePanel.vue";
+import WebSocketPanel from "./WebSocketPanel.vue";
+import { isWebSocketUrl } from "@/lib/websocket";
+import { useWebSocket } from "@/composables/useWebSocket";
 import { methods } from "@/lib/request";
 import {
   codeTargets,
@@ -100,6 +111,21 @@ const { prepared, curl, stale, send, cancel, sentUrl, recheck } =
     onCapture: (values) => emit("capture", values),
   });
 watch(stale, (value) => (props.session.stale = value), { immediate: true });
+/** A ws:// or wss:// URL makes this a WebSocket request. */
+const websocket = computed(() => isWebSocketUrl(props.session.draft.url));
+const socket = useWebSocket(props.session, resolvedCtx, () => props.transport);
+const validationError = computed(() =>
+  websocket.value ? socket.prepared.value.error : prepared.value.error,
+);
+/** Send an HTTP request, or connect and disconnect a WebSocket. */
+function primary() {
+  if (!websocket.value) return send();
+  if (socket.active.value) socket.disconnect();
+  else socket.connect();
+}
+async function sendSocketMessage(text: string) {
+  if (await socket.send(text)) props.session.draft.body = "";
+}
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
 const target = computed(() => props.codeTarget ?? "curl");
@@ -221,7 +247,7 @@ function onKey(event: KeyboardEvent) {
     return;
   if (event.key === "Enter" && (event.metaKey || event.ctrlKey)) {
     event.preventDefault();
-    void send();
+    void primary();
   }
   if (
     event.key === "." &&
@@ -243,7 +269,7 @@ function onKey(event: KeyboardEvent) {
 
 const responsePanel = ref<InstanceType<typeof ResponsePanel>>();
 defineExpose({
-  send,
+  send: primary,
   cancel,
   focusUrl,
   toggleCode: () => (showCurl.value = !showCurl.value),
@@ -327,12 +353,21 @@ function resizeWithKeyboard(event: KeyboardEvent) {
       <ContextMenuTrigger as-child>
         <form
           class="request-bar flex items-center gap-2 px-3.5 py-3 border-b border-border bg-secondary max-[900px]:px-2.5 max-[900px]:gap-1.5"
-          @submit.prevent="send"
+          @submit.prevent="primary"
         >
           <div
             class="flex items-stretch flex-1 min-w-0 h-8.5 border border-input rounded bg-background focus-within:border-primary pointer-coarse:min-h-11"
           >
             <div
+              v-if="websocket"
+              class="flex w-23.5 shrink-0 items-center border-r border-border px-3 font-mono text-[0.6875rem] font-semibold text-info"
+              data-websocket-method
+              title="WebSocket"
+            >
+              WS
+            </div>
+            <div
+              v-else
               class="method relative border-r border-border shrink-0"
               :data-http-method="session.draft.method"
             >
@@ -367,7 +402,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
               v-model="session.draft.url"
               :tokens="resolvedCtx"
               :aria-describedby="
-                session.draft.url && prepared.error
+                session.draft.url && validationError
                   ? `${prefix}-validation`
                   : undefined
               "
@@ -383,7 +418,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           <Button
             variant="secondary"
             class="curl-button h-8.5 max-[900px]:px-2"
-            :disabled="!prepared.request"
+            :disabled="!prepared.request || websocket"
             :aria-expanded="showCurl"
             :aria-controls="`${prefix}-curl`"
             aria-label="Code"
@@ -397,7 +432,22 @@ function resizeWithKeyboard(event: KeyboardEvent) {
             </span>
           </Button>
           <Button
-            v-if="session.busy"
+            v-if="websocket"
+            type="submit"
+            data-connect
+            :variant="socket.active.value ? 'secondary' : 'default'"
+            class="send-button h-8.5 px-3"
+            :disabled="!socket.active.value && !socket.prepared.value.request"
+          >
+            <Unplug v-if="socket.active.value" :size="14" aria-hidden="true" />
+            <Plug v-else :size="14" aria-hidden="true" />
+            <span>{{ socket.active.value ? "Disconnect" : "Connect" }}</span>
+            <kbd class="opacity-65 text-[0.625rem] ml-2.5 max-[900px]:hidden">
+              {{ shortcut }} ↵
+            </kbd>
+          </Button>
+          <Button
+            v-else-if="session.busy"
             type="button"
             data-cancel
             variant="secondary"
@@ -516,13 +566,13 @@ function resizeWithKeyboard(event: KeyboardEvent) {
       </button>
     </p>
     <p
-      v-if="session.draft.url && prepared.error"
+      v-if="session.draft.url && validationError"
       :id="`${prefix}-validation`"
       data-request-validation
       class="px-3.5 py-2 text-destructive border-b border-border font-mono text-[0.6875rem] leading-[1.6]"
       role="status"
     >
-      {{ prepared.error }}
+      {{ validationError }}
     </p>
     <ContextMenu>
       <ContextMenuTrigger as-child>
@@ -628,7 +678,15 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         @pointerdown="startResize"
         @keydown="resizeWithKeyboard"
       />
+      <WebSocketPanel
+        v-if="websocket"
+        v-model:message="session.draft.body"
+        :socket="session.socket"
+        @send="sendSocketMessage"
+        @clear="socket.clear()"
+      />
       <ResponsePanel
+        v-else
         ref="responsePanel"
         v-model:view="session.view"
         :active="active"

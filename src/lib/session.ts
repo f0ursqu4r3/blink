@@ -1,5 +1,6 @@
 import { createDraft, pair, type Draft, type ApiResponse } from "./request";
 import type { HistoryEntry } from "./history";
+import { isWebSocketUrl } from "./websocket";
 import { createAssertion, createCapture, type AssertionResult } from "./checks";
 import { resolveTokenDefinitions } from "./authorization";
 import type { RequestGroup } from "./groups";
@@ -23,6 +24,8 @@ export type RequestSession = {
   captureErrors?: string[];
   /** An event stream that is arriving now. Not saved. */
   stream?: LiveStream;
+  /** The WebSocket connection and its log. Not saved. */
+  socket?: import("./websocket").SocketSession;
   /** The request changed since the shown response was sent. Not saved. */
   stale?: boolean;
 };
@@ -156,7 +159,8 @@ function displayUrl(session: RequestSession, tokens?: LabelTokens) {
 export function sessionLabel(session: RequestSession, tokens?: LabelTokens) {
   try {
     const url = new URL(displayUrl(session, tokens));
-    if (!["http:", "https:"].includes(url.protocol)) throw new Error();
+    if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol))
+      throw new Error();
     if (url.pathname === "/") return url.host;
     // Show token references such as {{id}} as typed, not percent-encoded.
     try {
@@ -176,6 +180,7 @@ export function sessionLabel(session: RequestSession, tokens?: LabelTokens) {
  */
 export function sessionStatus(session: RequestSession) {
   if (session.busy) return "Sending";
+  if (session.socket?.state === "open") return "Open";
   if (session.error) return "Failed";
   if (session.response) return String(session.response.status);
   return "Draft";
@@ -183,8 +188,14 @@ export function sessionStatus(session: RequestSession) {
 export function sessionHost(session: RequestSession, tokens?: LabelTokens) {
   try {
     const url = new URL(displayUrl(session, tokens));
-    return ["http:", "https:"].includes(url.protocol) ? url.host : "";
+    return ["http:", "https:", "ws:", "wss:"].includes(url.protocol)
+      ? url.host
+      : "";
   } catch {
     return "";
   }
 }
+
+/** The method to show: "WS" for a WebSocket request. */
+export const displayMethod = (session: RequestSession) =>
+  isWebSocketUrl(session.draft.url) ? "WS" : session.draft.method;

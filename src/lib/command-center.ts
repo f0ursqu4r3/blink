@@ -1,5 +1,10 @@
 import type { RequestGroup } from "./groups";
-import { sessionLabel, type LabelTokens, type RequestSession } from "./session";
+import {
+  displayMethod,
+  sessionLabel,
+  type LabelTokens,
+  type RequestSession,
+} from "./session";
 
 export type RequestMatch = {
   id: number;
@@ -92,7 +97,7 @@ export function matchRequests(
   sessions.forEach((session, order) => {
     const match: RankedRequestMatch = {
       id: session.id,
-      method: session.draft.method,
+      method: displayMethod(session),
       label: sessionLabel(session, tokens),
       url: session.draft.url,
       groupPath: groupPath(groups, session.groupId),

@@ -17,7 +17,12 @@ import {
   Settings,
 } from "lucide-vue-next";
 import type { RequestGroup } from "@/lib/groups";
-import { hasDraft, sessionLabel, type RequestSession } from "@/lib/session";
+import {
+  displayMethod,
+  hasDraft,
+  sessionLabel,
+  type RequestSession,
+} from "@/lib/session";
 import {
   resolveAuthorization,
   type AuthorizationConfig,
@@ -421,7 +426,7 @@ function pressRequest(session: RequestSession, event: PointerEvent) {
       const count = dragIds(session.id).length;
       return count > 1
         ? { label: `${count} requests` }
-        : { label: label(session), method: session.draft.method };
+        : { label: label(session), method: displayMethod(session) };
     },
     onStart: () => {
       if (!selected.value.has(session.id))
@@ -696,9 +701,9 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     />
                     <span
                       class="method w-8.5 shrink-0 text-[8px] font-bold"
-                      :data-method="row.session.draft.method"
+                      :data-method="displayMethod(row.session)"
                     >
-                      {{ row.session.draft.method }}
+                      {{ displayMethod(row.session) }}
                     </span>
                     <strong
                       class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium"

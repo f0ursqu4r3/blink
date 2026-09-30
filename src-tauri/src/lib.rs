@@ -548,6 +548,7 @@ mod request_files;
 mod request_tests;
 mod response_store;
 mod timing;
+mod websocket;
 
 fn save_window_state(app: &tauri::AppHandle) {
     use tauri_plugin_window_state::{AppHandleExt, StateFlags};
@@ -567,6 +568,7 @@ pub fn run() {
                 app.path().app_data_dir()?.join("file-grants.json"),
             ));
             app.manage(InFlight::default());
+            app.manage(websocket::Sockets::default());
             app.manage(cookies::Cookies::load(
                 app.path().app_data_dir()?.join("cookies.json"),
             ));
@@ -602,7 +604,10 @@ pub fn run() {
             response_store::save_response_text,
             cookies::list_cookies,
             cookies::delete_cookie,
-            cookies::clear_cookies
+            cookies::clear_cookies,
+            websocket::ws_connect,
+            websocket::ws_send,
+            websocket::ws_close
         ])
         .build(tauri::generate_context!())
         .expect("error while building Blink")
