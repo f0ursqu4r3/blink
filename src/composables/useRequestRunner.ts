@@ -7,7 +7,15 @@ import {
 } from "vue";
 import { buildRequest, toCurl } from "@/lib/request";
 import type { ResolvedRequestContext } from "@/lib/authorization";
-import { requestFingerprint, type RequestSession } from "@/lib/session";
+import {
+  requestFingerprint,
+  STREAM_EVENT_LIMIT,
+  type LiveStream,
+  type RequestSession,
+} from "@/lib/session";
+import { createSseParser } from "@/lib/sse";
+import type { StreamMessage } from "@/lib/transport";
+import { MIB } from "@/lib/transport-options";
 import { CANCELED, sendRequest } from "@/lib/transport";
 import { addHistory, historyEntry, nextHistoryId } from "@/lib/history";
 import { runAssertions, runCaptures } from "@/lib/checks";
@@ -100,6 +108,7 @@ export function useRequestRunner(
     session.response = null;
     session.testResults = undefined;
     session.captureErrors = undefined;
+    session.stream = undefined;
     session.elapsed = 0;
     sentUrl.value = request.url;
     // Persist the resolved-request fingerprint so stale can compare accurately.
@@ -110,10 +119,45 @@ export function useRequestRunner(
       session.elapsed = performance.now() - start;
     }, 100);
     controller = new AbortController();
+    const options = toValue(optionsSource) ?? defaultTransportOptions();
+    const limit = options.inspectionLimitMiB * MIB;
+    const encoder = new TextEncoder();
+    const parser = createSseParser((event) => {
+      const stream = session.stream;
+      if (!stream) return;
+      stream.events.push({
+        ...event,
+        at: Math.round(performance.now() - start),
+      });
+      if (stream.events.length > STREAM_EVENT_LIMIT)
+        stream.events.splice(0, stream.events.length - STREAM_EVENT_LIMIT);
+    });
+    const onStream = (message: StreamMessage) => {
+      if (!alive) return;
+      if (message.kind === "head") {
+        session.stream = {
+          status: message.status,
+          statusText: message.statusText,
+          headers: message.headers.map(([key, value]) => ({ key, value })),
+          events: [],
+          text: "",
+          bytes: 0,
+          truncated: false,
+        };
+        return;
+      }
+      const stream = session.stream;
+      if (!stream) return;
+      stream.bytes += encoder.encode(message.text).byteLength;
+      if (stream.text.length < limit)
+        stream.text += message.text.slice(0, limit - stream.text.length);
+      else stream.truncated = true;
+      parser.push(message.text);
+    };
     try {
-      const options = toValue(optionsSource) ?? defaultTransportOptions();
       const result = await sendRequest(request, options, {
         signal: controller.signal,
+        onStream,
       });
       // A result for an unmounted view has no owner, so free its body.
       if (alive) session.response = result;
@@ -127,7 +171,29 @@ export function useRequestRunner(
       if (alive) await check(result);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);
-      if (alive) session.error = message;
+      // Set by onStream after the reset above, so TypeScript cannot narrow it.
+      const stream = session.stream as LiveStream | undefined;
+      if (alive && message === CANCELED && stream) {
+        // Stopping a stream keeps what arrived.
+        parser.end();
+        const result = {
+          status: stream.status,
+          statusText: stream.statusText,
+          durationMs: Math.round(performance.now() - start),
+          headers: stream.headers,
+          body: stream.text,
+          sizeBytes: stream.bytes,
+          truncated: stream.truncated,
+        };
+        session.response = result;
+        session.history = addHistory(
+          session.history,
+          historyEntry(nextHistoryId(session.history), sentAt, request, {
+            response: result,
+          }),
+        );
+        await check(result);
+      } else if (alive) session.error = message;
       if (message !== CANCELED)
         session.history = addHistory(
           session.history,
@@ -138,6 +204,7 @@ export function useRequestRunner(
         );
     } finally {
       controller = undefined;
+      session.stream = undefined;
       clearInterval(clock);
       if (alive) session.busy = false;
     }

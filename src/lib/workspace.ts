@@ -323,7 +323,11 @@ function parseSnapshot(content: string): Snapshot {
         view.requestTab as string,
       ),
     );
-    check(["body", "headers", "tests"].includes(view.responseTab as string));
+    check(
+      ["body", "headers", "tests", "events"].includes(
+        view.responseTab as string,
+      ),
+    );
     check(
       typeof view.pretty === "boolean" &&
         typeof view.wrap === "boolean" &&

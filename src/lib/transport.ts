@@ -1,4 +1,5 @@
-import { invoke, isTauri } from "@tauri-apps/api/core";
+import { Channel, invoke, isTauri } from "@tauri-apps/api/core";
+import { isEventStream } from "./sse";
 import type { ApiResponse, RequestInput } from "./request";
 import { storeBlob } from "./response-body";
 import { FILES_UNAVAILABLE } from "./request-files";
@@ -11,10 +12,25 @@ import {
 } from "./transport-options";
 export const nativeTransport = isTauri();
 
+/** Parts of an event-stream response, sent while it arrives. */
+export type StreamMessage =
+  | {
+      kind: "head";
+      status: number;
+      statusText: string;
+      headers: [string, string][];
+    }
+  | { kind: "chunk"; text: string };
+
 export type SendControls = {
   /** Abort cancels the request. */
   signal?: AbortSignal;
   downloadLimit?: number;
+  /**
+   * Receives a text/event-stream body as it arrives. The total timeout then
+   * covers only the response headers.
+   */
+  onStream?: (message: StreamMessage) => void;
 };
 
 // Per RFC 3629, the byte right after certain lead bytes is restricted beyond
@@ -66,18 +82,21 @@ let requestSequence = 0;
 export async function sendRequest(
   request: RequestInput,
   options: TransportOptions = defaultTransportOptions(),
-  { signal, downloadLimit = DOWNLOAD_LIMIT }: SendControls = {},
+  { signal, downloadLimit = DOWNLOAD_LIMIT, onStream }: SendControls = {},
 ): Promise<ApiResponse> {
   if (signal?.aborted) throw new Error(CANCELED);
   if (nativeTransport) {
     const requestId = `request-${++requestSequence}`;
     const cancel = () => void invoke("cancel_request", { requestId });
     signal?.addEventListener("abort", cancel, { once: true });
+    const onStreamChannel = new Channel<StreamMessage>();
+    onStreamChannel.onmessage = (message) => onStream?.(message);
     try {
       return await invoke<ApiResponse>("send_request", {
         request,
         options,
         requestId,
+        onStream: onStreamChannel,
       });
     } finally {
       signal?.removeEventListener("abort", cancel);
@@ -114,6 +133,20 @@ export async function sendRequest(
       referrerPolicy: "no-referrer",
     });
     const headersAt = performance.now();
+    const streaming =
+      Boolean(onStream) &&
+      isEventStream(result.headers.get("content-type") ?? "");
+    const decoder = new TextDecoder();
+    if (streaming) {
+      // A stream stays open; only cancel ends it.
+      clearTimeout(timeout);
+      onStream!({
+        kind: "head",
+        status: result.status,
+        statusText: result.statusText,
+        headers: Array.from(result.headers),
+      });
+    }
     if (result.type === "opaqueredirect")
       throw new Error(
         "Browser preview cannot inspect redirects. Use the desktop app.",
@@ -127,6 +160,11 @@ export async function sendRequest(
         const { done, value } = await reader.read();
         if (done) break;
         sizeBytes += value.byteLength;
+        if (streaming)
+          onStream!({
+            kind: "chunk",
+            text: decoder.decode(value, { stream: true }),
+          });
         if (sizeBytes > downloadLimit) {
           await reader.cancel();
           throw new Error("Response exceeds the 1 GiB download limit.");

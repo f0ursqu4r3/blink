@@ -640,6 +640,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         :request-url="sentUrl || session.draft.url"
         :timeout-seconds="transport?.timeoutSeconds"
         :history="session.history"
+        :stream="session.stream"
         :test-results="session.testResults"
         :capture-errors="session.captureErrors"
         :has-checks="Boolean(session.draft.assertions?.length)"

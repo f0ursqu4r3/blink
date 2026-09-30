@@ -1,44 +1,44 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
 import {
   Columns2,
   HardDrive,
   PanelLeft,
   Rows2,
   Settings,
-} from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
-import RequestTabs from "@/components/RequestTabs.vue";
-import RequestBrowser from "@/components/RequestBrowser.vue";
-import DragPreview from "@/components/DragPreview.vue";
-import RequestWorkspace from "@/components/RequestWorkspace.vue";
-import GroupSettingsDialog from "@/components/GroupSettingsDialog.vue";
-import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vue";
-import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
-import HelpTooltip from "@/components/HelpTooltip.vue";
-import CommandCenter from "@/components/CommandCenter.vue";
-import CookiesDialog from "@/components/CookiesDialog.vue";
-import { clearCookies } from "@/lib/cookies";
-import { countRequests, parseImport } from "@/lib/import";
-import { COMMAND_PREFIX, groupPath, type Command } from "@/lib/command-center";
-import { formatBytes } from "@/lib/request";
-import { codeTargets } from "@/lib/codegen";
-import { applyZoom } from "@/lib/zoom";
-import { shortcutLabel } from "@/lib/shortcut";
-import { useTheme } from "@/composables/useTheme";
-import { nativeTransport } from "@/lib/transport";
-import { useWorkspaceState } from "@/composables/useWorkspaceState";
-import { createSession } from "@/lib/session";
-import { sessionCurl } from "@/lib/session-curl";
-import { useClipboard } from "@/composables/useClipboard";
-import type { AuthorizationConfig } from "@/lib/authorization";
+} from 'lucide-vue-next';
+import { Button } from '@/components/ui/button';
+import RequestTabs from '@/components/RequestTabs.vue';
+import RequestBrowser from '@/components/RequestBrowser.vue';
+import DragPreview from '@/components/DragPreview.vue';
+import RequestWorkspace from '@/components/RequestWorkspace.vue';
+import GroupSettingsDialog from '@/components/GroupSettingsDialog.vue';
+import ApplicationSettingsDialog from '@/components/ApplicationSettingsDialog.vue';
+import WorkspaceStorageNotice from '@/components/WorkspaceStorageNotice.vue';
+import HelpTooltip from '@/components/HelpTooltip.vue';
+import CommandCenter from '@/components/CommandCenter.vue';
+import CookiesDialog from '@/components/CookiesDialog.vue';
+import { clearCookies } from '@/lib/cookies';
+import { countRequests, parseImport } from '@/lib/import';
+import { COMMAND_PREFIX, groupPath, type Command } from '@/lib/command-center';
+import { formatBytes } from '@/lib/request';
+import { codeTargets } from '@/lib/codegen';
+import { applyZoom } from '@/lib/zoom';
+import { shortcutLabel } from '@/lib/shortcut';
+import { useTheme } from '@/composables/useTheme';
+import { nativeTransport } from '@/lib/transport';
+import { useWorkspaceState } from '@/composables/useWorkspaceState';
+import { createSession } from '@/lib/session';
+import { sessionCurl } from '@/lib/session-curl';
+import { useClipboard } from '@/composables/useClipboard';
+import type { AuthorizationConfig } from '@/lib/authorization';
 import {
   applyNewRequestDefaults,
   resolveNewRequestDefaults,
   stepZoom,
   transportOptions,
   type WorkspacePreferences,
-} from "@/lib/preferences";
+} from '@/lib/preferences';
 
 const {
   sessions,
@@ -84,16 +84,16 @@ const {
 } = useWorkspaceState();
 
 const active = computed(() =>
-  sessions.value.find((session) => session.id === activeId.value),
+  sessions.value.find((session) => session.id === activeId.value)
 );
 const openSessions = computed(() =>
   openIds.value.flatMap((id) => {
     const session = sessions.value.find((candidate) => candidate.id === id);
     return session ? [session] : [];
-  }),
+  })
 );
 const activeGroupPath = computed(() =>
-  active.value ? groupPath(groups.value, active.value.groupId) : "",
+  active.value ? groupPath(groups.value, active.value.groupId) : ''
 );
 const sidebarCollapsed = ref(false);
 const commandCenter = ref<InstanceType<typeof CommandCenter>>();
@@ -106,9 +106,9 @@ function curlFor(id: number) {
         session,
         groups.value,
         globalDefinitions.value,
-        transport.value,
+        transport.value
       )
-    : "";
+    : '';
 }
 const { name: themeName } = useTheme();
 // Tauri draws the macOS traffic lights over the title bar.
@@ -116,15 +116,15 @@ const macOverlay = nativeTransport && /Mac/.test(navigator.userAgent);
 const mobileBrowserOpen = ref(false);
 const narrow = ref(false);
 const browserVisible = computed(() =>
-  narrow.value ? mobileBrowserOpen.value : !sidebarCollapsed.value,
+  narrow.value ? mobileBrowserOpen.value : !sidebarCollapsed.value
 );
 const browserToggleLabel = computed(() =>
-  browserVisible.value ? "Hide request browser" : "Show request browser",
+  browserVisible.value ? 'Hide request browser' : 'Show request browser'
 );
 const selectedRequestIds = ref<number[]>([]);
 const selectionAnchorId = ref<number | null>(null);
 const sending = computed(
-  () => sessions.value.filter((session) => session.busy).length,
+  () => sessions.value.filter((session) => session.busy).length
 );
 const transport = computed(() => transportOptions(preferences.value));
 
@@ -142,7 +142,7 @@ function openCookies() {
 }
 const dialogOpener = ref<HTMLElement | null>(null);
 const groupSettingsGroup = computed(
-  () => groups.value.find((g) => g.id === groupSettingsId.value) ?? null,
+  () => groups.value.find((g) => g.id === groupSettingsId.value) ?? null
 );
 
 function openGroupSettings(groupId: number) {
@@ -166,7 +166,7 @@ watch(
       !cookies
     )
       void nextTick(() => dialogOpener.value?.focus());
-  },
+  }
 );
 
 function handleSaveGroupSettings(
@@ -176,35 +176,35 @@ function handleSaveGroupSettings(
     localAuth?: AuthorizationConfig | undefined;
     localDefinitions?: Record<string, string>;
     parentId?: number | null;
-    defaultMethod?: import("@/lib/request").Method | undefined;
+    defaultMethod?: import('@/lib/request').Method | undefined;
     defaultUrl?: string | undefined;
-  },
+  }
 ) {
   if (changes.name !== undefined) setGroupName(groupId, changes.name);
-  if (Object.prototype.hasOwnProperty.call(changes, "localAuth"))
+  if (Object.prototype.hasOwnProperty.call(changes, 'localAuth'))
     setGroupLocalAuth(groupId, changes.localAuth);
   if (changes.localDefinitions !== undefined)
     setGroupLocalDefinitions(groupId, changes.localDefinitions);
   if (changes.parentId !== undefined) setGroupParent(groupId, changes.parentId);
-  if (Object.prototype.hasOwnProperty.call(changes, "defaultMethod"))
+  if (Object.prototype.hasOwnProperty.call(changes, 'defaultMethod'))
     setGroupNewRequestDefaults(
       groupId,
       changes.defaultMethod,
-      changes.defaultUrl,
+      changes.defaultUrl
     );
   groupSettingsOpen.value = false;
 }
 
-const stacked = computed(() => preferences.value.paneLayout === "vertical");
+const stacked = computed(() => preferences.value.paneLayout === 'vertical');
 const layoutToggleLabel = computed(() =>
   stacked.value
-    ? "Place request and response side by side"
-    : "Stack request above response",
+    ? 'Place request and response side by side'
+    : 'Stack request above response'
 );
 function toggleLayout() {
   setPreferences({
     ...preferences.value,
-    paneLayout: stacked.value ? "horizontal" : "vertical",
+    paneLayout: stacked.value ? 'horizontal' : 'vertical',
   });
 }
 type WorkspaceHandle = InstanceType<typeof RequestWorkspace>;
@@ -221,17 +221,17 @@ function setZoom(zoom: number) {
 watch(
   () => preferences.value.zoom,
   (zoom) => void applyZoom(zoom).catch(() => {}),
-  { immediate: true },
+  { immediate: true }
 );
 const zoomPercent = computed(() => Math.round(preferences.value.zoom * 100));
 function cycleTab(step: 1 | -1) {
   if (!openIds.value.length) return;
   const index = openIds.value.indexOf(activeId.value ?? -1);
   select(
-    openIds.value[(index + step + openIds.value.length) % openIds.value.length],
+    openIds.value[(index + step + openIds.value.length) % openIds.value.length]
   );
   void nextTick(() =>
-    document.getElementById(`request-tab-${activeId.value}`)?.focus(),
+    document.getElementById(`request-tab-${activeId.value}`)?.focus()
   );
 }
 async function reopenTab() {
@@ -247,26 +247,26 @@ function undoDeletion() {
 }
 const deletionLabel = computed(() => {
   const deletion = lastDeletion.value;
-  if (!deletion) return "";
-  if (deletion.kind === "group") return `DELETED GROUP ${deletion.group.name}`;
+  if (!deletion) return '';
+  if (deletion.kind === 'group') return `DELETED GROUP ${deletion.group.name}`;
   const count = deletion.items.length;
-  return `DELETED ${count} ${count === 1 ? "REQUEST" : "REQUESTS"}`;
+  return `DELETED ${count} ${count === 1 ? 'REQUEST' : 'REQUESTS'}`;
 });
 const importInput = ref<HTMLInputElement>();
-const importNotice = ref("");
+const importNotice = ref('');
 const importFailed = ref(false);
-const importDetails = ref("");
+const importDetails = ref('');
 let importTimer: ReturnType<typeof setTimeout> | undefined;
-function notifyImport(message: string, failed = false, details = "") {
+function notifyImport(message: string, failed = false, details = '') {
   importNotice.value = message;
   importDetails.value = details;
   importFailed.value = failed;
   clearTimeout(importTimer);
-  importTimer = setTimeout(() => (importNotice.value = ""), 8000);
+  importTimer = setTimeout(() => (importNotice.value = ''), 8000);
 }
 function pickImport() {
   if (!ready.value || !importInput.value) return;
-  importInput.value.value = "";
+  importInput.value.value = '';
   importInput.value.click();
 }
 async function importFile(event: Event) {
@@ -274,7 +274,7 @@ async function importFile(event: Event) {
   if (!file) return;
   try {
     if (file.size > 16 * 1024 * 1024)
-      throw new Error("The file exceeds the 16 MiB import limit.");
+      throw new Error('The file exceeds the 16 MiB import limit.');
     const result = await parseImport(await file.text(), file.name);
     const { group, first } = importGroup(result.root);
     if (narrow.value) mobileBrowserOpen.value = true;
@@ -283,21 +283,21 @@ async function importFile(event: Event) {
     if (first) select(first.id);
     const count = countRequests(result.root);
     notifyImport(
-      `IMPORTED ${count} ${count === 1 ? "REQUEST" : "REQUESTS"} INTO ${group.name.toUpperCase()}` +
-        (result.skipped.length ? ` · ${result.skipped.length} NOTES` : ""),
+      `IMPORTED ${count} ${count === 1 ? 'REQUEST' : 'REQUESTS'} INTO ${group.name.toUpperCase()}` +
+        (result.skipped.length ? ` · ${result.skipped.length} NOTES` : ''),
       false,
-      result.skipped.join("\n"),
+      result.skipped.join('\n')
     );
   } catch (cause) {
     notifyImport(
       `IMPORT FAILED: ${cause instanceof Error ? cause.message : String(cause)}`,
-      true,
+      true
     );
   }
 }
 function newGroup() {
   const names = new Set(groups.value.map((group) => group.name));
-  let name = "New group";
+  let name = 'New group';
   for (let n = 2; names.has(name); n++) name = `New group ${n}`;
   const group = addGroup(name, null);
   if (narrow.value) mobileBrowserOpen.value = true;
@@ -310,181 +310,181 @@ const commands = computed<Command[]>(() => {
   const response = current?.response;
   return [
     {
-      id: "toggle-layout",
+      id: 'toggle-layout',
       label: `View: ${layoutToggleLabel.value}`,
-      shortcut: ["mod", "\\"],
+      shortcut: ['mod', '\\'],
     },
-    { id: "toggle-browser", label: `View: ${browserToggleLabel.value}` },
-    { id: "zoom-in", label: "View: Zoom in", shortcut: ["mod", "="] },
-    { id: "zoom-out", label: "View: Zoom out", shortcut: ["mod", "-"] },
+    { id: 'toggle-browser', label: `View: ${browserToggleLabel.value}` },
+    { id: 'zoom-in', label: 'View: Zoom in', shortcut: ['mod', '='] },
+    { id: 'zoom-out', label: 'View: Zoom out', shortcut: ['mod', '-'] },
     {
-      id: "zoom-reset",
+      id: 'zoom-reset',
       label: `View: Reset zoom (${zoomPercent.value}%)`,
-      shortcut: ["mod", "0"],
+      shortcut: ['mod', '0'],
       disabled: preferences.value.zoom === 1,
     },
     {
-      id: "next-tab",
-      label: "View: Next tab",
-      shortcut: ["ctrl", "tab"],
+      id: 'next-tab',
+      label: 'View: Next tab',
+      shortcut: ['ctrl', 'tab'],
       disabled: openIds.value.length < 2,
     },
     {
-      id: "previous-tab",
-      label: "View: Previous tab",
-      shortcut: ["ctrl", "shift", "tab"],
+      id: 'previous-tab',
+      label: 'View: Previous tab',
+      shortcut: ['ctrl', 'shift', 'tab'],
       disabled: openIds.value.length < 2,
     },
     {
-      id: "new-request",
-      label: "Request: New request",
-      shortcut: ["mod", "t"],
+      id: 'new-request',
+      label: 'Request: New request',
+      shortcut: ['mod', 't'],
     },
     {
-      id: "send",
-      label: current?.busy ? "Request: Cancel request" : "Request: Send",
-      shortcut: current?.busy ? ["mod", "."] : ["mod", "enter"],
+      id: 'send',
+      label: current?.busy ? 'Request: Cancel request' : 'Request: Send',
+      shortcut: current?.busy ? ['mod', '.'] : ['mod', 'enter'],
       disabled: none,
     },
     {
-      id: "focus-url",
-      label: "Request: Focus URL",
-      shortcut: ["mod", "l"],
+      id: 'focus-url',
+      label: 'Request: Focus URL',
+      shortcut: ['mod', 'l'],
       disabled: none,
     },
-    { id: "show-code", label: "Request: Show code", disabled: none },
+    { id: 'show-code', label: 'Request: Show code', disabled: none },
     ...codeTargets.map((target) => ({
       id: `copy-as-${target.id}`,
       label: `Request: Copy as ${target.label}`,
       disabled: none,
     })),
     {
-      id: "duplicate-request",
-      label: "Request: Duplicate request",
-      shortcut: ["mod", "shift", "d"],
+      id: 'duplicate-request',
+      label: 'Request: Duplicate request',
+      shortcut: ['mod', 'shift', 'd'],
       disabled: none,
     },
-    { id: "reveal", label: "Request: Reveal in Browser", disabled: none },
+    { id: 'reveal', label: 'Request: Reveal in Browser', disabled: none },
     {
-      id: "delete-request",
-      label: "Request: Delete request",
+      id: 'delete-request',
+      label: 'Request: Delete request',
       disabled: none || Boolean(current?.busy),
     },
     {
-      id: "close-tab",
-      label: "Tabs: Close tab",
-      shortcut: ["mod", "w"],
+      id: 'close-tab',
+      label: 'Tabs: Close tab',
+      shortcut: ['mod', 'w'],
       disabled: none,
     },
     {
-      id: "close-other-tabs",
-      label: "Tabs: Close other tabs",
+      id: 'close-other-tabs',
+      label: 'Tabs: Close other tabs',
       disabled: openIds.value.length < 2,
     },
     {
-      id: "close-all-tabs",
-      label: "Tabs: Close all tabs",
+      id: 'close-all-tabs',
+      label: 'Tabs: Close all tabs',
       disabled: !openIds.value.length,
     },
     {
-      id: "reopen-tab",
-      label: "Tabs: Reopen closed tab",
-      shortcut: ["mod", "shift", "t"],
+      id: 'reopen-tab',
+      label: 'Tabs: Reopen closed tab',
+      shortcut: ['mod', 'shift', 't'],
     },
     {
-      id: "find",
-      label: "Response: Find",
-      shortcut: ["mod", "f"],
+      id: 'find',
+      label: 'Response: Find',
+      shortcut: ['mod', 'f'],
       disabled: !response || response.binary,
     },
-    { id: "copy-response", label: "Response: Copy", disabled: !response },
-    { id: "toggle-history", label: "Response: Toggle history", disabled: none },
+    { id: 'copy-response', label: 'Response: Copy', disabled: !response },
+    { id: 'toggle-history', label: 'Response: Toggle history', disabled: none },
     {
-      id: "save-response",
-      label: "Response: Save body…",
+      id: 'save-response',
+      label: 'Response: Save body…',
       disabled: !response,
     },
     {
-      id: "toggle-wrap",
-      label: "Response: Toggle line wrap",
+      id: 'toggle-wrap',
+      label: 'Response: Toggle line wrap',
       disabled: !response || response.binary,
     },
     {
-      id: "toggle-pretty",
-      label: "Response: Toggle pretty",
+      id: 'toggle-pretty',
+      label: 'Response: Toggle pretty',
       disabled: !response || response.binary || response.truncated,
     },
-    { id: "new-group", label: "Browser: New group" },
+    { id: 'new-group', label: 'Browser: New group' },
     {
-      id: "import",
-      label: "File: Import OpenAPI, Postman, or .http file…",
+      id: 'import',
+      label: 'File: Import OpenAPI, Postman, or .http file…',
     },
-    { id: "manage-cookies", label: "Cookies: Manage cookies" },
+    { id: 'manage-cookies', label: 'Cookies: Manage cookies' },
     {
-      id: "clear-cookies",
-      label: "Cookies: Clear all cookies",
+      id: 'clear-cookies',
+      label: 'Cookies: Clear all cookies',
       disabled: !nativeTransport,
     },
     {
-      id: "collapse-groups",
-      label: "Browser: Collapse all groups",
+      id: 'collapse-groups',
+      label: 'Browser: Collapse all groups',
       disabled: !groups.value.length,
     },
     {
-      id: "undo-delete",
-      label: "Edit: Undo delete",
-      shortcut: ["mod", "z"],
+      id: 'undo-delete',
+      label: 'Edit: Undo delete',
+      shortcut: ['mod', 'z'],
       disabled: !lastDeletion.value,
     },
     {
-      id: "open-settings",
-      label: "Preferences: Application settings",
-      shortcut: ["mod", ","],
+      id: 'open-settings',
+      label: 'Preferences: Application settings',
+      shortcut: ['mod', ','],
     },
   ];
 });
 function runCommand(id: string) {
   const workspace = activeWorkspace();
   const response = workspace?.response();
-  if (id === "toggle-layout") toggleLayout();
-  else if (id === "toggle-browser") toggleBrowser();
-  else if (id === "zoom-in") setZoom(stepZoom(preferences.value.zoom, 1));
-  else if (id === "zoom-out") setZoom(stepZoom(preferences.value.zoom, -1));
-  else if (id === "zoom-reset") setZoom(1);
-  else if (id === "next-tab") cycleTab(1);
-  else if (id === "previous-tab") cycleTab(-1);
-  else if (id === "new-request") create();
-  else if (id === "send")
+  if (id === 'toggle-layout') toggleLayout();
+  else if (id === 'toggle-browser') toggleBrowser();
+  else if (id === 'zoom-in') setZoom(stepZoom(preferences.value.zoom, 1));
+  else if (id === 'zoom-out') setZoom(stepZoom(preferences.value.zoom, -1));
+  else if (id === 'zoom-reset') setZoom(1);
+  else if (id === 'next-tab') cycleTab(1);
+  else if (id === 'previous-tab') cycleTab(-1);
+  else if (id === 'new-request') create();
+  else if (id === 'send')
     active.value?.busy ? workspace?.cancel() : void workspace?.send();
-  else if (id === "focus-url") void workspace?.focusUrl();
-  else if (id === "show-code") workspace?.toggleCode();
-  else if (id.startsWith("copy-as-")) {
+  else if (id === 'focus-url') void workspace?.focusUrl();
+  else if (id === 'show-code') workspace?.toggleCode();
+  else if (id.startsWith('copy-as-')) {
     const target = codeTargets.find((t) => `copy-as-${t.id}` === id);
     if (target && workspace) void copyText(workspace.codeFor(target.id));
-  } else if (id === "duplicate-request") duplicate();
-  else if (id === "reveal" && activeId.value !== null)
+  } else if (id === 'duplicate-request') duplicate();
+  else if (id === 'reveal' && activeId.value !== null)
     void reveal(activeId.value);
-  else if (id === "delete-request" && activeId.value !== null)
+  else if (id === 'delete-request' && activeId.value !== null)
     remove(activeId.value);
-  else if (id === "close-tab" && activeId.value !== null)
+  else if (id === 'close-tab' && activeId.value !== null)
     void close(activeId.value);
-  else if (id === "close-other-tabs")
+  else if (id === 'close-other-tabs')
     void closeMany(openIds.value.filter((open) => open !== activeId.value));
-  else if (id === "close-all-tabs") void closeMany([...openIds.value]);
-  else if (id === "reopen-tab") void reopenTab();
-  else if (id === "find") response?.find();
-  else if (id === "copy-response") response?.copyResult();
-  else if (id === "toggle-history") response?.toggleHistory();
-  else if (id === "save-response") void response?.saveBody();
-  else if (id === "toggle-wrap") response?.toggleWrap();
-  else if (id === "toggle-pretty") response?.togglePretty();
-  else if (id === "new-group") newGroup();
-  else if (id === "import") pickImport();
-  else if (id === "manage-cookies") openCookies();
-  else if (id === "clear-cookies") void clearCookies().catch(() => {});
-  else if (id === "collapse-groups") collapseAllGroups();
-  else if (id === "undo-delete") undoDeletion();
-  else if (id === "open-settings") openApplicationSettings();
+  else if (id === 'close-all-tabs') void closeMany([...openIds.value]);
+  else if (id === 'reopen-tab') void reopenTab();
+  else if (id === 'find') response?.find();
+  else if (id === 'copy-response') response?.copyResult();
+  else if (id === 'toggle-history') response?.toggleHistory();
+  else if (id === 'save-response') void response?.saveBody();
+  else if (id === 'toggle-wrap') response?.toggleWrap();
+  else if (id === 'toggle-pretty') response?.togglePretty();
+  else if (id === 'new-group') newGroup();
+  else if (id === 'import') pickImport();
+  else if (id === 'manage-cookies') openCookies();
+  else if (id === 'clear-cookies') void clearCookies().catch(() => {});
+  else if (id === 'collapse-groups') collapseAllGroups();
+  else if (id === 'undo-delete') undoDeletion();
+  else if (id === 'open-settings') openApplicationSettings();
 }
 function toggleBrowser() {
   if (narrow.value) {
@@ -518,7 +518,7 @@ function updateSelection(ids: number[], anchorId: number | null) {
 function createGroup(
   name: string,
   parentId: number | null,
-  sessionIds?: number[],
+  sessionIds?: number[]
 ) {
   const group = addGroup(name, parentId);
   if (sessionIds?.length) moveRequests(sessionIds, group.id, null);
@@ -534,7 +534,7 @@ function create(duplicate = false, inGroupId?: number | null) {
   if (!duplicate)
     applyNewRequestDefaults(
       session,
-      resolveNewRequestDefaults(groups.value, groupId, preferences.value),
+      resolveNewRequestDefaults(groups.value, groupId, preferences.value)
     );
   sessions.value.push(session);
   expandAncestors(groupId);
@@ -590,21 +590,21 @@ async function reveal(id: number) {
   updateSelection([id], id);
   await nextTick();
   const row = document.querySelector<HTMLElement>(`[data-request-id="${id}"]`);
-  row?.scrollIntoView?.({ block: "nearest" });
+  row?.scrollIntoView?.({ block: 'nearest' });
   row?.focus();
 }
 function remove(id: number) {
   deleteRequest(id);
   updateSelection(
     selectedRequestIds.value.filter((selectedId) => selectedId !== id),
-    selectionAnchorId.value === id ? null : selectionAnchorId.value,
+    selectionAnchorId.value === id ? null : selectionAnchorId.value
   );
 }
 function isEditable(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
     (target.isContentEditable ||
-      ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
   );
 }
 function onKey(event: KeyboardEvent) {
@@ -615,7 +615,7 @@ function onKey(event: KeyboardEvent) {
     applicationSettingsOpen.value ||
     cookiesOpen.value ||
     document.querySelector(
-      '[data-surface="context-menu"], [data-surface="command-center"]',
+      '[data-surface="context-menu"], [data-surface="command-center"]'
     )
   )
     return;
@@ -626,30 +626,30 @@ function onKey(event: KeyboardEvent) {
     event.altKey
   )
     return;
-  if (event.ctrlKey && event.key === "Tab") {
+  if (event.ctrlKey && event.key === 'Tab') {
     event.preventDefault();
     cycleTab(event.shiftKey ? -1 : 1);
   } else if (event.metaKey || event.ctrlKey) {
     const key = event.key.toLowerCase();
-    if (key === "t" && event.shiftKey) {
+    if (key === 't' && event.shiftKey) {
       event.preventDefault();
       void reopenTab();
     }
-    if (key === "=" || key === "+") {
+    if (key === '=' || key === '+') {
       event.preventDefault();
       setZoom(stepZoom(preferences.value.zoom, 1));
     }
-    if (key === "-" && !event.shiftKey) {
+    if (key === '-' && !event.shiftKey) {
       event.preventDefault();
       setZoom(stepZoom(preferences.value.zoom, -1));
     }
-    if (key === "0" && !event.shiftKey) {
+    if (key === '0' && !event.shiftKey) {
       event.preventDefault();
       setZoom(1);
     }
     // Text fields keep their own undo.
     if (
-      key === "z" &&
+      key === 'z' &&
       !event.shiftKey &&
       lastDeletion.value &&
       !isEditable(event.target)
@@ -657,46 +657,46 @@ function onKey(event: KeyboardEvent) {
       event.preventDefault();
       undoDeletion();
     }
-    if (key === "t" && !event.shiftKey) {
+    if (key === 't' && !event.shiftKey) {
       event.preventDefault();
       create();
     }
-    if (key === "w" && !event.shiftKey) {
+    if (key === 'w' && !event.shiftKey) {
       event.preventDefault();
       if (activeId.value !== null) void close(activeId.value);
     }
-    if (key === "d" && event.shiftKey) {
+    if (key === 'd' && event.shiftKey) {
       event.preventDefault();
       duplicate();
     }
-    if (key === "," && !event.shiftKey) {
+    if (key === ',' && !event.shiftKey) {
       event.preventDefault();
       openApplicationSettings();
     }
-    if (key === "p") {
+    if (key === 'p') {
       event.preventDefault();
-      void commandCenter.value?.show(event.shiftKey ? COMMAND_PREFIX : "");
+      void commandCenter.value?.show(event.shiftKey ? COMMAND_PREFIX : '');
     }
-    if (event.key === "\\" && !event.shiftKey) {
+    if (event.key === '\\' && !event.shiftKey) {
       event.preventDefault();
       toggleLayout();
     }
   }
 }
-onMounted(() => window.addEventListener("keydown", onKey));
-onUnmounted(() => window.removeEventListener("keydown", onKey));
+onMounted(() => window.addEventListener('keydown', onKey));
+onUnmounted(() => window.removeEventListener('keydown', onKey));
 
 let narrowQuery: MediaQueryList | undefined;
 function updateNarrow(event: MediaQueryListEvent) {
   narrow.value = event.matches;
 }
 onMounted(() => {
-  if (typeof window.matchMedia !== "function") return;
-  narrowQuery = window.matchMedia("(max-width: 760px)");
+  if (typeof window.matchMedia !== 'function') return;
+  narrowQuery = window.matchMedia('(max-width: 760px)');
   narrow.value = narrowQuery.matches;
-  narrowQuery.addEventListener("change", updateNarrow);
+  narrowQuery.addEventListener('change', updateNarrow);
 });
-onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
+onUnmounted(() => narrowQuery?.removeEventListener('change', updateNarrow));
 </script>
 
 <template>
@@ -710,7 +710,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       data-tauri-drag-region
     >
       <div
-        class="flex justify-start pl-2"
+        class="flex justify-start ml-1"
         :class="{ 'pl-18': macOverlay }"
         data-tauri-drag-region
       >
@@ -875,7 +875,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       </HelpTooltip>
       <span>
         {{ sessions.length }}
-        {{ sessions.length === 1 ? "REQUEST" : "REQUESTS" }}
+        {{ sessions.length === 1 ? 'REQUEST' : 'REQUESTS' }}
       </span>
       <span
         v-if="active"

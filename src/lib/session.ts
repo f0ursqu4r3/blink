@@ -21,9 +21,23 @@ export type RequestSession = {
   testResults?: AssertionResult[];
   /** Capture problems from the last send. Not saved. */
   captureErrors?: string[];
+  /** An event stream that is arriving now. Not saved. */
+  stream?: LiveStream;
   /** The request changed since the shown response was sent. Not saved. */
   stale?: boolean;
 };
+export type LiveStream = {
+  status: number;
+  statusText: string;
+  headers: import("./request").Header[];
+  events: import("./sse").SseEvent[];
+  /** The body so far, up to the inspection limit. */
+  text: string;
+  bytes: number;
+  truncated: boolean;
+};
+/** A live stream keeps at most this many events; older ones drop. */
+export const STREAM_EVENT_LIMIT = 5000;
 export type RequestView = {
   requestTab: string;
   responseTab: string;

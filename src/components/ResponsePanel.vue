@@ -45,6 +45,9 @@ import JsonTreeView from "./JsonTreeView.vue";
 import HelpTooltip from "./HelpTooltip.vue";
 import TimingCard from "./TimingCard.vue";
 import HistoryView from "./HistoryView.vue";
+import EventList from "./EventList.vue";
+import { isEventStream, parseSse } from "@/lib/sse";
+import type { LiveStream } from "@/lib/session";
 import type { HistoryEntry } from "@/lib/history";
 import type { AssertionResult } from "@/lib/checks";
 const props = withDefaults(
@@ -62,6 +65,8 @@ const props = withDefaults(
     captureErrors?: string[];
     /** The request has assertions, so the Tests tab shows. */
     hasChecks?: boolean;
+    /** An event stream arriving now. */
+    stream?: LiveStream;
   }>(),
   { timeoutSeconds: 30 },
 );
@@ -110,6 +115,15 @@ const findStatus = computed(() => {
     : "No results";
 });
 const findStep = (direction: 1 | -1) => bodyView.value?.findStep(direction);
+const eventStream = computed(() => {
+  const type = props.response?.headers.find(
+    (header) => header.key.toLowerCase() === "content-type",
+  )?.value;
+  return isEventStream(type);
+});
+const events = computed(() =>
+  eventStream.value && props.response ? parseSse(props.response.body) : [],
+);
 function onSearchKey(event: KeyboardEvent) {
   if (event.key !== "Enter" || filterLines.value) return;
   event.preventDefault();
@@ -220,7 +234,8 @@ watch(
   () => props.response,
   () => {
     // Stay on Tests across sends, so a rerun shows its results.
-    if (tab.value !== "tests" || !showTests.value) tab.value = "body";
+    if (tab.value !== "tests" || !showTests.value)
+      tab.value = eventStream.value ? "events" : "body";
     view.value.responseScroll = 0;
     search.value = "";
     inspectorVisible.value = false;
@@ -422,6 +437,17 @@ function copyHeaderPair() {
                   <span class="ml-1 font-mono text-[0.625rem]">
                     {{ response.headers.length }}
                   </span>
+                </TabsTrigger>
+                <TabsTrigger
+                  v-if="eventStream"
+                  value="events"
+                  class="h-9.5 px-2.5 border-b border-transparent text-xs text-muted-foreground whitespace-nowrap data-[state=active]:text-foreground data-[state=active]:border-b-primary hover:bg-muted hover:text-foreground pointer-coarse:min-h-11"
+                  data-response-events
+                >
+                  Events
+                  <span class="ml-1 font-mono text-[0.625rem]">{{
+                    events.length
+                  }}</span>
                 </TabsTrigger>
                 <TabsTrigger
                   v-if="showTests"
@@ -740,6 +766,12 @@ function copyHeaderPair() {
             Empty response body.
           </p>
         </TabsContent>
+        <TabsContent
+          value="events"
+          class="flex-1 min-h-0 data-[state=active]:flex data-[state=active]:flex-col"
+        >
+          <EventList :events="events" />
+        </TabsContent>
         <TabsContent value="tests" class="flex-1 min-h-0 overflow-auto">
           <div
             class="flex h-8 items-center justify-between border-b border-border px-4 font-mono text-[0.625rem] tracking-[0.1em] text-muted-foreground"
@@ -887,6 +919,40 @@ function copyHeaderPair() {
       <p class="font-mono text-xs leading-[1.8] wrap-anywhere">
         {{ error }}
       </p>
+    </div>
+    <div
+      v-else-if="busy && stream"
+      class="flex min-h-0 flex-1 flex-col"
+      data-live-stream
+    >
+      <div
+        class="flex min-h-11 items-center gap-4 border-b border-border px-4 py-2 font-mono text-[0.6875rem] tabular-nums"
+      >
+        <span
+          class="inline-flex items-center gap-2"
+          :class="stream.status >= 400 ? 'text-destructive' : 'text-success'"
+        >
+          <span
+            class="block h-1.25 w-1.25 bg-current animate-[receive_1s_ease-in-out_infinite_alternate]"
+          />{{ stream.status }} {{ stream.statusText }}
+        </span>
+        <span class="border-l border-border pl-4"
+          >{{ stream.events.length }}
+          {{ stream.events.length === 1 ? "event" : "events" }}</span
+        >
+        <span class="border-l border-border pl-4">{{
+          formatBytes(stream.bytes)
+        }}</span>
+        <span class="ml-auto text-muted-foreground"
+          >STREAMING · {{ (elapsed / 1000).toFixed(1) }} s</span
+        >
+      </div>
+      <EventList :events="stream.events" live />
+      <footer
+        class="min-h-7 px-4 border-t border-border flex items-center font-mono text-[0.5625rem] text-muted-foreground"
+      >
+        Cancel stops the stream and keeps the events.
+      </footer>
     </div>
     <div
       v-else-if="busy"

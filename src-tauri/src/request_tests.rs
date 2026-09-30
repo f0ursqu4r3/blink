@@ -126,7 +126,7 @@ fn grants(root: &tempfile::TempDir) -> FileGrants {
 
 async fn run(request: RequestInput, options: TransportOptions) -> Result<ResponseOutput, String> {
     let (root, store) = store();
-    execute(request, options, &store, &grants(&root), DOWNLOAD_LIMIT, None).await
+    execute(request, options, &store, &grants(&root), DOWNLOAD_LIMIT, None, None).await
 }
 
 #[test]
@@ -371,6 +371,7 @@ async fn truncates_the_preview_and_stores_the_full_body() {
         &grants(&root),
         DOWNLOAD_LIMIT,
         None,
+        None,
     )
     .await
     .unwrap();
@@ -416,7 +417,7 @@ async fn a_character_cut_at_the_preview_limit_stays_text() {
 async fn rejects_a_body_over_the_download_limit_and_keeps_no_file() {
     let base = serve(vec![("200 OK", String::new(), vec![b'x'; 64])]);
     let (root, store) = store();
-    let error = execute(input(base), options(), &store, &grants(&root), 32, None)
+    let error = execute(input(base), options(), &store, &grants(&root), 32, None, None)
         .await
         .unwrap_err();
     assert_eq!(error, "Response exceeds the 1 GiB download limit.");
@@ -463,7 +464,7 @@ async fn cancel_stops_a_running_request() {
     let started = Instant::now();
     let request = in_flight.run(
         "r1".into(),
-        execute(input(url), options(), &store, &grants, DOWNLOAD_LIMIT, None),
+        execute(input(url), options(), &store, &grants, DOWNLOAD_LIMIT, None, None),
     );
     let cancel = async {
         tokio::time::sleep(Duration::from_millis(200)).await;
@@ -494,7 +495,7 @@ async fn sends_a_granted_file_body() {
         body_file: Some(file.to_string_lossy().into_owned()),
         ..input(url)
     };
-    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT, None)
+    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT, None, None)
         .await
         .unwrap();
     assert!(received.recv().unwrap().ends_with("\r\n\r\nfile-bytes"));
@@ -510,7 +511,7 @@ async fn refuses_a_file_that_was_not_picked() {
         body_file: Some(file.to_string_lossy().into_owned()),
         ..input("http://127.0.0.1:9/".into())
     };
-    let error = execute(request, options(), &store, &grants(&root), DOWNLOAD_LIMIT, None)
+    let error = execute(request, options(), &store, &grants(&root), DOWNLOAD_LIMIT, None, None)
         .await
         .unwrap_err();
     assert_eq!(error, "Choose secret.txt again to allow Blink to read it.");
@@ -540,7 +541,7 @@ async fn sends_multipart_text_and_file_parts() {
         ]),
         ..input(url)
     };
-    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT, None)
+    execute(request, options(), &store, &grants, DOWNLOAD_LIMIT, None, None)
         .await
         .unwrap();
     let raw = received.recv().unwrap();
@@ -612,6 +613,7 @@ async fn cookie_jar_sends_stored_cookies_and_saves_them() {
         &grants(&root),
         DOWNLOAD_LIMIT,
         Some(cookies.jar()),
+        None,
     )
     .await
     .unwrap();
@@ -634,6 +636,7 @@ async fn cookie_jar_sends_stored_cookies_and_saves_them() {
         &grants(&root),
         DOWNLOAD_LIMIT,
         Some(reloaded.jar()),
+        None,
     )
     .await
     .unwrap();
@@ -642,4 +645,51 @@ async fn cookie_jar_sends_stored_cookies_and_saves_them() {
     let third = fixture("200 OK", "", String::new(), Duration::ZERO);
     run(input(third.0), options()).await.unwrap();
     assert!(!third.1.recv().unwrap().to_lowercase().contains("cookie:"));
+}
+
+#[tokio::test]
+async fn streams_event_stream_chunks_without_the_total_timeout() {
+    let (url, _received) = fixture(
+        "200 OK",
+        "Content-Type: text/event-stream\r\n",
+        "data: é\n\n".into(),
+        Duration::from_millis(1200),
+    );
+    let (root, store) = store();
+    let messages = std::sync::Mutex::new(Vec::new());
+    let sink = |message: StreamMessage| messages.lock().unwrap().push(message);
+    let result = execute(
+        input(url),
+        TransportOptions {
+            timeout_seconds: 1,
+            connect_timeout_seconds: 1,
+            ..options()
+        },
+        &store,
+        &grants(&root),
+        DOWNLOAD_LIMIT,
+        None,
+        Some(&sink),
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.body, "data: é\n\n");
+    let messages = messages.into_inner().unwrap();
+    assert!(matches!(&messages[0], StreamMessage::Head { status: 200, .. }));
+    let text: String = messages
+        .iter()
+        .filter_map(|message| match message {
+            StreamMessage::Chunk { text } => Some(text.as_str()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(text, "data: é\n\n");
+}
+
+#[test]
+fn stream_decoder_holds_back_a_split_character() {
+    let mut decoder = StreamDecoder::default();
+    let bytes = "aé".as_bytes();
+    assert_eq!(decoder.push(&bytes[..2]), "a");
+    assert_eq!(decoder.push(&bytes[2..]), "é");
 }

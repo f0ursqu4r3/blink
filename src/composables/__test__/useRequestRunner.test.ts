@@ -390,3 +390,45 @@ describe("checks", () => {
     scope.stop();
   });
 });
+
+describe("event streams", () => {
+  it("shows live events and keeps them when canceled", async () => {
+    const session = reactive(createSession());
+    session.draft.url = "https://example.test/sse";
+    vi.mocked(sendRequest).mockImplementationOnce(
+      (_request, _options, controls) =>
+        new Promise((_resolve, reject) => {
+          controls?.onStream?.({
+            kind: "head",
+            status: 200,
+            statusText: "OK",
+            headers: [["content-type", "text/event-stream"]],
+          });
+          controls?.onStream?.({ kind: "chunk", text: "data: 1\n\nda" });
+          controls?.onStream?.({ kind: "chunk", text: "ta: 2\n\n" });
+          controls?.signal?.addEventListener("abort", () =>
+            reject(new Error("Request canceled.")),
+          );
+        }),
+    );
+    const scope = effectScope();
+    const runner = scope.run(() => useRequestRunner(session))!;
+    const sending = runner.send();
+    await nextTick();
+    expect(session.stream?.events.map((event) => event.data)).toEqual([
+      "1",
+      "2",
+    ]);
+    runner.cancel();
+    await sending;
+    expect(session.error).toBe("");
+    expect(session.stream).toBeUndefined();
+    expect(session.response).toMatchObject({
+      status: 200,
+      body: "data: 1\n\ndata: 2\n\n",
+      sizeBytes: 18,
+    });
+    expect(session.history?.[0].status).toBe(200);
+    scope.stop();
+  });
+});

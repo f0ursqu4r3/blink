@@ -73,6 +73,45 @@ struct ResponseOutput {
     timing: Timing,
 }
 
+/// Sent to the webview while an event stream arrives.
+#[derive(Debug, Clone, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum StreamMessage {
+    Head {
+        status: u16,
+        #[serde(rename = "statusText")]
+        status_text: String,
+        headers: Vec<(String, String)>,
+    },
+    Chunk {
+        text: String,
+    },
+}
+
+/// Receives stream messages. Tests pass a closure; the app sends to a channel.
+type StreamSink<'a> = Option<&'a (dyn Fn(StreamMessage) + Send + Sync)>;
+
+/// UTF-8 decoding across chunk boundaries: holds back a character that a
+/// chunk cut in two.
+#[derive(Default)]
+struct StreamDecoder(Vec<u8>);
+
+impl StreamDecoder {
+    fn push(&mut self, bytes: &[u8]) -> String {
+        self.0.extend_from_slice(bytes);
+        let valid = match std::str::from_utf8(&self.0) {
+            Ok(_) => self.0.len(),
+            Err(error) if error.error_len().is_none() => error.valid_up_to(),
+            // Invalid bytes: pass them on as replacement characters.
+            Err(_) => self.0.len(),
+        };
+        let rest = self.0.split_off(valid);
+        let text = String::from_utf8_lossy(&self.0).into_owned();
+        self.0 = rest;
+        text
+    }
+}
+
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct TransportOptions {
@@ -155,8 +194,9 @@ fn build_client(
     } else {
         Policy::none()
     };
+    // The total timeout is applied around the send and the body read, so an
+    // event stream can stay open after its headers arrive.
     let mut builder = Client::builder()
-        .timeout(Duration::from_secs(options.timeout_seconds))
         .connect_timeout(Duration::from_secs(options.connect_timeout_seconds))
         .redirect(policy)
         .dns_resolver(Arc::new(TimedResolver(phases.clone())))
@@ -217,12 +257,24 @@ async fn send_request(
     grants: tauri::State<'_, FileGrants>,
     in_flight: tauri::State<'_, InFlight>,
     cookies: tauri::State<'_, cookies::Cookies>,
+    on_stream: tauri::ipc::Channel<StreamMessage>,
 ) -> Result<ResponseOutput, String> {
     let jar = options.store_cookies.then(|| cookies.jar());
+    let sink = move |message: StreamMessage| {
+        let _ = on_stream.send(message);
+    };
     let result = in_flight
         .run(
             request_id,
-            execute(request, options, &store, &grants, DOWNLOAD_LIMIT, jar.clone()),
+            execute(
+                request,
+                options,
+                &store,
+                &grants,
+                DOWNLOAD_LIMIT,
+                jar.clone(),
+                Some(&sink),
+            ),
         )
         .await;
     if jar.is_some() {
@@ -264,6 +316,7 @@ async fn execute(
     grants: &FileGrants,
     download_limit: u64,
     jar: Option<Arc<CookieStoreMutex>>,
+    on_stream: StreamSink<'_>,
 ) -> Result<ResponseOutput, String> {
     options.validate()?;
     request.url = resolve_environment_references(&request.url)?;
@@ -327,16 +380,23 @@ async fn execute(
     }
 
     let started_at = Instant::now();
-    let mut response = builder
-        .send()
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(options.timeout_seconds);
+    let timed_out = || {
+        format!(
+            "Request timed out ({} s connection / {} s total limit).",
+            options.connect_timeout_seconds, options.timeout_seconds
+        )
+    };
+    let mut response = tokio::time::timeout_at(deadline, builder.send())
         .await
+        .map_err(|_| timed_out())?
         .map_err(|error| network_error(error, &options))?;
     let headers_at = Instant::now();
     // The policy has run for every hop once `send` returns.
     let redirect_count = redirects.load(Ordering::Relaxed);
     let final_url = (redirect_count > 0).then(|| response.url().to_string());
     let status = response.status();
-    let headers = response
+    let headers: Vec<HeaderInput> = response
         .headers()
         .iter()
         .map(|(key, value)| HeaderInput {
@@ -344,15 +404,44 @@ async fn execute(
             value: value.to_str().unwrap_or("[binary value]").to_string(),
         })
         .collect();
+    let stream = on_stream.filter(|_| {
+        response
+            .headers()
+            .get(reqwest::header::CONTENT_TYPE)
+            .and_then(|value| value.to_str().ok())
+            .is_some_and(|value| value.trim().to_ascii_lowercase().starts_with("text/event-stream"))
+    });
+    if let Some(sink) = stream {
+        sink(StreamMessage::Head {
+            status: status.as_u16(),
+            status_text: status.canonical_reason().unwrap_or("Unknown").to_string(),
+            headers: headers
+                .iter()
+                .map(|header| (header.key.clone(), header.value.clone()))
+                .collect(),
+        });
+    }
+    let mut decoder = StreamDecoder::default();
     let preview_limit = options.inspection_limit_mib * MIB;
     let mut file = store.create()?;
     let mut size: u64 = 0;
     let mut preview = Vec::new();
-    while let Some(chunk) = response
-        .chunk()
-        .await
-        .map_err(|error| network_error(error, &options))?
-    {
+    loop {
+        let next = if stream.is_some() {
+            response.chunk().await
+        } else {
+            tokio::time::timeout_at(deadline, response.chunk())
+                .await
+                .map_err(|_| timed_out())?
+        };
+        let Some(chunk) = next.map_err(|error| network_error(error, &options))? else {
+            break;
+        };
+        if let Some(sink) = stream {
+            sink(StreamMessage::Chunk {
+                text: decoder.push(&chunk),
+            });
+        }
         size += chunk.len() as u64;
         if size > download_limit {
             // Dropping `file` deletes it.
