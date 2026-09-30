@@ -6,9 +6,13 @@
 //! methods in `runner.rs`) and re-render by observing the store. Every change
 //! schedules a save, as the Vue watcher did.
 
+use std::collections::{HashMap, HashSet};
+
 use blink_core::engine::Engine;
 use blink_core::workspace_state::{UNDO_WINDOW, Workspace};
 use gpui_kit::*;
+
+use crate::runner::InFlight;
 
 /// A semantic change a view reacts to beyond re-rendering.
 #[derive(Debug, Clone)]
@@ -47,6 +51,12 @@ pub struct Store {
     pub import_details: String,
     pub import_failed: bool,
     import_timer: Option<Task<()>>,
+    /// Requests waiting for the protected-environment confirmation.
+    pub(crate) confirming: HashSet<u64>,
+    /// Sends in flight, by request id. See `runner.rs`.
+    pub(crate) in_flight: HashMap<u64, InFlight>,
+    /// Live WebSocket connections: engine connection id and event task.
+    pub(crate) sockets: HashMap<u64, (String, Task<()>)>,
 }
 
 impl EventEmitter<StoreEvent> for Store {}
@@ -72,6 +82,9 @@ impl Store {
             import_details: String::new(),
             import_failed: false,
             import_timer: None,
+            confirming: HashSet::new(),
+            in_flight: HashMap::new(),
+            sockets: HashMap::new(),
         };
         store.restore(cx);
         store

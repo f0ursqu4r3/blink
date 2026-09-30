@@ -651,6 +651,7 @@ name = "blink"
 version = "0.1.0"
 dependencies = [
  "blink-core",
+ "futures",
  "gpui-kit",
 ]
 
