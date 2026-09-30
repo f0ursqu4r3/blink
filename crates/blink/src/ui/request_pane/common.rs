@@ -53,54 +53,110 @@ pub fn session_context(store: &Store, id: u64) -> Option<(RequestSession, Resolv
     Some((session.clone(), ctx))
 }
 
-/// A compact select: the current label and a chevron, opening a checked
-/// list. Stands in for the Vue native `<select>`.
+/// How a select stand-in sits in its layout.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum SelectLook {
+    /// A bordered native select as wide as its widest option.
+    Native,
+    /// A bordered native select that fills its container.
+    Fill,
+    /// A borderless select that fills a table cell.
+    Cell,
+}
+
+/// The width of a native `<select>` for `options`: the widest label in
+/// 12 px monospace, its padding, and the chevron.
+fn native_width<T>(options: &[(T, SharedString)]) -> f32 {
+    let chars = options
+        .iter()
+        .map(|(_, label)| label.chars().count())
+        .max()
+        .unwrap_or(0);
+    chars as f32 * 7.2 + 46.
+}
+
+/// A native-looking select (`h-7 px-2 font-mono text-xs`, bordered): the
+/// current label and a chevron, opening a checked list. Stands in for the
+/// Vue native `<select>`, as wide as its widest option.
 pub fn select_button<T: Copy + PartialEq + 'static>(
     id: impl Into<ElementId>,
     options: Vec<(T, SharedString)>,
     current: T,
     disabled: bool,
     on_select: impl Fn(T, &mut Window, &mut App) + 'static,
+    cx: &App,
 ) -> impl IntoElement {
-    select(id, options, current, disabled, on_select, false)
+    select(id, options, current, disabled, on_select, cx, SelectLook::Native)
 }
 
-/// A select that fills a table cell without a border.
+/// A native-looking select that fills its container (a grid column).
+pub fn fill_select<T: Copy + PartialEq + 'static>(
+    id: impl Into<ElementId>,
+    options: Vec<(T, SharedString)>,
+    current: T,
+    disabled: bool,
+    on_select: impl Fn(T, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> impl IntoElement {
+    select(id, options, current, disabled, on_select, cx, SelectLook::Fill)
+}
+
+/// A select that fills a table cell without a border
+/// (`h-8 px-1.5 text-xs`, sans).
 pub fn cell_select<T: Copy + PartialEq + 'static>(
     id: impl Into<ElementId>,
     options: Vec<(T, SharedString)>,
     current: T,
     disabled: bool,
     on_select: impl Fn(T, &mut Window, &mut App) + 'static,
+    cx: &App,
 ) -> impl IntoElement {
-    select(id, options, current, disabled, on_select, true)
+    select(id, options, current, disabled, on_select, cx, SelectLook::Cell)
 }
 
-/// A compact select: the current label and a chevron, opening a checked
-/// list. Stands in for the Vue native `<select>`.
 fn select<T: Copy + PartialEq + 'static>(
     id: impl Into<ElementId>,
     options: Vec<(T, SharedString)>,
     current: T,
     disabled: bool,
     on_select: impl Fn(T, &mut Window, &mut App) + 'static,
-    borderless: bool,
+    cx: &App,
+    look: SelectLook,
 ) -> impl IntoElement {
+    let colors = theme::colors(cx);
     let label = options
         .iter()
         .find(|(value, _)| *value == current)
         .map(|(_, label)| label.clone())
         .unwrap_or_default();
+    let width = native_width(&options);
     let on_select = Rc::new(on_select);
-    Button::new(id)
-        .when(borderless, |this| this.ghost())
-        .when(!borderless, |this| this.outline())
-        .small()
+    let button = Button::new(id)
+        .ghost()
+        .xsmall()
         .disabled(disabled)
-        .font_family(theme::MONO)
-        .text_size(px(12.))
-        .child(div().text_size(px(12.)).child(label))
-        .child(Icon::new(IconName::ChevronDown).size(px(12.)))
+        .rounded(px(4.))
+        .map(|this| match look {
+            SelectLook::Cell => this
+                .w_full()
+                .h(css(32.))
+                .px(css(6.))
+                .rounded(px(0.))
+                .text_color(colors.foreground)
+                .font_family(theme::SANS),
+            SelectLook::Native | SelectLook::Fill => this
+                .h(css(28.))
+                .px(css(8.))
+                .border_1()
+                .border_color(colors.input)
+                .bg(colors.muted)
+                .text_color(colors.foreground)
+                .font_family(theme::MONO)
+                .when(look == SelectLook::Native, |this| this.w(css(width)))
+                .when(look == SelectLook::Fill, |this| this.w_full()),
+        })
+        .child(div().flex_1().min_w_0().text_left().overflow_hidden().child(label))
+        .child(Icon::new(IconName::ChevronDown).size(css(14.)))
         .dropdown_menu(move |menu, _, _| {
             options.iter().fold(menu, |menu, (value, label)| {
                 let on_select = on_select.clone();
@@ -111,7 +167,18 @@ fn select<T: Copy + PartialEq + 'static>(
                         .on_click(move |_, window, cx| on_select(value, window, cx)),
                 )
             })
-        })
+        });
+    // A column parent stretches the popover trigger, so the button can fill it.
+    div()
+        .flex()
+        .flex_col()
+        .when(look != SelectLook::Native, |this| this.flex_1().min_w_0())
+        .child(button)
+}
+
+/// Tailwind sizes are rem based: they scale with the app zoom.
+pub fn css(value: f32) -> Rems {
+    rems(value / 16.)
 }
 
 /// Underlined help text with a tooltip. `HelpTooltip.vue`.

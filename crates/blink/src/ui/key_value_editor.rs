@@ -11,7 +11,6 @@ use blink_core::model::Pair;
 use blink_core::request::{file_name, pair};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
@@ -467,14 +466,14 @@ impl KeyValueEditor {
             .when(toggles, |this| {
                 this.child(
                     cell().w(px(SIDE_COLUMN)).flex_none().justify_center().child(
-                        Checkbox::new(SharedString::from(format!("{prefix}-enabled-{id}")))
-                            .checked(row.enabled)
-                            .disabled(disabled)
-                            .xsmall()
-                            .tooltip(format!("Enable {label} row {}", index + 1))
-                            .on_click(cx.listener(move |this, _, window, cx| {
-                                this.toggle_row(id, window, cx)
-                            })),
+                        check_box(
+                            SharedString::from(format!("{prefix}-enabled-{id}")),
+                            row.enabled,
+                            disabled,
+                            format!("Enable {label} row {}", index + 1),
+                            cx.listener(move |this, _, window, cx| this.toggle_row(id, window, cx)),
+                            cx,
+                        ),
                     ),
                 )
             })
@@ -601,6 +600,74 @@ impl KeyValueEditor {
     }
 }
 
+/// Tailwind sizes are rem based: they scale with the app zoom.
+fn css(value: f32) -> Rems {
+    rems(value / 16.)
+}
+
+/// A native checkbox (`accent-primary w-3 h-3`): a 12 px square with a
+/// small radius, filled with the primary color and a dark check mark.
+pub fn check_box(
+    id: impl Into<ElementId>,
+    checked: bool,
+    disabled: bool,
+    tooltip: impl Into<SharedString>,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &App,
+) -> Stateful<Div> {
+    let colors = theme::colors(cx);
+    let tooltip: SharedString = tooltip.into();
+    div()
+        .id(id)
+        .size(css(12.))
+        .flex_none()
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(2.5))
+        .border_1()
+        .when(checked, |this| {
+            this.bg(colors.primary)
+                .border_color(colors.primary)
+                .child(
+                    Icon::new(IconName::Check)
+                        .size(css(11.))
+                        .text_color(colors.primary_foreground),
+                )
+        })
+        .when(!checked, |this| this.bg(colors.muted).border_color(colors.muted_foreground.opacity(0.7)))
+        .when(disabled, |this| this.opacity(0.5))
+        .tooltip(move |window, cx| {
+            gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
+        })
+        .when(!disabled, |this| {
+            this.on_mouse_down(MouseButton::Left, |_, window, _| window.prevent_default())
+                .on_click(on_click)
+        })
+}
+
+/// A Vue `variant="ghost"` text button (`h-7 px-2.5 font-mono text-xs`,
+/// muted until hovered) with a 13 px icon.
+pub fn ghost_button(
+    id: impl Into<ElementId>,
+    icon: IconName,
+    label: impl Into<SharedString>,
+    cx: &App,
+) -> Button {
+    let colors = theme::colors(cx);
+    Button::new(id)
+        .ghost()
+        .xsmall()
+        .h(css(28.))
+        .px(css(10.))
+        .rounded(px(4.))
+        .font_family(theme::MONO)
+        .font_weight(FontWeight::MEDIUM)
+        .text_color(colors.muted_foreground)
+        .icon(Icon::new(icon).size(css(13.)))
+        .child(div().ml(css(2.)).child(label.into()))
+}
+
 fn placeholder(text: &SharedString, fallback: &'static str) -> SharedString {
     if text.is_empty() {
         fallback.into()
@@ -643,21 +710,13 @@ impl Render for KeyValueEditor {
                     .gap_1()
                     .m_2()
                     .child(
-                        Button::new(SharedString::from(format!("{prefix}-add-row")))
-                            .ghost()
-                            .small()
-                            .icon(Icon::new(IconName::Plus).size(px(13.)))
-                            .label("Add row")
+                        ghost_button(SharedString::from(format!("{prefix}-add-row")), IconName::Plus, "Add row", cx)
                             .disabled(self.disabled)
                             .on_click(cx.listener(|this, _, window, cx| this.add_row(window, cx))),
                     )
                     .when(self.options.allow_files, |this| {
                         this.child(
-                            Button::new(SharedString::from(format!("{prefix}-add-file")))
-                                .ghost()
-                                .small()
-                                .icon(Icon::new(IconName::FileUp).size(px(13.)))
-                                .label("Add file")
+                            ghost_button(SharedString::from(format!("{prefix}-add-file")), IconName::FileUp, "Add file", cx)
                                 .disabled(self.disabled)
                                 .on_click(cx.listener(|this, _, _, cx| this.pick_file(0, cx))),
                         )

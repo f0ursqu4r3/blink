@@ -650,9 +650,12 @@ dependencies = [
 name = "blink"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "blink-core",
  "futures",
  "gpui-kit",
+ "lsp-types",
+ "serde_json",
 ]
 
 [[package]]

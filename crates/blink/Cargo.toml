@@ -7,6 +7,7 @@ license.workspace = true
 edition.workspace = true
 
 [dependencies]
+anyhow = "1"
 blink-core = { path = "../blink-core" }
 futures = "0.3"
 gpui-kit = { version = "0.7.0", features = [
@@ -18,3 +19,5 @@ gpui-kit = { version = "0.7.0", features = [
     "tree-sitter-python",
     "tree-sitter-rust",
 ] }
+lsp-types = { version = "0.97.0", features = ["proposed"] }
+serde_json = "1"

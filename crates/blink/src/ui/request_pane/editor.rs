@@ -1,6 +1,7 @@
 //! The request side: tabs for query, headers, body, auth, and tests.
 //! Port of `RequestEditor.vue`.
 
+use std::rc::Rc;
 use std::time::Duration;
 
 use blink_core::engine::PickedFile;
@@ -29,8 +30,9 @@ use crate::store::{Store, StoreEvent};
 use crate::theme;
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 use crate::ui::request_pane::checks::ChecksEditor;
+use crate::ui::request_pane::code_language::{BodyLanguage, apply_highlight_theme, register_graphql};
 use crate::ui::request_pane::common::{
-    edit_draft, help_link, replace_draft, select_button, session_context,
+    edit_draft, fill_select, help_link, replace_draft, select_button, session_context,
 };
 use crate::ui::token_input::{TokenInput, TokenInputEvent};
 
@@ -200,6 +202,10 @@ pub struct RequestEditor {
     form: Entity<KeyValueEditor>,
     body: Entity<EditorState>,
     body_language: &'static str,
+    /// Tokens and schema for the body editor's providers.
+    body_features: Rc<BodyLanguage>,
+    /// Tokens for the variables editor's providers.
+    variables_features: Rc<BodyLanguage>,
     text_body: Entity<TextareaState>,
     variables: Entity<EditorState>,
     checks: Entity<ChecksEditor>,
@@ -254,20 +260,28 @@ impl RequestEditor {
             );
             labeled(editor, "Form", cx)
         });
+        register_graphql();
+        apply_highlight_theme(cx);
+        let body_features = BodyLanguage::new();
+        let variables_features = BodyLanguage::new();
         let body_language = body_language(draft.body_mode);
         let body = cx.new(|cx| {
-            EditorState::new(window, cx)
+            with_features(EditorState::new(window, cx), &body_features)
                 .language(body_language)
                 .line_number(false)
                 .folding(false)
+                .soft_wrap(false)
+                .indent_guides(false)
                 .placeholder(body_placeholder(draft.body_mode))
         });
         let text_body = cx.new(|cx| TextareaState::new(window, cx).placeholder("Request body"));
         let variables = cx.new(|cx| {
-            EditorState::new(window, cx)
+            with_features(EditorState::new(window, cx), &variables_features)
                 .language("json")
                 .line_number(false)
                 .folding(false)
+                .soft_wrap(false)
+                .indent_guides(false)
                 .placeholder("{\n  \"id\": \"1\"\n}")
         });
         let checks = cx.new(|cx| ChecksEditor::new(store.clone(), session_id, window, cx));
@@ -281,6 +295,8 @@ impl RequestEditor {
 
         let id = session_id;
         let mut subscriptions = vec![
+            // A theme change rebuilds the GPUI Kit theme; keep the editor colors.
+            cx.observe_global::<gpui_kit::component::Theme>(|_, cx| apply_highlight_theme(cx)),
             cx.observe_in(&store, window, |this, _, _, cx| {
                 this.refresh_context(cx);
                 cx.notify();
@@ -377,6 +393,8 @@ impl RequestEditor {
             form,
             body,
             body_language,
+            body_features,
+            variables_features,
             text_body,
             variables,
             checks,
@@ -487,7 +505,15 @@ impl RequestEditor {
             table.update(cx, |table, cx| table.set_context(tokens, cx));
         }
         self.username
-            .update(cx, |input, cx| input.set_context(tokens, cx));
+            .update(cx, |input, cx| input.set_context(tokens.clone(), cx));
+        for (features, editor) in [
+            (&self.body_features, &self.body),
+            (&self.variables_features, &self.variables),
+        ] {
+            if features.set_tokens(tokens.clone()) {
+                editor.update(cx, |editor, cx| editor.refresh(cx));
+            }
+        }
     }
 
     /// Form rows start with one blank row, like query and header rows.
@@ -792,6 +818,8 @@ impl RequestEditor {
             self.schema_error.clear();
         }
         let cached = key.as_deref().and_then(get_cached_schema);
+        self.body_features
+            .set_schema(cached.as_ref().map(|schema| schema.schema.clone()));
         let schema_status = cached
             .as_ref()
             .map(|schema| format!("Schema loaded · {}", format_schema_age(schema.fetched_at, now_ms())));
@@ -820,6 +848,7 @@ impl RequestEditor {
                         .update(cx, |this, cx| this.set_body_mode(mode, window, cx))
                         .ok();
                 },
+                cx,
             ))
             .child(
                 div()
@@ -1143,7 +1172,7 @@ impl RequestEditor {
             .p_4()
             .text_size(px(12.))
             .child(
-                row().child(label("Authorization")).child(select_button(
+                row().child(label("Authorization")).child(fill_select(
                     "auth-type",
                     AUTH_CHOICES.iter().map(|(choice, label)| (*choice, SharedString::from(*label))).collect(),
                     choice,
@@ -1153,17 +1182,24 @@ impl RequestEditor {
                             .update(cx, |this, cx| this.set_auth(choice, window, cx))
                             .ok();
                     },
+                    cx,
                 )),
             )
             .when(choice == AuthChoice::Inherit, |this| {
                 this.child(
-                    row()
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap_3()
                         .child(small("Effective".into()).w(px(100.)).flex_none())
                         .child(small(format!("Effective: {}", auth_type_id(effective))).font_family(theme::MONO)),
                 )
                 .when_some(source, |this, source| {
                     this.child(
-                        row()
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap_3()
                             .child(small("Source".into()).w(px(100.)).flex_none())
                             .child(small(source).font_family(theme::MONO)),
                     )
@@ -1241,6 +1277,15 @@ impl RequestEditor {
     }
 }
 
+/// Install the token and schema providers on a body editor.
+fn with_features(mut state: EditorState, features: &Rc<BodyLanguage>) -> EditorState {
+    let lsp = state.lsp_mut();
+    lsp.completion_provider = Some(features.clone());
+    lsp.semantic_tokens_provider = Some(features.clone());
+    lsp.hover_provider = Some(features.clone());
+    state
+}
+
 /// A body code editor that leaves `Cmd/Ctrl+Enter` to the app.
 fn code_editor(state: &Entity<EditorState>, min_height: Pixels) -> impl IntoElement {
     div()
@@ -1249,8 +1294,11 @@ fn code_editor(state: &Entity<EditorState>, min_height: Pixels) -> impl IntoElem
         .flex_1()
         .min_h(min_height)
         .size_full()
-        .px_4()
-        .py_3()
+        // CodeMirror: 16 px around the text; the editor adds 6 px left and
+        // 8 px above and below.
+        .pl(px(10.))
+        .pr(px(6.))
+        .py(px(8.))
         .font_family(theme::MONO)
         .text_size(px(13.))
         .capture_action(|action: &Enter, window, cx| {
@@ -1265,7 +1313,8 @@ fn code_editor(state: &Entity<EditorState>, min_height: Pixels) -> impl IntoElem
                 .bordered(false)
                 .h_full()
                 .font_family(theme::MONO)
-                .text_size(px(13.)),
+                .text_size(px(13.))
+                .line_height(relative(1.75)),
         )
 }
 

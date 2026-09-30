@@ -3,6 +3,7 @@
 //! `TokenInput.vue`, `ChecksEditor.vue`, and `CodeEditor.vue`.
 
 mod checks;
+mod code_language;
 mod code_panel;
 mod common;
 mod editor;
@@ -29,7 +30,7 @@ use crate::ui::response_panel::ResponsePanel;
 use crate::ui::token_input::{TokenInput, TokenInputEvent, TokenPaste};
 use crate::ui::websocket_panel::WebSocketPanel;
 use code_panel::{CloseCode, CodePanel};
-use common::{edit_draft, replace_draft, session_context};
+use common::{css, edit_draft, replace_draft, session_context};
 use editor::RequestEditor;
 
 /// The shortcut modifier as the Vue app shows it.
@@ -327,9 +328,9 @@ impl RequestPane {
         let store = self.store.clone();
         let kbd = |text: String| {
             div()
-                .ml(px(10.))
+                .ml(css(10.))
                 .opacity(0.65)
-                .text_size(px(10.))
+                .text_size(css(10.))
                 .child(text)
         };
         let method_field = if websocket {
@@ -375,40 +376,54 @@ impl RequestPane {
                 })
                 .into_any_element()
         };
+        // Vue buttons: `h-8.5 px-3 font-mono text-xs font-medium`, bordered.
+        let bar_button = |button: Button, border: Hsla| {
+            button
+                .xsmall()
+                .h(css(34.))
+                .px(css(12.))
+                .rounded(px(4.))
+                .border_1()
+                .border_color(border)
+                .font_family(theme::MONO)
+                .font_weight(FontWeight::MEDIUM)
+        };
+        let label = |text: &'static str| div().ml(css(2.)).child(text);
         let primary_button = if websocket {
-            Button::new("connect")
-                .when(socket_live, |this| this.secondary())
-                .when(!socket_live, |this| this.primary())
-                .h(px(34.))
-                .px_3()
-                .disabled(!socket_live && prepared.socket.is_err())
-                .icon(Icon::new(if socket_live { IconName::Unplug } else { IconName::Plug }).size(px(14.)))
-                .child(if socket_live { "Disconnect" } else { "Connect" })
-                .child(kbd(format!("{MOD} ↵")))
-                .on_click(cx.listener(|this, _, window, cx| this.primary(window, cx)))
+            bar_button(
+                Button::new("connect")
+                    .when(socket_live, |this| this.secondary())
+                    .when(!socket_live, |this| this.primary()),
+                if socket_live { colors.input } else { colors.primary },
+            )
+            .disabled(!socket_live && prepared.socket.is_err())
+            .icon(Icon::new(if socket_live { IconName::Unplug } else { IconName::Plug }).size(css(14.)))
+            .child(label(if socket_live { "Disconnect" } else { "Connect" }))
+            .child(kbd(format!("{MOD} ↵")))
+            .on_click(cx.listener(|this, _, window, cx| this.primary(window, cx)))
         } else if busy {
-            Button::new("cancel")
-                .secondary()
-                .h(px(34.))
-                .px_3()
-                .icon(Icon::new(IconName::Square).size(px(12.)))
-                .child("Cancel")
+            bar_button(Button::new("cancel").secondary(), colors.input)
+                .icon(Icon::new(IconName::Square).size(css(12.)))
+                .child(label("Cancel"))
                 .child(kbd(format!("{MOD} .")))
                 .on_click(cx.listener(|this, _, _, cx| {
                     let id = this.session_id;
                     this.store.update(cx, |store, cx| store.cancel(id, cx));
                 }))
         } else {
-            Button::new("send")
-                .primary()
-                .h(px(34.))
-                .px_3()
+            bar_button(Button::new("send").primary(), colors.primary)
                 .disabled(!can_build)
-                .icon(Icon::new(IconName::ArrowUpRight).size(px(15.)))
-                .child("Send")
+                .icon(Icon::new(IconName::ArrowUpRight).size(css(15.)))
+                .child(label("Send"))
                 .child(kbd(format!("{MOD} ↵")))
                 .on_click(cx.listener(|this, _, window, cx| this.primary(window, cx)))
         };
+        let code_button = bar_button(Button::new("code").secondary(), colors.input)
+            .disabled(!can_build || websocket)
+            .icon(Icon::new(IconName::SquareTerminal).size(css(14.)))
+            .child(label("Code"))
+            .tooltip("Show the request as code")
+            .on_click(cx.listener(|this, _, window, cx| this.toggle_code(window, cx)));
         div()
             .id("request-bar")
             .flex()
@@ -444,16 +459,7 @@ impl RequestPane {
                             .child(self.url.clone()),
                     ),
             )
-            .child(
-                Button::new("code")
-                    .secondary()
-                    .h(px(34.))
-                    .disabled(!can_build || websocket)
-                    .icon(Icon::new(IconName::SquareTerminal).size(px(14.)))
-                    .label("Code")
-                    .tooltip("Show the request as code")
-                    .on_click(cx.listener(|this, _, window, cx| this.toggle_code(window, cx))),
-            )
+            .child(code_button)
             .child(primary_button)
             .context_menu(move |menu, window, cx| {
                 let copy_url = url_text.clone();

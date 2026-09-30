@@ -6,7 +6,6 @@ use blink_core::checks::{create_assertion, create_capture, is_capture_name};
 use blink_core::model::{Assertion, Capture, CheckOperator, CheckSource};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::{Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -14,6 +13,7 @@ use gpui_kit::*;
 
 use crate::store::Store;
 use crate::theme;
+use crate::ui::key_value_editor::{check_box, ghost_button};
 use crate::ui::request_pane::common::{cell_select, edit_draft, help_link};
 
 const ROW_HEIGHT: f32 = 34.;
@@ -206,6 +206,7 @@ impl ChecksEditor {
                                     })
                                     .ok();
                             },
+                            cx,
                         )),
                     )
                     .child(cell(cx).flex_1().min_w_0().when(row.source.takes_path(), |this| {
@@ -227,6 +228,7 @@ impl ChecksEditor {
                                     })
                                     .ok();
                             },
+                            cx,
                         )),
                     )
                     .child(cell(cx).flex_1().min_w_0().when(!row.operator.is_unary(), |this| {
@@ -268,11 +270,7 @@ impl ChecksEditor {
             .children(rows)
             .child(
                 div().flex().m(px(6.)).child(
-                    Button::new("add-assertion")
-                        .ghost()
-                        .small()
-                        .icon(Icon::new(IconName::Plus).size(px(13.)))
-                        .label("Add assertion")
+                    ghost_button("add-assertion", IconName::Plus, "Add assertion", cx)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.assertions.push(create_assertion(
                                 CheckSource::Status,
@@ -341,6 +339,7 @@ impl ChecksEditor {
                                     })
                                     .ok();
                             },
+                            cx,
                         )),
                     )
                     .child(cell(cx).flex_1().min_w_0().when(row.source.takes_path(), |this| {
@@ -382,11 +381,7 @@ impl ChecksEditor {
             .children(rows)
             .child(
                 div().flex().m(px(6.)).child(
-                    Button::new("add-capture")
-                        .ghost()
-                        .small()
-                        .icon(Icon::new(IconName::Plus).size(px(13.)))
-                        .label("Add capture")
+                    ghost_button("add-capture", IconName::Plus, "Add capture", cx)
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.captures.push(create_capture("", CheckSource::Json, "."));
                             this.sync_inputs(window, cx);
@@ -480,13 +475,7 @@ fn enabled_cell(
         .justify_center()
         .border_b_1()
         .border_color(colors.border)
-        .child(
-            Checkbox::new(id)
-                .checked(checked)
-                .xsmall()
-                .tooltip(label)
-                .on_click(on_click),
-        )
+        .child(check_box(id, checked, false, label, move |_, window, cx| on_click(&!checked, window, cx), cx))
 }
 
 fn remove_cell(
