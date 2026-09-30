@@ -75,13 +75,13 @@ test("compose, send, inspect and close through real controls", async ({
   await expect(
     page.getByRole("table", { name: "Response headers" }),
   ).toContainText("local-fixture");
-  await page.getByRole("button", { name: "cURL", exact: true }).click();
-  await expect(page.getByRole("region", { name: "cURL export" })).toContainText(
-    "INCLUDES CREDENTIALS",
-  );
-  await expect(page.getByRole("region", { name: "cURL export" })).toContainText(
-    "--request POST",
-  );
+  await page.getByRole("button", { name: "Code", exact: true }).click();
+  await expect(
+    page.getByRole("region", { name: "Request as code" }),
+  ).toContainText("INCLUDES CREDENTIALS");
+  await expect(
+    page.getByRole("region", { name: "Request as code" }),
+  ).toContainText("--request POST");
   await page.getByRole("button", { name: "New request" }).click();
   const activePane = page.locator('[data-request-pane][data-active="true"]');
   await expect(

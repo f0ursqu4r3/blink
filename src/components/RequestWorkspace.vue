@@ -616,9 +616,9 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           >
             <button
               type="button"
-              class="mt-1 text-[0.625rem] text-warning underline decoration-dotted underline-offset-3"
+              class="mt-1 font-mono text-[0.5625rem] tracking-[0.08em] text-warning underline decoration-dotted underline-offset-3"
             >
-              Includes credentials
+              INCLUDES CREDENTIALS
             </button>
           </HelpTooltip>
           <p

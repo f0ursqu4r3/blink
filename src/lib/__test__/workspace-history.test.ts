@@ -21,8 +21,9 @@ describe("workspace history", () => {
   it("round-trips request history", () => {
     const session = createSession();
     session.history = [entry(2), entry(1)];
-    const [restored] = decodeWorkspace(encodeWorkspace([session], session.id))
-      .sessions;
+    const [restored] = decodeWorkspace(
+      encodeWorkspace([session], session.id),
+    ).sessions;
     expect(restored.history).toEqual(session.history);
   });
   it("omits empty history", () => {
