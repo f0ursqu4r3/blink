@@ -36,6 +36,7 @@ import { nativeTransport } from "@/lib/transport";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
 import { createSession, displayMethod } from "@/lib/session";
 import { sessionCurl } from "@/lib/session-curl";
+import { groupSubtree } from "@/lib/groups";
 import { useClipboard } from "@/composables/useClipboard";
 import type { AuthorizationConfig } from "@/lib/authorization";
 import {
@@ -50,7 +51,7 @@ const {
   sessions,
   groups,
   openIds,
-  activeId,
+  activeId: storedActiveId,
   ready,
   closing,
   error: storageError,
@@ -91,11 +92,69 @@ const {
   setActiveEnvironment,
 } = useWorkspaceState();
 
+/** The Browser and tab bar show only this group and its descendants. Not saved. */
+const focusedGroupId = ref<number | null>(null);
+/** The active tab before focus started. */
+let focusReturnId: number | null = null;
+const focusIds = computed(() =>
+  focusedGroupId.value === null
+    ? null
+    : groupSubtree(groups.value, focusedGroupId.value),
+);
+function inFocus(id: number) {
+  const ids = focusIds.value;
+  if (!ids) return true;
+  const groupId = sessions.value.find((session) => session.id === id)?.groupId;
+  return groupId != null && ids.has(groupId);
+}
+/** Open tabs that the focus shows, in tab order. */
+const visibleIds = computed(() => openIds.value.filter(inFocus));
+/** The shown active tab. Null when the focus hides the active tab. */
+const activeId = computed(() =>
+  storedActiveId.value !== null && inFocus(storedActiveId.value)
+    ? storedActiveId.value
+    : null,
+);
+function focusGroup(id: number) {
+  if (focusedGroupId.value === null) focusReturnId = storedActiveId.value;
+  focusedGroupId.value = id;
+  updateSelection(selectedRequestIds.value.filter(inFocus), null);
+}
+/** Show all groups and tabs again. `restore` selects the tab active before focus. */
+function unfocus(restore = true) {
+  if (focusedGroupId.value === null) return;
+  focusedGroupId.value = null;
+  if (
+    restore &&
+    focusReturnId !== null &&
+    openIds.value.includes(focusReturnId)
+  ) {
+    openRequest(focusReturnId);
+    updateSelection([focusReturnId], focusReturnId);
+  }
+  focusReturnId = null;
+}
+// A deleted focused group ends the focus.
+watch(focusIds, (ids) => {
+  if (ids && !ids.size) unfocus();
+});
+// In focus, keep a shown tab active: the nearest one after the hidden active tab.
+watch([activeId, visibleIds], () => {
+  if (focusedGroupId.value === null || activeId.value !== null) return;
+  const visible = visibleIds.value;
+  if (!visible.length) return;
+  const at = openIds.value.indexOf(storedActiveId.value ?? -1);
+  openRequest(
+    visible.find((id) => openIds.value.indexOf(id) > at) ??
+      visible[visible.length - 1],
+  );
+});
+
 const active = computed(() =>
   sessions.value.find((session) => session.id === activeId.value),
 );
 const openSessions = computed(() =>
-  openIds.value.flatMap((id) => {
+  visibleIds.value.flatMap((id) => {
     const session = sessions.value.find((candidate) => candidate.id === id);
     return session ? [session] : [];
   }),
@@ -236,11 +295,10 @@ watch(
 );
 const zoomPercent = computed(() => Math.round(preferences.value.zoom * 100));
 function cycleTab(step: 1 | -1) {
-  if (!openIds.value.length) return;
-  const index = openIds.value.indexOf(activeId.value ?? -1);
-  select(
-    openIds.value[(index + step + openIds.value.length) % openIds.value.length],
-  );
+  const ids = visibleIds.value;
+  if (!ids.length) return;
+  const index = ids.indexOf(activeId.value ?? -1);
+  select(ids[(index + step + ids.length) % ids.length]);
   void nextTick(() =>
     document.getElementById(`request-tab-${activeId.value}`)?.focus(),
   );
@@ -248,12 +306,16 @@ function cycleTab(step: 1 | -1) {
 async function reopenTab() {
   const id = reopenClosedTab();
   if (id === null) return;
+  if (!inFocus(id)) unfocus(false);
   updateSelection([id], id);
   await nextTick();
   document.getElementById(`request-tab-${id}`)?.focus();
 }
 function undoDeletion() {
-  if (undoDelete() && activeId.value !== null)
+  if (!undoDelete()) return;
+  if (storedActiveId.value !== null && !inFocus(storedActiveId.value))
+    unfocus(false);
+  if (activeId.value !== null)
     updateSelection([activeId.value], activeId.value);
 }
 const deletionLabel = computed(() => {
@@ -361,13 +423,13 @@ const commands = computed<Command[]>(() => {
       id: "next-tab",
       label: "View: Next tab",
       shortcut: ["ctrl", "tab"],
-      disabled: openIds.value.length < 2,
+      disabled: visibleIds.value.length < 2,
     },
     {
       id: "previous-tab",
       label: "View: Previous tab",
       shortcut: ["ctrl", "shift", "tab"],
-      disabled: openIds.value.length < 2,
+      disabled: visibleIds.value.length < 2,
     },
     {
       id: "new-request",
@@ -413,12 +475,12 @@ const commands = computed<Command[]>(() => {
     {
       id: "close-other-tabs",
       label: "Tabs: Close other tabs",
-      disabled: openIds.value.length < 2,
+      disabled: visibleIds.value.length < 2,
     },
     {
       id: "close-all-tabs",
       label: "Tabs: Close all tabs",
-      disabled: !openIds.value.length,
+      disabled: !visibleIds.value.length,
     },
     {
       id: "reopen-tab",
@@ -471,6 +533,11 @@ const commands = computed<Command[]>(() => {
         ]
       : []),
     { id: "new-group", label: "Browser: New group" },
+    {
+      id: "unfocus-group",
+      label: "Browser: Unfocus group",
+      disabled: focusedGroupId.value === null,
+    },
     {
       id: "import",
       label: "File: Import OpenAPI, Postman, or .http file…",
@@ -525,8 +592,8 @@ function runCommand(id: string) {
   else if (id === "close-tab" && activeId.value !== null)
     void close(activeId.value);
   else if (id === "close-other-tabs")
-    void closeMany(openIds.value.filter((open) => open !== activeId.value));
-  else if (id === "close-all-tabs") void closeMany([...openIds.value]);
+    void closeMany(visibleIds.value.filter((open) => open !== activeId.value));
+  else if (id === "close-all-tabs") void closeMany([...visibleIds.value]);
   else if (id === "reopen-tab") void reopenTab();
   else if (id === "find") response?.find();
   else if (id === "copy-response") response?.copyResult();
@@ -544,6 +611,7 @@ function runCommand(id: string) {
   else if (id === "edit-environments" && activeRoot.value)
     openGroupSettings(activeRoot.value.id);
   else if (id === "new-group") newGroup();
+  else if (id === "unfocus-group") unfocus();
   else if (id === "import") pickImport();
   else if (id === "manage-cookies") openCookies();
   else if (id === "clear-cookies") void clearCookies().catch(() => {});
@@ -560,6 +628,7 @@ function toggleBrowser() {
   }
 }
 function select(id: number) {
+  if (!inFocus(id)) unfocus(false);
   mobileBrowserOpen.value = false;
   openRequest(id);
   updateSelection([id], id);
@@ -590,8 +659,10 @@ function createGroup(
 }
 function create(duplicate = false, inGroupId?: number | null) {
   if (!ready.value) return;
-  const groupId =
+  let groupId =
     inGroupId !== undefined ? inGroupId : (active.value?.groupId ?? null);
+  if (focusIds.value && (groupId === null || !focusIds.value.has(groupId)))
+    groupId = focusedGroupId.value;
   const session = createSession(duplicate ? active.value?.draft : undefined);
   session.groupId = groupId;
   if (duplicate && active.value)
@@ -649,6 +720,7 @@ async function closeMany(ids: number[]) {
 async function reveal(id: number) {
   const session = sessions.value.find((candidate) => candidate.id === id);
   if (!session) return;
+  if (!inFocus(id)) unfocus(false);
   if (narrow.value) mobileBrowserOpen.value = true;
   else sidebarCollapsed.value = false;
   expandAncestors(session.groupId);
@@ -691,7 +763,17 @@ function onKey(event: KeyboardEvent) {
     event.altKey
   )
     return;
-  if (event.ctrlKey && event.key === "Tab") {
+  if (
+    event.key === "Escape" &&
+    focusedGroupId.value !== null &&
+    !event.metaKey &&
+    !event.ctrlKey &&
+    !event.shiftKey &&
+    !isEditable(event.target)
+  ) {
+    event.preventDefault();
+    unfocus();
+  } else if (event.ctrlKey && event.key === "Tab") {
     event.preventDefault();
     cycleTab(event.shiftKey ? -1 : 1);
   } else if (event.metaKey || event.ctrlKey) {
@@ -854,8 +936,11 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         :confirm-delete="preferences.confirmCloseDrafts"
         :selected-ids="selectedRequestIds"
         :selection-anchor-id="selectionAnchorId"
+        :focused-group-id="focusedGroupId"
         :curl-for="curlFor"
         @select="select"
+        @focus-group="focusGroup"
+        @unfocus="unfocus()"
         @update-selection="updateSelection"
         @create-group="createGroup"
         @rename-group="renameGroup"

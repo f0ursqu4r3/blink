@@ -18,7 +18,11 @@ const groups: RequestGroup[] = [
   { id: 3, name: "Billing", parentId: null, collapsed: false },
 ];
 
-async function open(groupIndex: number, canMoveSelection = false) {
+async function open(
+  groupIndex: number,
+  canMoveSelection = false,
+  focused = false,
+) {
   const actions: string[] = [];
   const moves: (number | null)[] = [];
   const wrapper = mount(
@@ -37,6 +41,7 @@ async function open(groupIndex: number, canMoveSelection = false) {
                   group: groups[groupIndex],
                   groups,
                   canMoveSelection,
+                  focused,
                   onAction: (action: string) => actions.push(action),
                   onMoveTo: (id: number | null) => moves.push(id),
                 }),
@@ -60,6 +65,7 @@ describe("GroupMenuItems", () => {
       "New group",
       "Rename",
       "Settings…",
+      "Focus",
       "Collapse",
       "Collapse all",
       "Move to",
@@ -70,6 +76,13 @@ describe("GroupMenuItems", () => {
   it("offers Move selection here only with a movable selection", async () => {
     await open(0, true);
     expect(menuLabels()).toContain("Move selection here");
+  });
+
+  it("offers Unfocus on the focused group", async () => {
+    const { actions } = await open(0, false, true);
+    expect(menuLabels()).toContain("Unfocus");
+    find("[data-group-focus]").click();
+    expect(actions).toEqual(["unfocus"]);
   });
 
   it("labels a collapsed group Expand", async () => {

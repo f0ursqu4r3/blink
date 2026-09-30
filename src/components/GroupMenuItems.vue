@@ -6,6 +6,8 @@ export type GroupAction =
   | "settings"
   | "toggle"
   | "collapseAll"
+  | "focus"
+  | "unfocus"
   | "moveSelection"
   | "delete";
 </script>
@@ -35,9 +37,11 @@ const props = withDefaults(
     group: RequestGroup;
     groups: RequestGroup[];
     canMoveSelection: boolean;
+    /** The Browser shows only this group. */
+    focused?: boolean;
     kind?: "context" | "dropdown";
   }>(),
-  { kind: "context" },
+  { kind: "context", focused: false },
 );
 const emit = defineEmits<{
   action: [action: GroupAction];
@@ -79,6 +83,13 @@ const ui = computed(() =>
     Settings…
   </component>
   <component :is="ui.Separator" />
+  <component
+    :is="ui.Item"
+    data-group-focus
+    @select="emit('action', focused ? 'unfocus' : 'focus')"
+  >
+    {{ focused ? "Unfocus" : "Focus" }}
+  </component>
   <component :is="ui.Item" @select="emit('action', 'toggle')">
     {{ group.collapsed ? "Expand" : "Collapse" }}
   </component>

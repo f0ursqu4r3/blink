@@ -11,6 +11,10 @@ Browser sidebar organizes the request tabs in the current session.
   group.
 - Use the Browser sidebar to create, nest, collapse, rename, and delete groups.
   Move the active request to any group or back to Ungrouped.
+- Choose **Focus** in a group's menu to show only that group, its child
+  groups, and their tabs. Other tabs stay open but hidden. Press Escape or the
+  × in the focus bar to show everything again. Opening a request from outside
+  the group also ends the focus.
 - Run requests in the background while working in another tab.
 - Duplicate a complete draft without copying its response or sending it.
 - See methods, endpoint paths, hosts, and request status in compact tabs.

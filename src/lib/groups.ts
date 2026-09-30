@@ -59,6 +59,27 @@ export function canNestGroup(
   return true;
 }
 
+/** Ids of `groupId` and all of its descendants. Empty for an unknown group. */
+export function groupSubtree(groups: RequestGroup[], groupId: number) {
+  const ids = new Set<number>();
+  if (!groups.some((group) => group.id === groupId)) return ids;
+  ids.add(groupId);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const group of groups)
+      if (
+        group.parentId !== null &&
+        ids.has(group.parentId) &&
+        !ids.has(group.id)
+      ) {
+        ids.add(group.id);
+        grew = true;
+      }
+  }
+  return ids;
+}
+
 /**
  * Order of `sessions` after moving `ids` into `groupId`, before `beforeId`
  * or after the last session of that group. Returns the same objects; the

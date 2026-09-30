@@ -12,6 +12,7 @@ defineProps<{
   group: RequestGroup;
   groups: RequestGroup[];
   canMoveSelection: boolean;
+  focused?: boolean;
 }>();
 const emit = defineEmits<{
   action: [action: GroupAction];
@@ -33,6 +34,7 @@ const emit = defineEmits<{
         :group="group"
         :groups="groups"
         :can-move-selection="canMoveSelection"
+        :focused="focused"
         @action="emit('action', $event)"
         @move-to="emit('moveTo', $event)"
       />

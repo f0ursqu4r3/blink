@@ -359,3 +359,82 @@ describe("tab menu actions", () => {
     ).toBe("true");
   });
 });
+
+describe("group focus", () => {
+  function tabIds() {
+    return [...document.querySelectorAll<HTMLElement>("[data-tab-id]")].map(
+      (tab) => tab.dataset.tabId!,
+    );
+  }
+  function activeTabId() {
+    return document
+      .querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+      ?.closest<HTMLElement>("[data-tab-id]")?.dataset.tabId;
+  }
+  async function focusPlatform(app: ReturnType<typeof render>) {
+    await app
+      .get('[aria-label="More actions for Platform"]')
+      .trigger("keydown", { key: "Enter" });
+    Array.from(document.querySelectorAll<HTMLElement>('[role="menuitem"]'))
+      .find((item) => item.textContent?.trim() === "Focus")!
+      .click();
+    await flushPromises();
+  }
+  /** One ungrouped tab with a URL, then one tab in Platform; the first is active. */
+  async function setup() {
+    const app = render();
+    await app.get("[data-request-url]").setValue("https://example.test/loose");
+    await app.get('[aria-label="Add top-level group"]').trigger("click");
+    await app.get('[aria-label="Top-level group name"]').setValue("Platform");
+    await app.get(".top-level-form").trigger("submit");
+    await app.get('[aria-label="New request in Platform"]').trigger("click");
+    await flushPromises();
+    const [loose, inside] = tabIds();
+    await app.get(`[data-tab-id="${loose}"] [role="tab"]`).trigger("click");
+    return { app, loose, inside };
+  }
+
+  it("shows only the focused group's tabs and restores the rest", async () => {
+    const { app, loose, inside } = await setup();
+    expect(activeTabId()).toBe(loose);
+
+    await focusPlatform(app);
+    expect(tabIds()).toEqual([inside]);
+    expect(activeTabId()).toBe(inside);
+    expect(app.find("[data-browser-focus]").exists()).toBe(true);
+
+    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
+    await flushPromises();
+    expect(app.find("[data-browser-focus]").exists()).toBe(false);
+    expect(tabIds()).toEqual([loose, inside]);
+    expect(activeTabId()).toBe(loose);
+  });
+
+  it("unfocuses when a request outside the group opens", async () => {
+    const { app, loose } = await setup();
+    await focusPlatform(app);
+
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "p", metaKey: true }),
+    );
+    await flushPromises();
+    const input = app.get('[role="combobox"]');
+    await input.setValue("loose");
+    await input.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+
+    expect(app.find("[data-browser-focus]").exists()).toBe(false);
+    expect(activeTabId()).toBe(loose);
+  });
+
+  it("adds new requests to the focused group", async () => {
+    const { app, inside } = await setup();
+    await focusPlatform(app);
+    await app.get("[data-browser-new-request]").trigger("click");
+    await flushPromises();
+
+    expect(tabIds()).toHaveLength(2);
+    expect(tabIds()[0]).toBe(inside);
+    expect(app.find("[data-browser-focus]").exists()).toBe(true);
+  });
+});

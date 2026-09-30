@@ -17,8 +17,9 @@ import {
   MoveRight,
   Plus,
   Settings,
+  X,
 } from "lucide-vue-next";
-import type { RequestGroup } from "@/lib/groups";
+import { groupSubtree, type RequestGroup } from "@/lib/groups";
 import {
   displayMethod,
   hasDraft,
@@ -70,6 +71,8 @@ const props = defineProps<{
   mobileOpen?: boolean;
   selectedIds?: number[];
   selectionAnchorId?: number | null;
+  /** Show only this group and its descendants. */
+  focusedGroupId?: number | null;
 }>();
 const emit = defineEmits<{
   select: [id: number];
@@ -77,6 +80,8 @@ const emit = defineEmits<{
   createGroup: [name: string, parentId: number | null, sessionIds?: number[]];
   renameGroup: [id: number, name: string];
   toggleGroup: [id: number];
+  focusGroup: [id: number];
+  unfocus: [];
   moveRequest: [sessionId: number, groupId: number | null];
   moveRequests: [
     ids: number[],
@@ -128,6 +133,16 @@ const groupById = computed(
 const active = computed(() =>
   props.sessions.find((session) => session.id === props.activeId),
 );
+const focusedGroup = computed(() =>
+  props.focusedGroupId == null
+    ? undefined
+    : groupById.value.get(props.focusedGroupId),
+);
+/** New top-level items go into the focused group. */
+const topParent = computed(() => focusedGroup.value?.id ?? null);
+/** The focused group always shows open; its saved state does not change. */
+const isOpen = (group: RequestGroup) =>
+  group.id === focusedGroup.value?.id || !group.collapsed;
 const rows = computed<BrowserRow[]>(() => {
   const children = new Map<number | null, RequestGroup[]>();
   for (const group of props.groups) {
@@ -135,13 +150,17 @@ const rows = computed<BrowserRow[]>(() => {
     siblings.push(group);
     children.set(group.parentId, siblings);
   }
-  const items: BrowserRow[] = props.sessions
-    .filter((session) => session.groupId === null)
-    .map((session) => ({ type: "request", session, level: 0 }));
+  const focus = focusedGroup.value;
+  const items: BrowserRow[] = focus
+    ? []
+    : props.sessions
+        .filter((session) => session.groupId === null)
+        .map((session) => ({ type: "request", session, level: 0 }));
   const append = (parentId: number | null, level: number) => {
-    for (const group of children.get(parentId) ?? []) {
+    const list = focus && parentId === null ? [focus] : children.get(parentId);
+    for (const group of list ?? []) {
       items.push({ type: "group", group, level });
-      if (group.collapsed) continue;
+      if (!isOpen(group)) continue;
       for (const session of props.sessions.filter(
         (candidate) => candidate.groupId === group.id,
       ))
@@ -222,6 +241,8 @@ function onGroupAction(group: RequestGroup, action: GroupAction) {
   else if (action === "settings") emit("openGroupSettings", group.id);
   else if (action === "toggle") emit("toggleGroup", group.id);
   else if (action === "collapseAll") emit("collapseAllGroups");
+  else if (action === "focus") emit("focusGroup", group.id);
+  else if (action === "unfocus") emit("unfocus");
   else if (action === "moveSelection") moveSelection(group.id);
   else deletingId.value = group.id;
 }
@@ -383,10 +404,14 @@ function resolveBrowserDrop(
   point: Point,
 ): DropHit | null {
   const row = rowAt(point);
-  const target = row ? treeTarget(row.dataset.dropKey ?? "") : null;
+  let target = row ? treeTarget(row.dataset.dropKey ?? "") : null;
   if (!row || !target) return null;
+  // In focus, nothing can drop outside the focused group.
+  const focusId = focusedGroup.value?.id;
+  if (focusId !== undefined && target.type === "root")
+    target = { type: "group", id: focusId };
   const zone =
-    target.type === "root"
+    target.type === "root" || (target.type === "group" && target.id === focusId)
       ? "into"
       : hitZone(
           row.getBoundingClientRect(),
@@ -404,7 +429,7 @@ function resolveBrowserDrop(
     key: drop.key,
     zone: drop.zone,
     commit: () => commitTreeDrop(drop.command),
-    ...(group?.collapsed
+    ...(group && !isOpen(group)
       ? { expand: () => emit("toggleGroup", group.id) }
       : {}),
   };
@@ -445,7 +470,8 @@ function pressRequest(session: RequestSession, event: PointerEvent) {
 }
 
 function pressGroup(group: RequestGroup, event: PointerEvent) {
-  if (editingId.value === group.id) return;
+  if (editingId.value === group.id || group.id === focusedGroup.value?.id)
+    return;
   drag.startPress(event, {
     payload: () => ({ kind: "group", id: group.id }),
     preview: () => ({ label: group.name, folder: true }),
@@ -492,6 +518,12 @@ function stepSelection(session: RequestSession, event: KeyboardEvent) {
     event.key === "ArrowUp" ? -1 : 1,
   );
   if (!step) return;
+  if (
+    focusedGroup.value &&
+    (step.groupId === null ||
+      !groupSubtree(props.groups, focusedGroup.value.id).has(step.groupId))
+  )
+    return;
   emit("moveRequests", ids, step.groupId, step.beforeId);
   void nextTick(() => {
     const row = listEl()?.querySelector<HTMLElement>(
@@ -545,9 +577,13 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
       <button
         type="button"
         class="browser-action"
-        aria-label="Add top-level group"
+        :aria-label="
+          focusedGroup
+            ? `Add group inside ${focusedGroup.name}`
+            : 'Add top-level group'
+        "
         title="Add group"
-        @click="startCreating(null)"
+        @click="startCreating(topParent)"
       >
         <FolderPlus :size="14" aria-hidden="true" />
       </button>
@@ -557,7 +593,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
         class="browser-action"
         aria-label="Group selected requests"
         title="Group selected requests"
-        @click="startCreating(null, selectedIds)"
+        @click="startCreating(topParent, selectedIds)"
       >
         <FolderInput :size="14" aria-hidden="true" />
       </button>
@@ -582,6 +618,28 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
         <Import :size="14" aria-hidden="true" />
       </button>
     </header>
+
+    <div
+      v-if="focusedGroup"
+      class="flex h-7 shrink-0 items-center gap-1.5 border-b border-border pl-3 pr-1.5 font-mono text-[10px] text-muted-foreground"
+      data-browser-focus
+    >
+      <span class="shrink-0 tracking-[0.08em]">FOCUSED</span>
+      <span
+        class="min-w-0 flex-1 truncate text-foreground"
+        :title="focusedGroup.name"
+        >{{ focusedGroup.name }}</span
+      >
+      <button
+        type="button"
+        class="browser-action"
+        :aria-label="`Unfocus ${focusedGroup.name}`"
+        title="Unfocus · Esc"
+        @click="emit('unfocus')"
+      >
+        <X :size="14" aria-hidden="true" />
+      </button>
+    </div>
 
     <form
       v-if="creatingParent === null"
@@ -621,7 +679,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
       <ContextMenuTrigger as-child>
         <div class="min-h-0 flex-1 overflow-auto py-2" data-browser-list>
           <!-- UNGROUPED row -->
-          <ContextMenu>
+          <ContextMenu v-if="!focusedGroup">
             <ContextMenuTrigger as-child>
               <div
                 class="flex min-w-0 items-center gap-1.5 h-7 pl-3 pr-2.25"
@@ -928,14 +986,15 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                       />
                       <button
                         type="button"
-                        class="relative inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent pointer-coarse:w-8 pointer-coarse:h-8"
-                        :aria-label="`${row.group.collapsed ? 'Expand' : 'Collapse'} ${row.group.name}`"
-                        :aria-expanded="!row.group.collapsed"
+                        class="relative inline-flex items-center justify-center w-5.5 h-5.5 shrink-0 rounded-sm text-muted-foreground hover:text-foreground hover:bg-accent disabled:pointer-events-none pointer-coarse:w-8 pointer-coarse:h-8"
+                        :aria-label="`${isOpen(row.group) ? 'Collapse' : 'Expand'} ${row.group.name}`"
+                        :aria-expanded="isOpen(row.group)"
+                        :disabled="row.group.id === focusedGroup?.id"
                         data-group-toggle
                         @click="emit('toggleGroup', row.group.id)"
                       >
                         <Folder
-                          v-if="row.group.collapsed"
+                          v-if="!isOpen(row.group)"
                           :size="14"
                           aria-hidden="true"
                         />
@@ -1040,6 +1099,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                           :can-move-selection="
                             hasMovableSelection(row.group.id)
                           "
+                          :focused="row.group.id === focusedGroup?.id"
                           @action="(action) => onGroupAction(row.group, action)"
                           @move-to="
                             (parentId) =>
@@ -1054,6 +1114,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                       :group="row.group"
                       :groups="groups"
                       :can-move-selection="hasMovableSelection(row.group.id)"
+                      :focused="row.group.id === focusedGroup?.id"
                       @action="(action) => onGroupAction(row.group, action)"
                       @move-to="
                         (parentId) =>
@@ -1130,10 +1191,10 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem @select="emit('createRequest', null)">
+        <ContextMenuItem @select="emit('createRequest', topParent)">
           New request
         </ContextMenuItem>
-        <ContextMenuItem @select="startCreating(null)">
+        <ContextMenuItem @select="startCreating(topParent)">
           New group
         </ContextMenuItem>
         <ContextMenuItem

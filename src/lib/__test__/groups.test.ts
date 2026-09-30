@@ -3,10 +3,26 @@ import {
   canNestGroup,
   createGroup,
   deleteGroupAndPromoteContents,
+  groupSubtree,
   reserveGroupId,
 } from "../groups";
 
 describe("request groups", () => {
+  it("collects a group and all of its descendants", () => {
+    const group = (id: number, parentId: number | null) => ({
+      id,
+      name: `Group ${id}`,
+      parentId,
+      collapsed: false,
+    });
+    const groups = [group(1, null), group(2, 1), group(3, 2), group(4, null)];
+
+    expect(groupSubtree(groups, 1)).toEqual(new Set([1, 2, 3]));
+    expect(groupSubtree(groups, 2)).toEqual(new Set([2, 3]));
+    expect(groupSubtree(groups, 4)).toEqual(new Set([4]));
+    expect(groupSubtree(groups, 9)).toEqual(new Set());
+  });
+
   it("creates groups with distinct identifiers and explicit parents", () => {
     const root = createGroup("Platform");
     const child = createGroup("Identity", root.id);

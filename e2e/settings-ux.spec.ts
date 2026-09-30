@@ -235,7 +235,7 @@ test("group overflow actions keep names readable and confirm deletion", async ({
     .getByRole("button", { name: "More actions for Parent API" })
     .click();
   const menu = page.getByRole("menu");
-  await expect(menu.getByRole("menuitem")).toHaveCount(8);
+  await expect(menu.getByRole("menuitem")).toHaveCount(9);
   await menu
     .getByRole("menuitem", { name: "Add group inside Parent API" })
     .click();
