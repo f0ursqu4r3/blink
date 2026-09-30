@@ -26,7 +26,7 @@ function openFromClick(event: MouseEvent) {
 </script>
 
 <template>
-  <TooltipProvider :delay-duration="200">
+  <TooltipProvider :delay-duration="200" disable-hoverable-content>
     <TooltipRoot v-model:open="open">
       <TooltipTrigger
         as-child
