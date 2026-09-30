@@ -47,3 +47,29 @@ export function matchRequests(
         ),
     );
 }
+
+/** An app action in the command center. `>` in the search switches to these. */
+export type Command = {
+  id: string;
+  label: string;
+  /** Keys for `shortcutLabel`, such as `["mod", "\\"]`. */
+  shortcut?: string[];
+  disabled?: boolean;
+};
+
+export const COMMAND_PREFIX = ">";
+export const isCommandQuery = (query: string) =>
+  query.startsWith(COMMAND_PREFIX);
+
+/** Commands whose label contains every word of `query`, in list order. */
+export function matchCommands(commands: Command[], query: string) {
+  const words = query
+    .slice(isCommandQuery(query) ? COMMAND_PREFIX.length : 0)
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+  return commands.filter((command) => {
+    const label = command.label.toLowerCase();
+    return words.every((word) => label.includes(word));
+  });
+}

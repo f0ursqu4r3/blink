@@ -41,11 +41,11 @@ describe("CommandCenter", () => {
     const input = wrapper.get('[role="combobox"]');
     await input.trigger("keydown", { key: "ArrowDown" });
     expect(input.attributes("aria-activedescendant")).toBe(
-      `command-center-option-${list[1].id}`,
+      `command-center-option-request-${list[1].id}`,
     );
     await input.trigger("keydown", { key: "ArrowDown" });
     expect(input.attributes("aria-activedescendant")).toBe(
-      `command-center-option-${list[0].id}`,
+      `command-center-option-request-${list[0].id}`,
     );
     await input.trigger("keydown", { key: "Enter" });
     expect(wrapper.emitted("select")).toEqual([[list[0].id]]);
@@ -59,13 +59,13 @@ describe("CommandCenter", () => {
     const input = wrapper.get('[role="combobox"]');
     await input.trigger("keydown", { key: "ArrowDown" });
     expect(input.attributes("aria-activedescendant")).toBe(
-      `command-center-option-${list[1].id}`,
+      `command-center-option-request-${list[1].id}`,
     );
     await expect(
       wrapper.setProps({ sessions: [list[0]] }),
     ).resolves.toBeUndefined();
     expect(input.attributes("aria-activedescendant")).toBe(
-      `command-center-option-${list[0].id}`,
+      `command-center-option-request-${list[0].id}`,
     );
     await input.trigger("keydown", { key: "Enter" });
     expect(wrapper.emitted("select")).toEqual([[list[0].id]]);
@@ -103,6 +103,54 @@ describe("CommandCenter", () => {
     expect(wrapper.find('[role="combobox"]').exists()).toBe(false);
     expect(wrapper.emitted("select")).toBeUndefined();
     outside.remove();
+    wrapper.unmount();
+  });
+
+  it("lists commands after > and runs the chosen one", async () => {
+    const list = sessions();
+    const wrapper = mount(CommandCenter, {
+      props: {
+        sessions: list,
+        groups,
+        commands: [
+          {
+            id: "layout",
+            label: "View: Stack request above response",
+            shortcut: ["mod", "\\"],
+          },
+          { id: "close", label: "Request: Close tab", disabled: true },
+        ],
+      },
+      attachTo: document.body,
+    });
+    await (
+      wrapper.vm as unknown as { show(prefix?: string): Promise<void> }
+    ).show(">");
+    const input = wrapper.get('[role="combobox"]');
+    expect(wrapper.get('[role="listbox"]').attributes("aria-label")).toBe(
+      "Commands",
+    );
+    expect(wrapper.findAll('[role="option"]')).toHaveLength(2);
+    expect(wrapper.get("[data-command='layout'] kbd").text()).toMatch(/\\/);
+    await input.setValue(">close");
+    await input.trigger("keydown", { key: "Enter" });
+    expect(wrapper.emitted("command")).toBeUndefined();
+    await input.setValue(">stack");
+    expect(input.attributes("aria-activedescendant")).toBe(
+      "command-center-option-command-layout",
+    );
+    await input.trigger("keydown", { key: "Enter" });
+    await wrapper.vm.$nextTick();
+    expect(wrapper.emitted("command")).toEqual([["layout"]]);
+    expect(wrapper.find('[role="combobox"]').exists()).toBe(false);
+    wrapper.unmount();
+  });
+
+  it("shows an empty command result", async () => {
+    const { wrapper } = render();
+    await wrapper.get("[data-command-center-trigger]").trigger("click");
+    await wrapper.get('[role="combobox"]').setValue(">zzz");
+    expect(wrapper.text()).toContain("No matching commands");
     wrapper.unmount();
   });
 });

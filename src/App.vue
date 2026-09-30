@@ -17,6 +17,8 @@ import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vu
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import HelpTooltip from "@/components/HelpTooltip.vue";
 import CommandCenter from "@/components/CommandCenter.vue";
+import { COMMAND_PREFIX, type Command } from "@/lib/command-center";
+import { shortcutLabel } from "@/lib/shortcut";
 import { useTheme } from "@/composables/useTheme";
 import { nativeTransport } from "@/lib/transport";
 import { useWorkspaceState } from "@/composables/useWorkspaceState";
@@ -176,6 +178,41 @@ function toggleLayout() {
     ...preferences.value,
     paneLayout: stacked.value ? "horizontal" : "vertical",
   });
+}
+const commands = computed<Command[]>(() => [
+  {
+    id: "toggle-layout",
+    label: `View: ${layoutToggleLabel.value}`,
+    shortcut: ["mod", "\\"],
+  },
+  { id: "toggle-browser", label: `View: ${browserToggleLabel.value}` },
+  { id: "new-request", label: "Request: New request", shortcut: ["mod", "t"] },
+  {
+    id: "duplicate-request",
+    label: "Request: Duplicate request",
+    shortcut: ["mod", "shift", "d"],
+    disabled: activeId.value === null,
+  },
+  {
+    id: "close-tab",
+    label: "Request: Close tab",
+    shortcut: ["mod", "w"],
+    disabled: activeId.value === null,
+  },
+  {
+    id: "open-settings",
+    label: "Preferences: Application settings",
+    shortcut: ["mod", ","],
+  },
+]);
+function runCommand(id: string) {
+  if (id === "toggle-layout") toggleLayout();
+  else if (id === "toggle-browser") toggleBrowser();
+  else if (id === "new-request") create();
+  else if (id === "duplicate-request") duplicate();
+  else if (id === "close-tab" && activeId.value !== null)
+    void close(activeId.value);
+  else if (id === "open-settings") openApplicationSettings();
 }
 function toggleBrowser() {
   if (narrow.value) {
@@ -340,9 +377,13 @@ function onKey(event: KeyboardEvent) {
       event.preventDefault();
       openApplicationSettings();
     }
-    if (key === "p" && !event.shiftKey) {
+    if (key === "p") {
       event.preventDefault();
-      void commandCenter.value?.show();
+      void commandCenter.value?.show(event.shiftKey ? COMMAND_PREFIX : "");
+    }
+    if (event.key === "\\" && !event.shiftKey) {
+      event.preventDefault();
+      toggleLayout();
     }
   }
 }
@@ -395,14 +436,16 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         :sessions="sessions"
         :global-definitions="globalDefinitions"
         :groups="groups"
+        :commands="commands"
         @select="selectFromSearch"
+        @command="runCommand"
       />
       <div class="flex justify-end gap-0.5 pr-2" data-tauri-drag-region>
         <Button
           variant="ghost"
           :aria-pressed="stacked"
           :aria-label="layoutToggleLabel"
-          :title="layoutToggleLabel"
+          :title="`${layoutToggleLabel} · ${shortcutLabel(['mod', '\\'])}`"
           data-title-layout
           @click="toggleLayout"
         >

@@ -25,7 +25,8 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
   data inside a menu item, such as an HTTP method, uses monospace. No web
   font requests.
 - **Layout:** A 40-pixel title bar holds the Browser toggle right of the
-  traffic lights, the centered command center (`Cmd/Ctrl+P`), and at the right the
+  traffic lights, the centered command center (`Cmd/Ctrl+P` for requests; `>` or
+  `Cmd/Ctrl+Shift+P` for commands), and at the right the
   pane layout toggle and the Settings cog; it doubles as the window drag area, and on
   macOS the traffic lights sit on its left. The Browser card and the editor
   card, which holds the request tab strip and the resizable request and

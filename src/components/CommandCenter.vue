@@ -3,14 +3,22 @@ import { computed, nextTick, ref, watch } from "vue";
 import { Search } from "lucide-vue-next";
 import type { RequestGroup } from "@/lib/groups";
 import type { RequestSession } from "@/lib/session";
-import { matchRequests } from "@/lib/command-center";
+import {
+  COMMAND_PREFIX,
+  isCommandQuery,
+  matchCommands,
+  matchRequests,
+  type Command,
+} from "@/lib/command-center";
+import { shortcutLabel } from "@/lib/shortcut";
 
 const props = defineProps<{
   sessions: RequestSession[];
   groups: RequestGroup[];
   globalDefinitions?: Record<string, string>;
+  commands?: Command[];
 }>();
-const emit = defineEmits<{ select: [id: number] }>();
+const emit = defineEmits<{ select: [id: number]; command: [id: string] }>();
 
 const open = ref(false);
 const query = ref("");
@@ -18,22 +26,41 @@ const index = ref(0);
 const input = ref<HTMLInputElement>();
 const trigger = ref<HTMLButtonElement>();
 let opener: HTMLElement | null = null;
+const commandMode = computed(() => isCommandQuery(query.value));
+const commandMatches = computed(() =>
+  commandMode.value ? matchCommands(props.commands ?? [], query.value) : [],
+);
+const requestMatches = computed(() =>
+  commandMode.value
+    ? []
+    : matchRequests(
+        props.sessions,
+        props.groups,
+        query.value,
+        props.globalDefinitions,
+      ),
+);
+/** The active list, as option ids, so keys work the same in both modes. */
 const matches = computed(() =>
-  matchRequests(
-    props.sessions,
-    props.groups,
-    query.value,
-    props.globalDefinitions,
-  ),
+  commandMode.value
+    ? commandMatches.value.map((command) => ({
+        key: `command-${command.id}`,
+        choose: () => command.disabled || runCommand(command.id),
+      }))
+    : requestMatches.value.map((match) => ({
+        key: `request-${match.id}`,
+        choose: () => choose(match.id),
+      })),
 );
 watch(query, () => (index.value = 0));
 watch(matches, (list) => {
   if (index.value >= list.length) index.value = Math.max(0, list.length - 1);
 });
 
-async function show() {
+/** Open the search. `show(">")` opens the command list. */
+async function show(prefix = "") {
   opener = document.activeElement as HTMLElement | null;
-  query.value = "";
+  query.value = prefix;
   index.value = 0;
   open.value = true;
   await nextTick();
@@ -51,6 +78,11 @@ async function hide() {
 function choose(id: number) {
   open.value = false;
   emit("select", id);
+}
+async function runCommand(id: string) {
+  // Return focus first, so a command that moves focus keeps it.
+  await hide();
+  emit("command", id);
 }
 function onFocusOut(event: FocusEvent) {
   const next = event.relatedTarget as Node | null;
@@ -76,7 +108,7 @@ function onKey(event: KeyboardEvent) {
     const match = matches.value[index.value];
     if (match) {
       event.preventDefault();
-      choose(match.id);
+      void match.choose();
     }
   }
 }
@@ -92,8 +124,8 @@ defineExpose({ show });
       class="flex h-6.5 w-full items-center gap-2 rounded border border-border bg-muted px-2.5 text-xs text-muted-foreground hover:bg-accent hover:text-foreground"
       data-command-center-trigger
       aria-label="Search requests"
-      title="Search requests · Cmd/Ctrl+P"
-      @click="show"
+      :title="`Search requests · ${shortcutLabel(['mod', 'p'])}. Type ${COMMAND_PREFIX} for commands · ${shortcutLabel(['mod', 'shift', 'p'])}`"
+      @click="show()"
     >
       <Search :size="13" aria-hidden="true" />
       <span class="flex-1 text-left">Search requests</span>
@@ -122,11 +154,15 @@ defineExpose({ show });
           aria-controls="command-center-list"
           :aria-activedescendant="
             matches[index]
-              ? `command-center-option-${matches[index].id}`
+              ? `command-center-option-${matches[index].key}`
               : undefined
           "
           class="h-7 w-full rounded-none border-0 border-b border-border bg-transparent px-2.5 text-xs outline-none focus-visible:outline-none"
-          placeholder="Search requests by name, URL, or group"
+          :placeholder="
+            commandMode
+              ? 'Run a command'
+              : `Search requests by name, URL, or group. Type ${COMMAND_PREFIX} for commands`
+          "
           spellcheck="false"
           autocomplete="off"
           @keydown="onKey"
@@ -134,12 +170,31 @@ defineExpose({ show });
         <ul
           id="command-center-list"
           role="listbox"
-          aria-label="Requests"
+          :aria-label="commandMode ? 'Commands' : 'Requests'"
           class="max-h-72 overflow-auto py-1"
         >
           <li
-            v-for="(match, i) in matches"
-            :id="`command-center-option-${match.id}`"
+            v-for="(command, i) in commandMatches"
+            :id="`command-center-option-command-${command.id}`"
+            :key="command.id"
+            role="option"
+            :aria-selected="i === index"
+            :aria-disabled="command.disabled || undefined"
+            :data-command="command.id"
+            class="flex cursor-pointer items-center gap-2 px-2.5 py-1 text-xs aria-selected:bg-accent aria-disabled:cursor-default aria-disabled:text-muted-foreground"
+            @mousedown.prevent="command.disabled || runCommand(command.id)"
+            @mousemove="index = i"
+          >
+            <span class="min-w-0 flex-1 truncate">{{ command.label }}</span>
+            <kbd
+              v-if="command.shortcut"
+              class="shrink-0 text-[10px] text-muted-foreground"
+              >{{ shortcutLabel(command.shortcut) }}</kbd
+            >
+          </li>
+          <li
+            v-for="(match, i) in requestMatches"
+            :id="`command-center-option-request-${match.id}`"
             :key="match.id"
             role="option"
             :aria-selected="i === index"
@@ -165,7 +220,7 @@ defineExpose({ show });
           class="px-2.5 pb-2 text-xs text-muted-foreground"
           role="status"
         >
-          No matching requests
+          {{ commandMode ? "No matching commands" : "No matching requests" }}
         </p>
       </div>
     </template>

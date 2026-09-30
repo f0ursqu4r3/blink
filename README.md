@@ -35,8 +35,10 @@ Browser sidebar organizes the request tabs in the current session.
   you press Send.
 - Distinguish a previous response from an edited, unsent draft.
 - Place the request and response side by side or stack them. Use the layout
-  button beside Settings in the title bar. Blink restores the layout after a
-  restart.
+  button beside Settings in the title bar, or press `Cmd/Ctrl+\`. Blink
+  restores the layout after a restart.
+- Type `>` in the command center to run a command, such as the layout and
+  Browser toggles, new request, or settings.
 
 Application Settings → Requests controls the timeout (default 30 s total,
 10 s to connect), whether redirects are followed (default off; up to 20 hops),
@@ -74,6 +76,9 @@ never send automatically.
 | Next or previous request | `Ctrl+Tab` / `Ctrl+Shift+Tab` |
 | Send active request      | `Cmd/Ctrl+Enter`              |
 | Cancel running request   | `Cmd/Ctrl+.`                  |
+| Toggle pane layout       | `Cmd/Ctrl+\`                  |
+| Search requests          | `Cmd/Ctrl+P`                  |
+| Run a command            | `Cmd/Ctrl+Shift+P`            |
 | Focus URL                | `Cmd/Ctrl+L`                  |
 | Application settings     | `Cmd/Ctrl+,`                  |
 

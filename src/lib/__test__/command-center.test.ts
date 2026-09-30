@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { groupPath, matchRequests } from "../command-center";
+import {
+  groupPath,
+  isCommandQuery,
+  matchCommands,
+  matchRequests,
+  type Command,
+} from "../command-center";
 import { createSession } from "../session";
 import type { RequestGroup } from "../groups";
 
@@ -52,5 +58,33 @@ describe("command center matching", () => {
       method: "GET",
       groupPath: "Platform / Identity",
     });
+  });
+});
+
+describe("matchCommands", () => {
+  const commands: Command[] = [
+    { id: "layout", label: "View: Stack request above response" },
+    { id: "browser", label: "View: Hide request browser" },
+    { id: "new", label: "Request: New request" },
+  ];
+  it("lists every command for a bare prefix", () => {
+    expect(matchCommands(commands, ">").map((c) => c.id)).toEqual([
+      "layout",
+      "browser",
+      "new",
+    ]);
+  });
+  it("matches every word in any order", () => {
+    expect(matchCommands(commands, ">response stack").map((c) => c.id)).toEqual(
+      ["layout"],
+    );
+    expect(matchCommands(commands, "> VIEW  request").map((c) => c.id)).toEqual(
+      ["layout", "browser"],
+    );
+    expect(matchCommands(commands, ">nothing")).toEqual([]);
+  });
+  it("detects command queries", () => {
+    expect(isCommandQuery(">x")).toBe(true);
+    expect(isCommandQuery("x>")).toBe(false);
   });
 });

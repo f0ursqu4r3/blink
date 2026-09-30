@@ -48,3 +48,25 @@ test("the title bar stacks request above response and restores it", async ({
   await toggle.click();
   await page.screenshot({ path: "artifacts/pane-layout-stacked.png" });
 });
+
+test("the layout toggles from the keyboard and the command list", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await page.goto("/");
+  const panels = page.locator(
+    '[data-request-pane][data-active="true"] .panels',
+  );
+  await expect(panels).toHaveAttribute("data-layout", "horizontal");
+  await page.keyboard.press("ControlOrMeta+Backslash");
+  await expect(panels).toHaveAttribute("data-layout", "vertical");
+
+  await page.keyboard.press("ControlOrMeta+Shift+P");
+  const search = page
+    .locator('[data-surface="command-center"]')
+    .getByRole("combobox");
+  await expect(search).toHaveValue(">");
+  await search.pressSequentially("side");
+  await page.keyboard.press("Enter");
+  await expect(panels).toHaveAttribute("data-layout", "horizontal");
+});

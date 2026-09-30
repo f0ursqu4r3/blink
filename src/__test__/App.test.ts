@@ -238,6 +238,28 @@ describe("compact request console", () => {
     await toggle.trigger("click");
     expect(panels().attributes("data-layout")).toBe("horizontal");
   });
+  it("toggles the layout with Cmd/Ctrl+\\ and from the command list", async () => {
+    const app = render();
+    const layout = () =>
+      app.get("[data-request-pane] .panels").attributes("data-layout");
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "\\", ctrlKey: true }),
+    );
+    await flushPromises();
+    expect(layout()).toBe("vertical");
+    window.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "P", ctrlKey: true, shiftKey: true }),
+    );
+    await flushPromises();
+    const input = app.get<HTMLInputElement>(
+      '[data-surface="command-center"] [role="combobox"]',
+    );
+    expect(input.element.value).toBe(">");
+    await input.setValue(">side by side");
+    await input.trigger("keydown", { key: "Enter" });
+    await flushPromises();
+    expect(layout()).toBe("horizontal");
+  });
   it("cancels a running request", async () => {
     vi.stubGlobal(
       "fetch",
