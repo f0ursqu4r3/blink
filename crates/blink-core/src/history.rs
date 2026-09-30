@@ -138,6 +138,27 @@ fn local_date(epoch_ms: f64) -> String {
     }
 }
 
+/// Local time of day, as `toLocaleTimeString` writes it with two-digit hour,
+/// minute, and second in the en-US locale: "03:04:05 PM", or "15:04:05"
+/// without `hour12`.
+pub fn clock_time(epoch_ms: f64, hour12: bool) -> String {
+    use chrono::{Local, TimeZone, Timelike};
+    let Some(time) = Local.timestamp_millis_opt(epoch_ms as i64).single() else {
+        return "Invalid Date".into();
+    };
+    if hour12 {
+        let (pm, hour) = time.hour12();
+        format!(
+            "{hour:02}:{:02}:{:02} {}",
+            time.minute(),
+            time.second(),
+            if pm { "PM" } else { "AM" }
+        )
+    } else {
+        format!("{:02}:{:02}:{:02}", time.hour(), time.minute(), time.second())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

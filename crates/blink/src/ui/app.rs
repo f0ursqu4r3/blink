@@ -219,15 +219,23 @@ impl BlinkApp {
         }
     }
 
+    fn open_command_center(&mut self, query: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.ready(cx) {
+            return;
+        }
+        let commands = self.commands(window, cx);
+        self.command_center.update(cx, |center, cx| {
+            center.set_commands(commands);
+            center.open(query, window, cx);
+        });
+    }
+
     fn on_search(&mut self, _: &SearchRequests, window: &mut Window, cx: &mut Context<Self>) {
-        self.command_center
-            .update(cx, |center, cx| center.open("", window, cx));
+        self.open_command_center("", window, cx);
     }
 
     fn on_run_command(&mut self, _: &RunCommand, window: &mut Window, cx: &mut Context<Self>) {
-        self.command_center.update(cx, |center, cx| {
-            center.open(blink_core::command_center::COMMAND_PREFIX, window, cx)
-        });
+        self.open_command_center(blink_core::command_center::COMMAND_PREFIX, window, cx);
     }
 
     fn on_focus_url(&mut self, _: &FocusUrl, window: &mut Window, cx: &mut Context<Self>) {
@@ -714,6 +722,10 @@ impl Render for BlinkApp {
             self.store.read(cx).workspace.preferences.pane_layout == PaneLayout::Vertical;
         let narrow = Self::narrow(window);
         let browser_visible = self.browser_visible(window);
+        // Keep the open command list current, as the Vue computed list was.
+        let commands = self.commands(window, cx);
+        self.command_center
+            .update(cx, |center, _| center.set_commands(commands));
         let title = title_bar::render(
             TitleBarProps {
                 browser_visible,
