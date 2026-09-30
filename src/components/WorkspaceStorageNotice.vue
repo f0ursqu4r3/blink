@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import { Button } from '@/components/ui/button';
+import { ref } from "vue";
+import { Button } from "@/components/ui/button";
 defineProps<{ error: string; ready: boolean; exitBlocked: boolean }>();
 const emit = defineEmits<{ retry: []; reset: []; quit: [] }>();
 const confirmReset = ref(false);

@@ -1,35 +1,39 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from 'vue';
-import { useVirtualizer } from '@tanstack/vue-virtual';
+import { computed, nextTick, ref, watch } from "vue";
+import { useVirtualizer } from "@tanstack/vue-virtual";
+import { useFind } from "@/composables/useFind";
 import {
   highlightResponseLine,
   type ResponseLanguage,
-} from '@/lib/response-content';
+} from "@/lib/response-content";
 
 const props = withDefaults(
   defineProps<{
     text: string;
     language?: ResponseLanguage;
     filter?: string;
+    /** Highlight matches without hiding lines. */
+    find?: string;
     wrap?: boolean;
     active?: boolean;
   }>(),
-  { language: 'plaintext' }
+  { language: "plaintext" },
 );
-const scroll = defineModel<number>('scroll', { default: 0 });
+const scroll = defineModel<number>("scroll", { default: 0 });
 const element = ref<HTMLElement>();
-const filter = computed(() => props.filter?.trim().toLocaleLowerCase() ?? '');
+const filter = computed(() => props.filter?.trim().toLocaleLowerCase() ?? "");
 const lines = computed(() =>
-  props.text.split('\n').flatMap((text, index) =>
+  props.text.split("\n").flatMap((text, index) =>
     !filter.value || text.toLocaleLowerCase().includes(filter.value)
       ? [
           {
+            text,
             html: highlightResponseLine(text, props.language),
             number: index + 1,
           },
         ]
-      : []
-  )
+      : [],
+  ),
 );
 const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
   computed(() => ({
@@ -45,15 +49,29 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
           height: target?.clientHeight || 800,
         });
       report();
-      if (!target || typeof ResizeObserver === 'undefined') return;
+      if (!target || typeof ResizeObserver === "undefined") return;
       const observer = new ResizeObserver(report);
       observer.observe(target);
       return () => observer.disconnect();
     },
     overscan: 12,
-  }))
+  })),
 );
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
+const finder = useFind({
+  element,
+  texts: () => lines.value.map((line) => line.text),
+  query: () => props.find ?? "",
+  active: () => props.active !== false,
+  rendered: () => virtualRows.value,
+  scrollToIndex: (index) =>
+    virtualizer.value.scrollToIndex(index, { align: "center" }),
+});
+defineExpose({
+  findCount: finder.count,
+  findCurrent: finder.current,
+  findStep: finder.step,
+});
 
 watch([element, () => props.text], () => {
   if (element.value && props.active !== false)

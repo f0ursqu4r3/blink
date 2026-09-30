@@ -306,15 +306,25 @@ function navigate(event: KeyboardEvent, index: number) {
                   </span>
                   <span
                     v-else-if="session.response"
-                    class="text-[0.5625rem]"
-                    :class="
+                    class="flex items-center gap-1 text-[0.5625rem]"
+                    :class="[
                       session.response.status >= 400
                         ? 'text-destructive'
-                        : 'text-success'
-                    "
+                        : 'text-success',
+                      { 'opacity-50': session.stale },
+                    ]"
+                    :data-stale="session.stale || undefined"
                   >
                     {{ sessionStatus(session) }}
                   </span>
+                  <span
+                    v-if="session.stale && !session.busy"
+                    class="size-1.5 shrink-0 rounded-full bg-foreground"
+                    data-tab-edited
+                    role="img"
+                    aria-label="Edited since sent"
+                    title="Edited since sent"
+                  />
                 </button>
                 <button
                   type="button"

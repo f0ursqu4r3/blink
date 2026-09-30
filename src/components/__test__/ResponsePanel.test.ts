@@ -64,6 +64,7 @@ describe("large JSON inspection", () => {
       expect(panel.text()).not.toContain("Grace");
       await panel.get('[aria-label="Expand profile"]').trigger("click");
       await panel.get('[aria-label="Find response"]').trigger("click");
+      await panel.get("[data-filter-lines]").trigger("click");
       await panel.get("[data-response-search]").setValue("Grace");
       expect(panel.get("[data-json-tree]").text()).toContain("Grace");
       expect(panel.get("[data-json-tree]").text()).not.toContain("active");
@@ -340,5 +341,46 @@ describe("stored bodies", () => {
     });
     expect(panel.text()).toContain("1.5 s elapsed · 90 s timeout");
     panel.unmount();
+  });
+});
+
+describe("find in response", () => {
+  it("counts matches and moves between them", async () => {
+    const panel = mount(ResponsePanel, {
+      props: {
+        busy: false,
+        error: "",
+        elapsed: 0,
+        response: {
+          status: 200,
+          statusText: "OK",
+          durationMs: 1,
+          sizeBytes: 9,
+          headers: [{ key: "Content-Type", value: "text/plain" }],
+          body: "a\nab\nb a",
+        },
+      },
+    });
+    try {
+      await panel.get('[aria-label="Find response"]').trigger("click");
+      const input = panel.get("[data-response-search]");
+      await input.setValue("A");
+      expect(panel.get("[data-find-status]").text()).toBe("1 of 3");
+      // Find keeps every line.
+      expect(panel.findAll(".code-line").length).toBe(3);
+      await input.trigger("keydown", { key: "Enter" });
+      expect(panel.get("[data-find-status]").text()).toBe("2 of 3");
+      await input.trigger("keydown", { key: "Enter", shiftKey: true });
+      await input.trigger("keydown", { key: "Enter", shiftKey: true });
+      expect(panel.get("[data-find-status]").text()).toBe("3 of 3");
+      await input.setValue("zzz");
+      expect(panel.get("[data-find-status]").text()).toBe("No results");
+      await panel.get("[data-filter-lines]").trigger("click");
+      await input.setValue("ab");
+      expect(panel.find("[data-find-status]").exists()).toBe(false);
+      expect(panel.findAll(".code-line").length).toBe(1);
+    } finally {
+      panel.unmount();
+    }
   });
 });

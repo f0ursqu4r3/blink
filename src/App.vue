@@ -17,7 +17,8 @@ import ApplicationSettingsDialog from "@/components/ApplicationSettingsDialog.vu
 import WorkspaceStorageNotice from "@/components/WorkspaceStorageNotice.vue";
 import HelpTooltip from "@/components/HelpTooltip.vue";
 import CommandCenter from "@/components/CommandCenter.vue";
-import { COMMAND_PREFIX, type Command } from "@/lib/command-center";
+import { COMMAND_PREFIX, groupPath, type Command } from "@/lib/command-center";
+import { formatBytes } from "@/lib/request";
 import { codeTargets } from "@/lib/codegen";
 import { applyZoom } from "@/lib/zoom";
 import { shortcutLabel } from "@/lib/shortcut";
@@ -86,6 +87,9 @@ const openSessions = computed(() =>
     const session = sessions.value.find((candidate) => candidate.id === id);
     return session ? [session] : [];
   }),
+);
+const activeGroupPath = computed(() =>
+  active.value ? groupPath(groups.value, active.value.groupId) : "",
 );
 const sidebarCollapsed = ref(false);
 const commandCenter = ref<InstanceType<typeof CommandCenter>>();
@@ -791,6 +795,40 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       <span>
         {{ sessions.length }}
         {{ sessions.length === 1 ? "REQUEST" : "REQUESTS" }}
+      </span>
+      <span
+        v-if="active"
+        class="flex min-w-0 items-center gap-1.5 max-[760px]:hidden"
+        data-active-summary
+      >
+        <span class="method" :data-method="active.draft.method">{{
+          active.draft.method
+        }}</span>
+        <template v-if="active.busy">
+          · {{ (active.elapsed / 1000).toFixed(1) }} s
+        </template>
+        <template v-else-if="active.error"
+          ><span class="text-destructive">· FAILED</span></template
+        >
+        <template v-else-if="active.response">
+          ·
+          <span
+            :class="
+              active.response.status >= 400
+                ? 'text-destructive'
+                : active.response.status >= 300
+                  ? 'text-warning'
+                  : 'text-success'
+            "
+            >{{ active.response.status }}</span
+          >
+          · {{ active.response.durationMs }} ms ·
+          {{ formatBytes(active.response.sizeBytes) }}
+          <template v-if="active.stale"> · EDITED</template>
+        </template>
+        <span v-if="activeGroupPath" class="truncate"
+          >· {{ activeGroupPath.toUpperCase() }}</span
+        >
       </span>
       <span v-if="sending" class="text-primary" role="status">
         {{ sending }} SENDING

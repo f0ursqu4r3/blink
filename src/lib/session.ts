@@ -13,6 +13,8 @@ export type RequestSession = {
   elapsed: number;
   sentFingerprint: string;
   view: RequestView;
+  /** The request changed since the shown response was sent. Not saved. */
+  stale?: boolean;
 };
 export type RequestView = {
   requestTab: string;

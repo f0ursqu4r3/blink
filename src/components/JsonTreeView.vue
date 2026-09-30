@@ -10,6 +10,7 @@ import {
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 import { useClipboard } from "@/composables/useClipboard";
+import { useFind } from "@/composables/useFind";
 
 type JsonContainer = Record<string, unknown> | unknown[];
 type JsonRow = {
@@ -24,6 +25,8 @@ type JsonRow = {
 const props = defineProps<{
   text: string;
   filter?: string;
+  /** Highlight matches without hiding rows. */
+  find?: string;
   active?: boolean;
   wrap?: boolean;
 }>();
@@ -115,6 +118,26 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
   })),
 );
 const virtualRows = computed(() => virtualizer.value.getVirtualItems());
+const finder = useFind({
+  element,
+  // The text each row shows: "key": value.
+  texts: () =>
+    rows.value.map((row) =>
+      row.key === null
+        ? valueLabel(row.value)
+        : `"${row.key}": ${valueLabel(row.value)}`,
+    ),
+  query: () => props.find ?? "",
+  active: () => props.active !== false,
+  rendered: () => virtualRows.value,
+  scrollToIndex: (index) =>
+    virtualizer.value.scrollToIndex(index, { align: "center" }),
+});
+defineExpose({
+  findCount: finder.count,
+  findCurrent: finder.current,
+  findStep: finder.step,
+});
 
 watch([element, () => props.text], () => {
   if (element.value && props.active !== false)

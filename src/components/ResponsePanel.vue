@@ -18,6 +18,9 @@ import {
   WrapText,
   X,
   Download,
+  ChevronUp,
+  ChevronDown,
+  ListFilter,
 } from "lucide-vue-next";
 import { Button } from "@/components/ui/button";
 import {
@@ -74,6 +77,24 @@ const wrap = computed({
 });
 const { copied, copyError, copy } = useClipboard();
 const search = ref("");
+/** Hide lines that do not match, instead of highlighting matches. */
+const filterLines = ref(false);
+const bodyView = ref<
+  InstanceType<typeof CodeView> | InstanceType<typeof JsonTreeView>
+>();
+const findCount = computed(() => bodyView.value?.findCount ?? 0);
+const findStatus = computed(() => {
+  if (!search.value.trim() || filterLines.value) return "";
+  return findCount.value
+    ? `${(bodyView.value?.findCurrent ?? 0) + 1} of ${findCount.value}`
+    : "No results";
+});
+const findStep = (direction: 1 | -1) => bodyView.value?.findStep(direction);
+function onSearchKey(event: KeyboardEvent) {
+  if (event.key !== "Enter" || filterLines.value) return;
+  event.preventDefault();
+  findStep(event.shiftKey ? -1 : 1);
+}
 const inspectorVisible = ref(false);
 const searchInput = ref<HTMLInputElement | null>(null);
 const jqQuery = ref("");
@@ -465,16 +486,62 @@ function copyHeaderPair() {
             class="flex flex-[1_1_180px] min-w-0 items-center gap-1.5 rounded border border-input bg-background pl-2 text-muted-foreground focus-within:border-primary max-[680px]:basis-8.5"
           >
             <Search :size="13" aria-hidden="true" />
-            <span class="sr-only">Filter response</span>
+            <span class="sr-only">{{
+              filterLines ? "Filter response" : "Find in response"
+            }}</span>
             <input
               ref="searchInput"
               v-model="search"
               data-response-search
               type="search"
-              placeholder="Filter response"
+              :placeholder="filterLines ? 'Filter lines' : 'Find'"
               autocomplete="off"
               class="w-full min-w-0 h-6.5 border-0 rounded-none px-1.75 bg-transparent font-mono text-[0.6875rem]"
+              @keydown="onSearchKey"
             />
+            <span
+              v-if="findStatus"
+              data-find-status
+              role="status"
+              class="shrink-0 whitespace-nowrap font-mono text-[0.625rem]"
+              :class="{ 'text-destructive': findStatus === 'No results' }"
+              >{{ findStatus }}</span
+            >
+            <template v-if="!filterLines">
+              <button
+                type="button"
+                class="inline-flex size-5.5 shrink-0 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-40"
+                aria-label="Previous match"
+                title="Previous match · Shift+Enter"
+                data-find-previous
+                :disabled="!findCount"
+                @click="findStep(-1)"
+              >
+                <ChevronUp :size="13" aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                class="inline-flex size-5.5 shrink-0 items-center justify-center rounded hover:bg-accent hover:text-foreground disabled:opacity-40"
+                aria-label="Next match"
+                title="Next match · Enter"
+                data-find-next
+                :disabled="!findCount"
+                @click="findStep(1)"
+              >
+                <ChevronDown :size="13" aria-hidden="true" />
+              </button>
+            </template>
+            <button
+              type="button"
+              class="mr-0.5 inline-flex size-5.5 shrink-0 items-center justify-center rounded hover:bg-accent hover:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
+              aria-label="Filter lines"
+              title="Show only matching lines"
+              data-filter-lines
+              :aria-pressed="filterLines"
+              @click="filterLines = !filterLines"
+            >
+              <ListFilter :size="13" aria-hidden="true" />
+            </button>
           </label>
           <form
             v-if="(sourceParsed || response.truncated) && !response.binary"
@@ -575,19 +642,23 @@ function copyHeaderPair() {
           </div>
           <JsonTreeView
             v-else-if="response.body && showJsonTree"
+            ref="bodyView"
             v-model:scroll="view.responseScroll"
             :active="active !== false && tab === 'body'"
             :text="text"
-            :filter="search"
+            :filter="filterLines ? search : ''"
+            :find="filterLines ? '' : search"
             :wrap="wrap"
           />
           <CodeView
             v-else-if="response.body"
+            ref="bodyView"
             v-model:scroll="view.responseScroll"
             :active="active !== false && tab === 'body'"
             :text="text"
             :language="language"
-            :filter="search"
+            :filter="filterLines ? search : ''"
+            :find="filterLines ? '' : search"
             :wrap="wrap"
           />
           <p

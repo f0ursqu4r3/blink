@@ -97,6 +97,7 @@ const { prepared, curl, stale, send, cancel, sentUrl } = useRequestRunner(
   resolvedCtx,
   () => props.transport,
 );
+watch(stale, (value) => (props.session.stale = value), { immediate: true });
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
 const target = computed(() => props.codeTarget ?? "curl");

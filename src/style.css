@@ -225,3 +225,12 @@
     scroll-behavior: auto !important;
   }
 }
+
+/* Find matches in the response body (CSS Custom Highlight API). */
+::highlight(blink-find) {
+  background-color: color-mix(in oklch, var(--warning) 30%, transparent);
+}
+::highlight(blink-find-current) {
+  background-color: color-mix(in oklch, var(--warning) 70%, transparent);
+  color: var(--background);
+}
