@@ -1,6 +1,7 @@
 import { bodyModes, isMethod, type BodyMode, type Method } from "./request";
 import type { RequestSession } from "./session";
 import type { RequestGroup } from "./groups";
+import { isCodeTarget, type CodeTarget } from "./codegen";
 import {
   defaultTransportOptions,
   proxyUrlError,
@@ -12,6 +13,19 @@ import {
 export const paneLayouts = ["horizontal", "vertical"] as const;
 export type PaneLayout = (typeof paneLayouts)[number];
 
+/** Interface zoom steps, as VS Code uses. */
+export const zoomLevels = [
+  0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2,
+] as const;
+export const isZoom = (value: unknown): value is number =>
+  zoomLevels.includes(value as (typeof zoomLevels)[number]);
+/** The next zoom step up (`1`) or down (`-1`). */
+export function stepZoom(zoom: number, direction: 1 | -1) {
+  const index = zoomLevels.indexOf(zoom as (typeof zoomLevels)[number]);
+  const next = (index < 0 ? zoomLevels.indexOf(1) : index) + direction;
+  return zoomLevels[Math.min(zoomLevels.length - 1, Math.max(0, next))];
+}
+
 export type WorkspacePreferences = {
   defaultMethod: Method;
   defaultBodyMode: BodyMode;
@@ -19,6 +33,9 @@ export type WorkspacePreferences = {
   wrap: boolean;
   confirmCloseDrafts: boolean;
   paneLayout: PaneLayout;
+  /** Language in the code panel. */
+  codeTarget: CodeTarget;
+  zoom: number;
 } & TransportOptions;
 
 export const defaultPreferences = (): WorkspacePreferences => ({
@@ -28,6 +45,8 @@ export const defaultPreferences = (): WorkspacePreferences => ({
   wrap: false,
   confirmCloseDrafts: true,
   paneLayout: "horizontal",
+  codeTarget: "curl",
+  zoom: 1,
   ...defaultTransportOptions(),
 });
 
@@ -43,6 +62,8 @@ export function validPreferences(
     typeof p.wrap === "boolean" &&
     typeof p.confirmCloseDrafts === "boolean" &&
     paneLayouts.includes(p.paneLayout as PaneLayout) &&
+    isCodeTarget(p.codeTarget) &&
+    isZoom(p.zoom) &&
     typeof p.followRedirects === "boolean" &&
     typeof p.verifyTls === "boolean" &&
     typeof p.proxyUrl === "string" &&
@@ -81,6 +102,8 @@ export function normalizePreferences(
     confirmCloseDrafts: input.confirmCloseDrafts,
     // Added after v4 shipped: older workspaces open side by side.
     paneLayout: input.paneLayout ?? "horizontal",
+    codeTarget: input.codeTarget ?? "curl",
+    zoom: input.zoom ?? 1,
   };
 
   // Add transport fields (use provided values, or defaults)

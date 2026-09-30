@@ -105,7 +105,8 @@ describe("RequestWorkspace context menu – request bar items", () => {
       "Focus URL",
       "Copy URL",
       "Copy as cURL",
-      "Show cURL",
+      "Copy as",
+      "Show code",
     ]);
     expect(
       document.body

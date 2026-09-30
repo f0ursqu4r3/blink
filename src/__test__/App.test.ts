@@ -288,10 +288,10 @@ describe("compact request console", () => {
     const app = render();
     await app.get("[data-request-url]").setValue("https://example.test");
     await app.get(".curl-button").trigger("click");
-    await app.get("[data-curl-preview] button").trigger("click");
+    await app.get("[data-copy-code]").trigger("click");
     await flushPromises();
     expect(app.get('[role="alert"]').text()).toContain("Clipboard unavailable");
-    expect(app.get("[data-curl-preview] button").text()).not.toContain(
+    expect(app.get("[data-copy-code]").text()).not.toContain(
       "Copied",
     );
   });

@@ -10,11 +10,20 @@ import {
   ContextMenuSeparator,
   ContextMenuCheckboxItem,
   ContextMenuShortcut,
+  ContextMenuSub,
+  ContextMenuSubTrigger,
+  ContextMenuSubContent,
 } from "@/components/ui/context-menu";
 import { shortcutLabel } from "@/lib/shortcut";
 import RequestEditor from "./RequestEditor.vue";
 import ResponsePanel from "./ResponsePanel.vue";
 import { methods } from "@/lib/request";
+import {
+  codeTargets,
+  codeTargetLabel,
+  generateCode,
+  type CodeTarget,
+} from "@/lib/codegen";
 import { isCurlCommand, parseCurl } from "@/lib/curl-import";
 import type { RequestSession } from "@/lib/session";
 import type { RequestGroup } from "@/lib/groups";
@@ -36,7 +45,10 @@ const props = defineProps<{
   transport?: TransportOptions;
   /** Side by side (default), or request above response. */
   layout?: PaneLayout;
+  /** Language in the code panel. */
+  codeTarget?: CodeTarget;
 }>();
+const emit = defineEmits<{ "update:codeTarget": [target: CodeTarget] }>();
 
 const resolvedCtx = computed(() =>
   buildResolvedRequestContext(
@@ -87,6 +99,14 @@ const { prepared, curl, stale, send, cancel, sentUrl } = useRequestRunner(
 );
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
+const target = computed(() => props.codeTarget ?? "curl");
+/** Code for `id`, or "" when the draft does not build. */
+function codeFor(id: CodeTarget) {
+  return prepared.value.request
+    ? generateCode(id, prepared.value.request, props.transport)
+    : "";
+}
+const code = computed(() => codeFor(target.value));
 const urlInput = ref<InstanceType<typeof TokenInput>>();
 const workspace = ref<HTMLElement>();
 const panels = ref<HTMLElement>();
@@ -352,13 +372,14 @@ function resizeWithKeyboard(event: KeyboardEvent) {
             :disabled="!prepared.request"
             :aria-expanded="showCurl"
             :aria-controls="`${prefix}-curl`"
-            aria-label="cURL"
+            aria-label="Code"
+            title="Show the request as code"
             @click="showCurl = !showCurl"
           >
             <Terminal :size="14" aria-hidden="true" /><span
               class="max-[900px]:hidden"
             >
-              cURL
+              Code
             </span>
           </Button>
           <Button
@@ -433,8 +454,26 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         >
           Copy as cURL
         </ContextMenuItem>
+        <ContextMenuSub>
+          <ContextMenuSubTrigger
+            data-testid="ctx-copy-as"
+            :disabled="!prepared.request"
+          >
+            Copy as
+          </ContextMenuSubTrigger>
+          <ContextMenuSubContent>
+            <ContextMenuItem
+              v-for="option in codeTargets"
+              :key="option.id"
+              :data-testid="`ctx-copy-as-${option.id}`"
+              @select="copy(codeFor(option.id))"
+            >
+              {{ option.label }}
+            </ContextMenuItem>
+          </ContextMenuSubContent>
+        </ContextMenuSub>
         <ContextMenuCheckboxItem v-model="showCurl" data-testid="ctx-show-curl">
-          Show cURL
+          Show code
         </ContextMenuCheckboxItem>
       </ContextMenuContent>
     </ContextMenu>
@@ -478,29 +517,44 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           :id="`${prefix}-curl`"
           data-curl-preview
           class="max-h-50 overflow-auto px-3.5 pt-2 pb-3 border-b border-border bg-muted"
-          aria-label="cURL export"
+          aria-label="Request as code"
         >
-          <div
-            class="flex items-center justify-between font-mono text-[0.5625rem] tracking-[0.08em] text-warning"
-          >
-            <span>POSIX SHELL · INCLUDES CREDENTIALS</span>
-            <Button variant="ghost" @click="copy(curl)">
+          <div class="flex items-center gap-2">
+            <div
+              class="flex min-w-0 flex-1 flex-wrap items-center gap-0.5"
+              role="group"
+              aria-label="Code language"
+            >
+              <button
+                v-for="option in codeTargets"
+                :key="option.id"
+                type="button"
+                :data-code-target="option.id"
+                :aria-pressed="option.id === target"
+                class="h-6 rounded px-2 text-[0.6875rem] text-muted-foreground hover:bg-accent hover:text-foreground aria-pressed:bg-accent aria-pressed:text-foreground"
+                @click="emit('update:codeTarget', option.id)"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+            <Button variant="ghost" data-copy-code @click="copy(code)">
               <Check v-if="copied" :size="13" aria-hidden="true" />
-              {{ copied ? "Copied" : "Copy cURL" }}
+              {{ copied ? "Copied" : "Copy" }}
             </Button>
           </div>
           <pre
-            class="font-mono text-[0.6875rem] leading-[1.8] whitespace-pre-wrap break-anywhere"
+            class="mt-1 font-mono text-[0.6875rem] leading-[1.8] whitespace-pre-wrap break-anywhere"
             tabindex="0"
-            >{{ curl }}</pre>
+            :aria-label="codeTargetLabel(target)"
+            >{{ code }}</pre>
           <HelpTooltip
-            text="The generated command includes credentials. Review it before sharing."
+            text="The generated code includes credentials. Review it before sharing."
           >
             <button
               type="button"
-              class="mt-1 text-[0.625rem] text-muted-foreground underline decoration-dotted underline-offset-3"
+              class="mt-1 text-[0.625rem] text-warning underline decoration-dotted underline-offset-3"
             >
-              cURL help
+              Includes credentials
             </button>
           </HelpTooltip>
           <p
@@ -513,8 +567,8 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         </section>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem data-testid="ctx-copy-curl" @select="copy(curl)">
-          Copy cURL
+        <ContextMenuItem data-testid="ctx-copy-curl" @select="copy(code)">
+          Copy {{ codeTargetLabel(target) }}
         </ContextMenuItem>
         <ContextMenuSeparator />
         <ContextMenuItem

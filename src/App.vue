@@ -547,6 +547,10 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           :global-definitions="globalDefinitions"
           :transport="transport"
           :layout="preferences.paneLayout"
+          :code-target="preferences.codeTarget"
+          @update:code-target="
+            (codeTarget) => setPreferences({ ...preferences, codeTarget })
+          "
         />
       </div>
     </div>
