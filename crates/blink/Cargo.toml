@@ -8,4 +8,12 @@ edition.workspace = true
 
 [dependencies]
 blink-core = { path = "../blink-core" }
-gpui-kit = "0.7.0"
+gpui-kit = { version = "0.7.0", features = [
+    "tree-sitter",
+    "tree-sitter-bash",
+    "tree-sitter-go",
+    "tree-sitter-graphql",
+    "tree-sitter-javascript",
+    "tree-sitter-python",
+    "tree-sitter-rust",
+] }
