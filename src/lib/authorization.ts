@@ -13,6 +13,7 @@
  */
 
 import type { RequestGroup } from "./groups";
+import { groupDefinitions } from "./environments";
 import type { InterpolationContext } from "./interpolation";
 
 export type AuthorizationConfig =
@@ -79,8 +80,9 @@ export function resolveTokenDefinitions(
   // Merge: nearest wins (process chain in order, skip if key already set)
   const merged: Record<string, string> = {};
   for (const g of chain) {
-    if (g.localDefinitions) {
-      for (const [k, v] of Object.entries(g.localDefinitions)) {
+    const definitions = groupDefinitions(g);
+    if (definitions) {
+      for (const [k, v] of Object.entries(definitions)) {
         if (!Object.prototype.hasOwnProperty.call(merged, k)) {
           merged[k] = v;
         }

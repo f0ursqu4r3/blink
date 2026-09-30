@@ -3,11 +3,20 @@ import { computed, ref, watch } from "vue";
 import { DialogContent, DialogOverlay, DialogRoot, DialogTitle } from "reka-ui";
 import HelpTooltip from "./HelpTooltip.vue";
 import KeyValueEditor from "./KeyValueEditor.vue";
+import EnvironmentTokensEditor, {
+  type EnvironmentColumn,
+  type EnvironmentRow,
+} from "./EnvironmentTokensEditor.vue";
+import {
+  createEnvironment,
+  nextEnvironmentColor,
+  type Environment,
+} from "../lib/environments";
 import type { RequestGroup } from "../lib/groups";
 import type { RequestSession } from "../lib/session";
 import type { AuthorizationConfig } from "../lib/authorization";
 import { canNestGroup } from "../lib/groups";
-import type { Method, Pair } from "../lib/request";
+import { pair, type Method, type Pair } from "../lib/request";
 import { definitionsToRows, rowsToDefinitions } from "../lib/definitions";
 import {
   defaultPreferences,
@@ -35,6 +44,7 @@ const emit = defineEmits<{
       parentId?: number | null;
       defaultMethod?: Method | undefined;
       defaultUrl?: string | undefined;
+      environments?: Environment[] | undefined;
     },
   ): void;
 }>();
@@ -52,6 +62,65 @@ const defaultMethod = ref<Method | "">("");
 const defaultUrl = ref("");
 
 const localTokenRows = ref<Pair[]>([]);
+/** Root groups edit tokens as a table with a column per environment. */
+const isRoot = computed(() => parentId.value === null);
+const envRows = ref<EnvironmentRow[]>([]);
+const envColumns = ref<EnvironmentColumn[]>([]);
+function toEnvRows(base: Record<string, string>, environments: Environment[]) {
+  const keys = [
+    ...new Set([
+      ...Object.keys(base),
+      ...environments.flatMap((environment) => Object.keys(environment.values)),
+    ]),
+  ];
+  const rows = keys.map((key) => ({
+    id: pair().id,
+    key,
+    base: base[key] ?? "",
+    values: Object.fromEntries(
+      environments.map((environment) => [
+        environment.id,
+        environment.values[key] ?? "",
+      ]),
+    ),
+  }));
+  return rows.length
+    ? rows
+    : [{ id: pair().id, key: "", base: "", values: {} }];
+}
+function addEnvRow() {
+  envRows.value = [
+    ...envRows.value,
+    { id: pair().id, key: "", base: "", values: {} },
+  ];
+}
+function addEnvColumn() {
+  const environment = createEnvironment(
+    envColumns.value.length ? `ENV ${envColumns.value.length + 1}` : "DEV",
+    nextEnvironmentColor(envColumns.value as Environment[]),
+  );
+  envColumns.value = [...envColumns.value, environment];
+}
+// Moving a group in or out of the root keeps the tokens typed so far.
+watch(isRoot, (root) => {
+  if (root)
+    envRows.value = toEnvRows(
+      Object.fromEntries(
+        localTokenRows.value
+          .filter((row) => row.key.trim())
+          .map((row) => [row.key, row.value]),
+      ),
+      [],
+    );
+  else
+    localTokenRows.value = definitionsToRows(
+      Object.fromEntries(
+        envRows.value
+          .filter((row) => row.key.trim())
+          .map((row) => [row.key, row.base]),
+      ),
+    );
+});
 const tokenError = ref("");
 const formError = ref("");
 
@@ -86,6 +155,13 @@ function initFromProps() {
   }
 
   localTokenRows.value = definitionsToRows(props.group.localDefinitions ?? {});
+  envColumns.value = (props.group.environments ?? []).map(
+    ({ values: _values, ...column }) => ({ ...column }),
+  );
+  envRows.value = toEnvRows(
+    props.group.localDefinitions ?? {},
+    props.group.environments ?? [],
+  );
   tokenError.value = "";
   formError.value = "";
 }
@@ -212,6 +288,56 @@ const descendantRequestCount = computed(() => {
 });
 
 // ---------- actions ----------
+/** Base tokens and environments from the table, or null with an error. */
+function parseEnvironmentTable(): {
+  localDefinitions: Record<string, string>;
+  environments: Environment[];
+} | null {
+  const names = new Set<string>();
+  for (const column of envColumns.value) {
+    const name = column.name.trim().toUpperCase();
+    if (!name) {
+      tokenError.value = "Enter a name for each environment.";
+      return null;
+    }
+    if (names.has(name)) {
+      tokenError.value = `Environment "${name}" is defined more than once.`;
+      return null;
+    }
+    names.add(name);
+  }
+  const used = envRows.value.filter(
+    (row) =>
+      row.key.trim() || row.base || Object.values(row.values).some(Boolean),
+  );
+  const result = rowsToDefinitions(
+    used.map((row) => ({ ...pair(row.key, row.base || " "), enabled: true })),
+  );
+  if ("error" in result) {
+    tokenError.value = result.error;
+    return null;
+  }
+  tokenError.value = "";
+  const localDefinitions: Record<string, string> = {};
+  for (const row of used) {
+    const key = row.key.trim();
+    // A token set only in environments has no base value.
+    const inEnvironment = envColumns.value.some((c) => row.values[c.id]);
+    if (row.base || !inEnvironment) localDefinitions[key] = row.base;
+  }
+  const environments = envColumns.value.map((column) => ({
+    id: column.id,
+    name: column.name.trim().toUpperCase(),
+    color: column.color,
+    ...(column.protected ? { protected: true } : {}),
+    values: Object.fromEntries(
+      used
+        .filter((row) => row.values[column.id])
+        .map((row) => [row.key.trim(), row.values[column.id]]),
+    ),
+  }));
+  return { localDefinitions, environments };
+}
 function parseLocalDefinitions(): Record<string, string> | null {
   const result = rowsToDefinitions(localTokenRows.value);
   if ("error" in result) {
@@ -249,8 +375,19 @@ function handleSave() {
     formError.value = "Initial URL must be 65536 characters or fewer.";
     return;
   }
-  const localDefinitions = parseLocalDefinitions();
-  if (!localDefinitions) return;
+  let localDefinitions: Record<string, string> | null;
+  let environments: Environment[] | undefined;
+  if (isRoot.value) {
+    const table = parseEnvironmentTable();
+    if (!table) return;
+    localDefinitions = table.localDefinitions;
+    environments = table.environments;
+  } else {
+    localDefinitions = parseLocalDefinitions();
+    if (!localDefinitions) return;
+    // Environments stay stored but apply only to a root group.
+    environments = props.group.environments;
+  }
   const changes: {
     name?: string;
     localAuth?: AuthorizationConfig | undefined;
@@ -258,7 +395,9 @@ function handleSave() {
     parentId?: number | null;
     defaultMethod?: Method | undefined;
     defaultUrl?: string | undefined;
+    environments?: Environment[] | undefined;
   } = {};
+  changes.environments = environments;
   changes.name = name;
   changes.localAuth = buildLocalAuth();
   changes.localDefinitions = localDefinitions;
@@ -278,7 +417,7 @@ function handleCancel() {
   <DialogRoot :open="open" @update:open="emit('update:open', $event)">
     <DialogOverlay class="fixed inset-0 z-50 bg-black/50" />
     <DialogContent
-      class="fixed left-1/2 top-1/2 z-[60] flex max-h-[90dvh] w-[min(620px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg overflow-hidden border border-border bg-background"
+      class="fixed left-1/2 top-1/2 z-[60] flex max-h-[90dvh] w-[min(760px,calc(100vw-24px))] -translate-x-1/2 -translate-y-1/2 flex-col rounded-lg overflow-hidden border border-border bg-background"
       data-testid="group-settings-dialog"
       :aria-describedby="undefined"
       @pointer-down-outside.prevent
@@ -543,6 +682,19 @@ function handleCancel() {
                 >
               </div>
               <div
+                v-if="isRoot"
+                class="overflow-hidden border border-input rounded-sm bg-background"
+                data-local-tokens
+              >
+                <EnvironmentTokensEditor
+                  v-model:rows="envRows"
+                  v-model:columns="envColumns"
+                  @add-row="addEnvRow"
+                  @add-column="addEnvColumn"
+                />
+              </div>
+              <div
+                v-else
                 class="overflow-hidden border border-input rounded-sm bg-background"
                 data-local-tokens
               >
@@ -552,6 +704,17 @@ function handleCancel() {
                   hide-enabled
                 />
               </div>
+              <p v-if="isRoot" class="text-[0.6875rem] text-muted-foreground">
+                Add an environment column to switch values from the Browser. An
+                empty cell uses the base value. Nested groups follow this
+                group's environment.
+              </p>
+              <p
+                v-else-if="group?.environments?.length"
+                class="text-[0.6875rem] text-warning"
+              >
+                This group's environments apply only while it is a root group.
+              </p>
               <p
                 v-if="tokenError"
                 class="text-[10px] text-destructive"

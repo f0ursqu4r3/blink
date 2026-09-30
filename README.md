@@ -37,9 +37,16 @@ Browser sidebar organizes the request tabs in the current session.
   between matches. The filter button shows only matching lines.
 - Compare responses in the History view. Blink keeps the last 25 sends of each
   request.
+- Give a root group environments, such as DEV and PROD. Group settings shows
+  a token table with a column per environment; an empty cell uses the base
+  value. Switch the environment from the badge beside the group name, the
+  status bar shows it, and a protected environment asks before the first
+  send after you switch to it. Nested groups follow their root group.
 - Add assertions on status, time, size, headers, body text, or jq values in
-  the request Tests tab. Captures save a response value as a workspace token,
-  such as a login token for later requests.
+  the request Tests tab. Captures save a response value as a token in the
+  active environment of the request's root group, so values never cross
+  environments. Without an environment they go to the root group's tokens,
+  or to the global tokens for ungrouped requests.
 - Watch `text/event-stream` responses as they arrive. Cancel stops the stream
   and keeps the events.
 - Open a WebSocket with a `ws://` or `wss://` URL. Send and receive messages

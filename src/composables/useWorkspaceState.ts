@@ -3,6 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createSession, hasDraft, type RequestSession } from "@/lib/session";
 import type { ImportedGroup } from "@/lib/import";
+import type { Environment } from "@/lib/environments";
 import { releaseResponse } from "@/lib/response-body";
 import { isMethod } from "@/lib/request";
 import {
@@ -617,6 +618,28 @@ export function useWorkspaceState() {
     if (!validPreferences(next)) return;
     preferences.value = { ...next };
   }
+  /** Replace a root group's environments. Keeps a still-valid active one. */
+  function setGroupEnvironments(
+    groupId: number,
+    environments: Environment[] | undefined,
+  ) {
+    const group = groups.value.find((g) => g.id === groupId);
+    if (!group) return;
+    group.environments = environments?.length ? environments : undefined;
+    if (!group.environments?.some((e) => e.id === group.activeEnvironmentId))
+      group.activeEnvironmentId = undefined;
+  }
+  /** Switch a root group's environment. Null uses the base tokens only. */
+  function setActiveEnvironment(groupId: number, environmentId: number | null) {
+    const group = groups.value.find((g) => g.id === groupId);
+    if (!group || group.parentId !== null) return;
+    if (
+      environmentId !== null &&
+      !group.environments?.some((e) => e.id === environmentId)
+    )
+      return;
+    group.activeEnvironmentId = environmentId ?? undefined;
+  }
   function setGroupParent(groupId: number, parentId: number | null) {
     const group = groups.value.find((g) => g.id === groupId);
     if (group && group.parentId !== parentId)
@@ -680,5 +703,7 @@ export function useWorkspaceState() {
     setPreferences,
     setGroupParent,
     setGroupNewRequestDefaults,
+    setGroupEnvironments,
+    setActiveEnvironment,
   };
 }

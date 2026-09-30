@@ -24,6 +24,12 @@ import { COMMAND_PREFIX, groupPath, type Command } from "@/lib/command-center";
 import { formatBytes } from "@/lib/request";
 import { codeTargets } from "@/lib/codegen";
 import { applyZoom } from "@/lib/zoom";
+import {
+  activeEnvironment,
+  applyCapture,
+  requestEnvironment,
+  rootGroup,
+} from "@/lib/environments";
 import { shortcutLabel } from "@/lib/shortcut";
 import { useTheme } from "@/composables/useTheme";
 import { nativeTransport } from "@/lib/transport";
@@ -81,6 +87,8 @@ const {
   setPreferences,
   setGroupParent,
   setGroupNewRequestDefaults,
+  setGroupEnvironments,
+  setActiveEnvironment,
 } = useWorkspaceState();
 
 const active = computed(() =>
@@ -178,6 +186,7 @@ function handleSaveGroupSettings(
     parentId?: number | null;
     defaultMethod?: import("@/lib/request").Method | undefined;
     defaultUrl?: string | undefined;
+    environments?: import("@/lib/environments").Environment[] | undefined;
   },
 ) {
   if (changes.name !== undefined) setGroupName(groupId, changes.name);
@@ -185,6 +194,8 @@ function handleSaveGroupSettings(
     setGroupLocalAuth(groupId, changes.localAuth);
   if (changes.localDefinitions !== undefined)
     setGroupLocalDefinitions(groupId, changes.localDefinitions);
+  if (Object.prototype.hasOwnProperty.call(changes, "environments"))
+    setGroupEnvironments(groupId, changes.environments);
   if (changes.parentId !== undefined) setGroupParent(groupId, changes.parentId);
   if (Object.prototype.hasOwnProperty.call(changes, "defaultMethod"))
     setGroupNewRequestDefaults(
@@ -293,6 +304,29 @@ async function importFile(event: Event) {
       `IMPORT FAILED: ${cause instanceof Error ? cause.message : String(cause)}`,
       true,
     );
+  }
+}
+/** Environments confirmed for sending since they became active. */
+const confirmedEnvironments = ref(new Set<number>());
+function confirmEnvironment(id: number) {
+  confirmedEnvironments.value = new Set([...confirmedEnvironments.value, id]);
+}
+/** Captured values go to the request's environment, so they never mix. */
+function capture(groupId: number | null, values: Record<string, string>) {
+  if (applyCapture(groupId, groups.value, values) === "global")
+    setGlobalDefinitions({ ...globalDefinitions.value, ...values });
+}
+const activeRoot = computed(() =>
+  active.value ? rootGroup(active.value.groupId, groups.value) : undefined,
+);
+const activeEnv = computed(() => activeEnvironment(activeRoot.value));
+function switchEnvironment(groupId: number, environmentId: number | null) {
+  setActiveEnvironment(groupId, environmentId);
+  // A protected environment asks again after each switch to it.
+  if (environmentId !== null) {
+    const next = new Set(confirmedEnvironments.value);
+    next.delete(environmentId);
+    confirmedEnvironments.value = next;
   }
 }
 function newGroup() {
@@ -414,6 +448,28 @@ const commands = computed<Command[]>(() => {
       label: "Response: Toggle pretty",
       disabled: !response || response.binary || response.truncated,
     },
+    ...(activeRoot.value?.environments?.length
+      ? [
+          ...activeRoot.value.environments.map((environment) => ({
+            id: `environment-${environment.id}`,
+            label: `Environment: Switch ${activeRoot.value!.name} to ${environment.name}`,
+            disabled: environment.id === activeEnv.value?.id,
+          })),
+          {
+            id: "environment-none",
+            label: `Environment: Use no environment for ${activeRoot.value.name}`,
+            disabled: !activeEnv.value,
+          },
+        ]
+      : []),
+    ...(activeRoot.value
+      ? [
+          {
+            id: "edit-environments",
+            label: `Environment: Edit ${activeRoot.value.name} environments`,
+          },
+        ]
+      : []),
     { id: "new-group", label: "Browser: New group" },
     {
       id: "import",
@@ -478,6 +534,15 @@ function runCommand(id: string) {
   else if (id === "save-response") void response?.saveBody();
   else if (id === "toggle-wrap") response?.toggleWrap();
   else if (id === "toggle-pretty") response?.togglePretty();
+  else if (id === "environment-none" && activeRoot.value)
+    switchEnvironment(activeRoot.value.id, null);
+  else if (id.startsWith("environment-") && activeRoot.value)
+    switchEnvironment(
+      activeRoot.value.id,
+      Number(id.slice("environment-".length)),
+    );
+  else if (id === "edit-environments" && activeRoot.value)
+    openGroupSettings(activeRoot.value.id);
   else if (id === "new-group") newGroup();
   else if (id === "import") pickImport();
   else if (id === "manage-cookies") openCookies();
@@ -801,6 +866,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         @delete-group="deleteGroup"
         @collapse-all-groups="collapseAllGroups"
         @import="pickImport"
+        @set-environment="switchEnvironment"
         @open-group-settings="openGroupSettings"
         @create-request="(groupId) => create(false, groupId)"
         @duplicate-request="(id) => duplicate(id)"
@@ -846,10 +912,14 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
           :layout="preferences.paneLayout"
           :ref="(handle) => setWorkspace(session.id, handle)"
           :code-target="preferences.codeTarget"
-          @capture="
-            (values) =>
-              setGlobalDefinitions({ ...globalDefinitions, ...values })
+          :environment="requestEnvironment(session.groupId, groups)"
+          :environment-confirmed="
+            confirmedEnvironments.has(
+              requestEnvironment(session.groupId, groups)?.id ?? -1,
+            )
           "
+          @confirm-environment="confirmEnvironment"
+          @capture="(values) => capture(session.groupId, values)"
           @update:code-target="
             (codeTarget) => setPreferences({ ...preferences, codeTarget })
           "
@@ -909,6 +979,13 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         </template>
         <span v-if="activeGroupPath" class="truncate"
           >· {{ activeGroupPath.toUpperCase() }}</span
+        >
+        <span
+          v-if="activeEnv"
+          class="font-semibold"
+          :style="{ color: `var(--${activeEnv.color})` }"
+          data-status-environment
+          >· {{ activeEnv.name }}</span
         >
       </span>
       <span v-if="sending" class="text-primary" role="status">

@@ -10,6 +10,12 @@ import {
 } from "./session";
 import { reserveGroupId, type RequestGroup } from "./groups";
 import { HISTORY_LIMIT } from "./history";
+import {
+  isEnvironmentColor,
+  MAX_ENVIRONMENT_NAME,
+  MAX_ENVIRONMENTS,
+  reserveEnvironmentId,
+} from "./environments";
 import { isCheckOperator, isCheckSource, reserveCheckId } from "./checks";
 import {
   defaultPreferences,
@@ -258,6 +264,35 @@ function validateGroups(input: unknown, version: number): RequestGroup[] {
           }),
         );
       }
+      if (group.environments !== undefined) {
+        const envIds = new Set();
+        for (const item of array(group.environments, MAX_ENVIRONMENTS)) {
+          const environment = record(item);
+          check(
+            id(environment.id) &&
+              !envIds.has(environment.id) &&
+              text(environment.name) &&
+              (environment.name as string).trim().length > 0 &&
+              (environment.name as string).length <= MAX_ENVIRONMENT_NAME &&
+              isEnvironmentColor(environment.color) &&
+              (environment.protected === undefined ||
+                typeof environment.protected === "boolean") &&
+              validateDefinitions(environment.values, {
+                allowLeadingUnderscore: false,
+              }),
+          );
+          envIds.add(environment.id);
+        }
+        check(
+          group.activeEnvironmentId === undefined ||
+            group.activeEnvironmentId === null ||
+            envIds.has(group.activeEnvironmentId),
+        );
+      } else
+        check(
+          group.activeEnvironmentId === undefined ||
+            group.activeEnvironmentId === null,
+        );
       if (group.defaultMethod !== undefined)
         check(isMethod(group.defaultMethod));
       if (group.defaultUrl !== undefined)
@@ -475,7 +510,12 @@ export function decodeWorkspace(content: string) {
   }
   const groups =
     version >= 2 ? (data as SnapshotV2 | SnapshotV3 | SnapshotV4).groups : [];
-  for (const group of groups) reserveGroupId(group.id);
+  for (const group of groups) {
+    reserveGroupId(group.id);
+    group.environments?.forEach((environment) =>
+      reserveEnvironmentId(environment.id),
+    );
+  }
   const globalDefinitions =
     version >= 3 ? (data as SnapshotV3 | SnapshotV4).globalDefinitions : {};
   if (version < 3) {

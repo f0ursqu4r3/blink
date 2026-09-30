@@ -213,3 +213,36 @@ describe("RequestWorkspace context menu – cURL preview", () => {
     expect(written.length).toBeGreaterThan(0);
   });
 });
+
+describe("RequestWorkspace protected environment", () => {
+  it("asks before sending to a protected environment", async () => {
+    const session = createSession();
+    session.draft.url = "https://example.test";
+    const wrapper = mount(RequestWorkspace, {
+      attachTo: document.body,
+      props: {
+        active: true,
+        session,
+        environment: {
+          id: 5,
+          name: "PROD",
+          color: "destructive",
+          protected: true,
+          values: {},
+        },
+        environmentConfirmed: false,
+      },
+    });
+    wrappers.push(wrapper);
+    await nextTick();
+    await wrapper.get("form.request-bar").trigger("submit");
+    expect(wrapper.find("[data-environment-confirm]").text()).toContain(
+      "PROD is protected",
+    );
+    expect(session.busy).toBe(false);
+    await wrapper.get("[data-confirm-environment]").trigger("click");
+    expect(wrapper.emitted("confirmEnvironment")).toEqual([[5]]);
+    expect(session.busy).toBe(true);
+    expect(wrapper.find("[data-environment-confirm]").exists()).toBe(false);
+  });
+});

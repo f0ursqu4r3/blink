@@ -337,10 +337,8 @@ describe("GroupSettingsDialog", () => {
     it("emits local definitions from the rows", async () => {
       const group = mkGroup({ id: 7, localDefinitions: {} });
       const w = mountDialog({ group, groups: [group] });
-      await w.get('[aria-label="Local tokens name 1"]').setValue("mykey");
-      await w
-        .get('[aria-label="Local tokens value 1"]')
-        .setValue("{{_.apiKey}}");
+      await w.get('[aria-label="Token name 1"]').setValue("mykey");
+      await w.get('[aria-label="Token 1 value"]').setValue("{{_.apiKey}}");
       await w.find('[data-testid="save-button"]').trigger("click");
       expect((w.emitted("save")![0][1] as any).localDefinitions).toEqual({
         mykey: "{{_.apiKey}}",
@@ -350,10 +348,53 @@ describe("GroupSettingsDialog", () => {
     it("rejects a token value without a name", async () => {
       const group = mkGroup({ id: 7, localDefinitions: {} });
       const w = mountDialog({ group, groups: [group] });
-      await w.get('[aria-label="Local tokens value 1"]').setValue("443");
+      await w.get('[aria-label="Token 1 value"]').setValue("443");
       await w.find('[data-testid="save-button"]').trigger("click");
       expect(w.get("[data-token-error]").text()).toContain("Enter a name");
       expect(w.emitted("save")).toBeFalsy();
+    });
+  });
+
+  describe("Environments", () => {
+    it("adds an environment column and saves its values", async () => {
+      const group = mkGroup({ id: 7, localDefinitions: { host: "base" } });
+      const w = mountDialog({ group, groups: [group] });
+      await w.get("[data-add-environment]").trigger("click");
+      const cell = w.get("[data-row-environment]");
+      expect(cell.attributes("placeholder")).toBe("base");
+      await cell.setValue("dev.test");
+      await w.get("[data-add-token]").trigger("click");
+      await w.get('[aria-label="Token name 2"]').setValue("key");
+      await w.findAll("[data-row-environment]")[1].setValue("k");
+      await w.find('[data-testid="save-button"]').trigger("click");
+      const changes = w.emitted("save")![0][1] as any;
+      expect(changes.localDefinitions).toEqual({ host: "base" });
+      expect(changes.environments).toMatchObject([
+        {
+          name: "DEV",
+          color: "keyword",
+          values: { host: "dev.test", key: "k" },
+        },
+      ]);
+    });
+    it("rejects duplicate environment names", async () => {
+      const group = mkGroup({
+        id: 7,
+        environments: [
+          { id: 1, name: "DEV", color: "info", values: {} },
+          { id: 2, name: "dev", color: "success", values: {} },
+        ],
+      });
+      const w = mountDialog({ group, groups: [group] });
+      await w.find('[data-testid="save-button"]').trigger("click");
+      expect(w.get("[data-token-error]").text()).toContain("more than once");
+    });
+    it("uses plain tokens for a nested group", () => {
+      const parent = mkGroup({ id: 1 });
+      const group = mkGroup({ id: 2, parentId: 1 });
+      const w = mountDialog({ group, groups: [parent, group] });
+      expect(w.find("[data-environment-tokens]").exists()).toBe(false);
+      expect(w.find('[aria-label="Local tokens name 1"]').exists()).toBe(true);
     });
   });
 

@@ -10,6 +10,10 @@ export type RequestGroup = {
   /** Defaults for new requests in this group. Undefined inherits. */
   defaultMethod?: import("./request").Method | undefined;
   defaultUrl?: string | undefined;
+  /** Root groups only: named token sets, switched in the Browser. */
+  environments?: import("./environments").Environment[];
+  /** The active environment id. Undefined or null: base tokens only. */
+  activeEnvironmentId?: number | null;
 };
 
 export type GroupedSession = {

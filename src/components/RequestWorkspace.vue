@@ -28,6 +28,7 @@ import ResponsePanel from "./ResponsePanel.vue";
 import WebSocketPanel from "./WebSocketPanel.vue";
 import { isWebSocketUrl } from "@/lib/websocket";
 import { useWebSocket } from "@/composables/useWebSocket";
+import type { Environment } from "@/lib/environments";
 import { methods } from "@/lib/request";
 import {
   codeTargets,
@@ -60,10 +61,15 @@ const props = defineProps<{
   layout?: PaneLayout;
   /** Language in the code panel. */
   codeTarget?: CodeTarget;
+  /** The active environment of the request's root group. */
+  environment?: Environment;
+  /** A protected environment was confirmed since it became active. */
+  environmentConfirmed?: boolean;
 }>();
 const emit = defineEmits<{
   "update:codeTarget": [target: CodeTarget];
   capture: [values: Record<string, string>];
+  confirmEnvironment: [id: number];
 }>();
 
 const resolvedCtx = computed(() =>
@@ -119,8 +125,31 @@ const socket = useWebSocket(props.session, resolvedCtx, () => props.transport);
 const validationError = computed(() =>
   websocket.value ? socket.prepared.value.error : prepared.value.error,
 );
+/** A protected environment waits for this before the first send. */
+const confirming = ref(false);
+function confirmAndSend() {
+  if (props.environment) emit("confirmEnvironment", props.environment.id);
+  confirming.value = false;
+  return run();
+}
+watch(
+  () => props.environment?.id,
+  () => (confirming.value = false),
+);
 /** Send an HTTP request, or connect and disconnect a WebSocket. */
 function primary() {
+  const connecting = !websocket.value || !socket.active.value;
+  if (
+    connecting &&
+    props.environment?.protected &&
+    !props.environmentConfirmed
+  ) {
+    confirming.value = true;
+    return;
+  }
+  return run();
+}
+function run() {
   if (!websocket.value) return send();
   if (socket.active.value) socket.disconnect();
   else socket.connect();
@@ -496,7 +525,7 @@ function resizeWithKeyboard(event: KeyboardEvent) {
           v-else
           data-testid="ctx-send"
           :disabled="!prepared.request"
-          @select="send()"
+          @select="primary()"
         >
           Send
           <ContextMenuShortcut>{{
@@ -547,6 +576,26 @@ function resizeWithKeyboard(event: KeyboardEvent) {
         </ContextMenuCheckboxItem>
       </ContextMenuContent>
     </ContextMenu>
+    <div
+      v-if="confirming && environment"
+      class="flex items-center gap-3 border-b border-border px-3.5 py-2 font-mono text-[0.6875rem]"
+      role="alert"
+      data-environment-confirm
+    >
+      <span class="min-w-0 flex-1">
+        <span
+          class="font-semibold"
+          :style="{ color: `var(--${environment.color})` }"
+          >{{ environment.name }}</span
+        >
+        is protected. {{ websocket ? "Connect" : "Send" }} to
+        {{ environment.name }}?
+      </span>
+      <Button variant="ghost" @click="confirming = false">Cancel</Button>
+      <Button data-confirm-environment @click="confirmAndSend">
+        {{ websocket ? "Connect" : "Send" }}
+      </Button>
+    </div>
     <p
       v-if="importError"
       data-import-error
