@@ -19,6 +19,7 @@ import HelpTooltip from "@/components/HelpTooltip.vue";
 import CommandCenter from "@/components/CommandCenter.vue";
 import CookiesDialog from "@/components/CookiesDialog.vue";
 import { clearCookies } from "@/lib/cookies";
+import { countRequests, parseImport } from "@/lib/import";
 import { COMMAND_PREFIX, groupPath, type Command } from "@/lib/command-center";
 import { formatBytes } from "@/lib/request";
 import { codeTargets } from "@/lib/codegen";
@@ -65,6 +66,7 @@ const {
   openRequests,
   deleteRequest,
   addGroup,
+  importGroup,
   renameGroup,
   toggleGroup,
   moveRequest,
@@ -250,6 +252,49 @@ const deletionLabel = computed(() => {
   const count = deletion.items.length;
   return `DELETED ${count} ${count === 1 ? "REQUEST" : "REQUESTS"}`;
 });
+const importInput = ref<HTMLInputElement>();
+const importNotice = ref("");
+const importFailed = ref(false);
+const importDetails = ref("");
+let importTimer: ReturnType<typeof setTimeout> | undefined;
+function notifyImport(message: string, failed = false, details = "") {
+  importNotice.value = message;
+  importDetails.value = details;
+  importFailed.value = failed;
+  clearTimeout(importTimer);
+  importTimer = setTimeout(() => (importNotice.value = ""), 8000);
+}
+function pickImport() {
+  if (!ready.value || !importInput.value) return;
+  importInput.value.value = "";
+  importInput.value.click();
+}
+async function importFile(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file) return;
+  try {
+    if (file.size > 16 * 1024 * 1024)
+      throw new Error("The file exceeds the 16 MiB import limit.");
+    const result = await parseImport(await file.text(), file.name);
+    const { group, first } = importGroup(result.root);
+    if (narrow.value) mobileBrowserOpen.value = true;
+    else sidebarCollapsed.value = false;
+    expandAncestors(group.id);
+    if (first) select(first.id);
+    const count = countRequests(result.root);
+    notifyImport(
+      `IMPORTED ${count} ${count === 1 ? "REQUEST" : "REQUESTS"} INTO ${group.name.toUpperCase()}` +
+        (result.skipped.length ? ` · ${result.skipped.length} NOTES` : ""),
+      false,
+      result.skipped.join("\n"),
+    );
+  } catch (cause) {
+    notifyImport(
+      `IMPORT FAILED: ${cause instanceof Error ? cause.message : String(cause)}`,
+      true,
+    );
+  }
+}
 function newGroup() {
   const names = new Set(groups.value.map((group) => group.name));
   let name = "New group";
@@ -370,6 +415,10 @@ const commands = computed<Command[]>(() => {
       disabled: !response || response.binary || response.truncated,
     },
     { id: "new-group", label: "Browser: New group" },
+    {
+      id: "import",
+      label: "File: Import OpenAPI, Postman, or .http file…",
+    },
     { id: "manage-cookies", label: "Cookies: Manage cookies" },
     {
       id: "clear-cookies",
@@ -430,6 +479,7 @@ function runCommand(id: string) {
   else if (id === "toggle-wrap") response?.toggleWrap();
   else if (id === "toggle-pretty") response?.togglePretty();
   else if (id === "new-group") newGroup();
+  else if (id === "import") pickImport();
   else if (id === "manage-cookies") openCookies();
   else if (id === "clear-cookies") void clearCookies().catch(() => {});
   else if (id === "collapse-groups") collapseAllGroups();
@@ -750,6 +800,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         @move-group="moveGroup"
         @delete-group="deleteGroup"
         @collapse-all-groups="collapseAllGroups"
+        @import="pickImport"
         @open-group-settings="openGroupSettings"
         @create-request="(groupId) => create(false, groupId)"
         @duplicate-request="(id) => duplicate(id)"
@@ -868,6 +919,15 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       </span>
       <span v-else-if="copied" role="status">COPIED</span>
       <span
+        v-if="importNotice"
+        class="max-w-100 truncate"
+        :class="{ 'text-destructive': importFailed }"
+        :role="importFailed ? 'alert' : 'status'"
+        :title="[importNotice, importDetails].filter(Boolean).join('\n')"
+        data-import-status
+        >{{ importNotice }}</span
+      >
+      <span
         v-if="lastDeletion"
         class="flex items-center gap-2"
         role="status"
@@ -937,6 +997,14 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
       :open="cookiesOpen"
       :enabled="preferences.storeCookies"
       @update:open="cookiesOpen = $event"
+    />
+    <input
+      ref="importInput"
+      type="file"
+      class="hidden"
+      accept=".json,.yaml,.yml,.http,.rest,application/json"
+      data-import-file
+      @change="importFile"
     />
     <DragPreview />
   </main>

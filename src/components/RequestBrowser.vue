@@ -6,6 +6,7 @@ import {
   ChevronDown,
   ChevronRight,
   FilePlus,
+  Import,
   Folder,
   FolderInput,
   FolderPlus,
@@ -82,6 +83,7 @@ const emit = defineEmits<{
   ];
   deleteGroup: [id: number];
   collapseAllGroups: [];
+  import: [];
   openGroupSettings: [groupId: number];
   createRequest: [groupId: number | null];
   duplicateRequest: [sessionId: number];
@@ -554,6 +556,16 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
         @click="emit('collapseAllGroups')"
       >
         <ListCollapse :size="14" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="browser-action"
+        aria-label="Import requests"
+        title="Import OpenAPI, Postman, or .http file…"
+        data-import-requests
+        @click="emit('import')"
+      >
+        <Import :size="14" aria-hidden="true" />
       </button>
     </header>
 

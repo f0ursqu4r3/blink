@@ -2,6 +2,7 @@ import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { createSession, hasDraft, type RequestSession } from "@/lib/session";
+import type { ImportedGroup } from "@/lib/import";
 import { releaseResponse } from "@/lib/response-body";
 import { isMethod } from "@/lib/request";
 import {
@@ -441,6 +442,39 @@ export function useWorkspaceState() {
       openRequest(session.id);
     }
   }
+  /**
+   * Add an imported group tree under `parentId`. Returns the new root group
+   * and the first new request.
+   */
+  function importGroup(root: ImportedGroup, parentId: number | null = null) {
+    let first: RequestSession | undefined;
+    const add = (source: ImportedGroup, parent: number | null) => {
+      const group = addGroup(source.name, parent);
+      // Local names cannot start with "_"; the saved workspace caps sizes.
+      const definitions = Object.entries(source.definitions ?? {})
+        .filter(
+          ([name, value]) =>
+            name &&
+            !name.startsWith("_") &&
+            name.length <= 256 &&
+            value.length <= 65536,
+        )
+        .slice(0, 500);
+      if (definitions.length)
+        group.localDefinitions = Object.fromEntries(definitions);
+      if (source.auth) group.localAuth = { ...source.auth };
+      for (const draft of source.requests) {
+        const session = createSession(draft);
+        session.groupId = group.id;
+        sessions.value.push(session);
+        first ??= session;
+      }
+      source.groups.forEach((child) => add(child, group.id));
+      return group;
+    };
+    const group = add(root, parentId);
+    return { group, first };
+  }
   function addGroup(name: string, parentId: number | null) {
     const group = createGroup(name, parentId);
     groups.value.push(group);
@@ -631,6 +665,7 @@ export function useWorkspaceState() {
     openRequests,
     deleteRequest,
     addGroup,
+    importGroup,
     renameGroup,
     toggleGroup,
     moveRequest,

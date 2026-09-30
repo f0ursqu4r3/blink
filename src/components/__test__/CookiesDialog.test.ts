@@ -22,7 +22,7 @@ const cookies = [
     httpOnly: false,
   },
 ];
-const invoke = vi.fn(async (command: string) =>
+const invoke = vi.fn(async (command: string, _args?: unknown) =>
   command === "list_cookies" ? cookies : undefined,
 );
 vi.mock("@tauri-apps/api/core", () => ({
