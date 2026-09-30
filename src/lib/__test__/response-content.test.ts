@@ -12,3 +12,14 @@ describe("response syntax languages", () => {
     expect(responseLanguage("text/plain")).toBe("plaintext");
   });
 });
+
+describe("highlightSource", () => {
+  it("highlights code and escapes it", async () => {
+    const { highlightSource } = await import("../response-content");
+    const html = highlightSource('import requests\nx = "<b>"', "python");
+    expect(html).toContain('<span class="hljs-keyword">import</span>');
+    expect(html).toContain("&lt;b&gt;");
+    expect(html).not.toContain("<b>");
+    expect(highlightSource("<x>", "nope")).toBe("&lt;x&gt;");
+  });
+});

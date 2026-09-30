@@ -31,11 +31,13 @@ import { useWebSocket } from "@/composables/useWebSocket";
 import { methods } from "@/lib/request";
 import {
   codeTargets,
+  codeLanguage,
   codeTargetLabel,
   generateCode,
   type CodeTarget,
 } from "@/lib/codegen";
 import { isCurlCommand, parseCurl } from "@/lib/curl-import";
+import { highlightSource } from "@/lib/response-content";
 import type { RequestSession } from "@/lib/session";
 import type { RequestGroup } from "@/lib/groups";
 import type { TransportOptions } from "@/lib/transport-options";
@@ -136,6 +138,10 @@ function codeFor(id: CodeTarget) {
     : "";
 }
 const code = computed(() => codeFor(target.value));
+// highlight.js escapes the text, so v-html shows it as code only.
+const codeHtml = computed(() =>
+  showCurl.value ? highlightSource(code.value, codeLanguage(target.value)) : "",
+);
 const urlInput = ref<InstanceType<typeof TokenInput>>();
 const workspace = ref<HTMLElement>();
 const panels = ref<HTMLElement>();
@@ -610,7 +616,10 @@ function resizeWithKeyboard(event: KeyboardEvent) {
             class="mt-1 font-mono text-[0.6875rem] leading-[1.8] whitespace-pre-wrap break-anywhere"
             tabindex="0"
             :aria-label="codeTargetLabel(target)"
-            >{{ code }}</pre>
+            :data-language="codeLanguage(target)"
+            data-code-snippet
+            v-html="codeHtml"
+          />
           <HelpTooltip
             text="The generated code includes credentials. Review it before sharing."
           >

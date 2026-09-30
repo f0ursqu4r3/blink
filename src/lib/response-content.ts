@@ -67,6 +67,15 @@ export function highlightResponseLine(
   }
 }
 
+/**
+ * Highlighted HTML for a whole source text, such as generated code. Any
+ * highlight.js language name; unknown names return escaped text.
+ */
+export function highlightSource(text: string, language: string) {
+  if (!text || !hljs.getLanguage(language)) return escapeHtml(text);
+  return hljs.highlight(text, { language, ignoreIllegals: true }).value;
+}
+
 function escapeHtml(text: string) {
   return text
     .replace(/&/g, "&amp;")

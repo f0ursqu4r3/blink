@@ -234,3 +234,77 @@
   background-color: color-mix(in oklch, var(--warning) 70%, transparent);
   color: var(--background);
 }
+
+/* Syntax colors for highlight.js output (response body, code panel). */
+.hljs-attr,
+.hljs-attribute,
+.hljs-property,
+.hljs-variable,
+.hljs-params,
+.hljs-subst {
+  color: var(--foreground);
+}
+.hljs-string,
+.hljs-regexp {
+  color: var(--success);
+}
+.hljs-number,
+.hljs-literal,
+.hljs-symbol {
+  color: var(--warning);
+}
+.hljs-keyword,
+.hljs-tag,
+.hljs-selector-tag,
+.hljs-name,
+.hljs-type {
+  color: var(--keyword);
+}
+.hljs-title,
+.hljs-built_in {
+  color: var(--info);
+}
+.hljs-comment,
+.hljs-meta {
+  color: var(--muted-foreground);
+}
+
+/* Scrollbars in the VS Code manner: a thin square thumb, no track, colors
+   from the theme. WebKit (the macOS webview) and Chromium use the
+   ::-webkit-scrollbar rules; other engines use the standard properties. */
+:root {
+  --scrollbar-thumb: color-mix(in oklch, var(--foreground) 20%, transparent);
+  --scrollbar-thumb-hover: color-mix(
+    in oklch,
+    var(--foreground) 32%,
+    transparent
+  );
+  --scrollbar-thumb-active: color-mix(
+    in oklch,
+    var(--foreground) 42%,
+    transparent
+  );
+}
+@supports not selector(::-webkit-scrollbar) {
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+}
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-track,
+::-webkit-scrollbar-corner {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--scrollbar-thumb);
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--scrollbar-thumb-hover);
+}
+::-webkit-scrollbar-thumb:active {
+  background: var(--scrollbar-thumb-active);
+}

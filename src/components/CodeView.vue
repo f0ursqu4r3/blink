@@ -147,30 +147,4 @@ function measureRow(node: unknown) {
   user-select: none;
   content: attr(data-line);
 }
-
-/* v-html syntax highlighting — :deep() selectors cannot be expressed as Tailwind utilities */
-:deep(.hljs-attr),
-:deep(.hljs-attribute),
-:deep(.hljs-property) {
-  color: var(--foreground);
-}
-:deep(.hljs-string),
-:deep(.hljs-regexp) {
-  color: var(--success);
-}
-:deep(.hljs-number),
-:deep(.hljs-literal),
-:deep(.hljs-symbol) {
-  color: var(--warning);
-}
-:deep(.hljs-keyword),
-:deep(.hljs-tag),
-:deep(.hljs-selector-tag),
-:deep(.hljs-name) {
-  color: var(--keyword);
-}
-:deep(.hljs-comment),
-:deep(.hljs-meta) {
-  color: var(--muted-foreground);
-}
 </style>
