@@ -23,8 +23,8 @@ describe("tokenDisplay", () => {
   });
 
   it("keeps undefined, empty and environment references as typed", () => {
-    expect(tokenDisplay("{{nope}}{{empty}}<<HOME>>", ctx).text).toBe(
-      "{{nope}}{{empty}}<<HOME>>",
+    expect(tokenDisplay("{{nope}}{{empty}}{{!HOME}}", ctx).text).toBe(
+      "{{nope}}{{empty}}{{!HOME}}",
     );
   });
 });

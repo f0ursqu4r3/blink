@@ -22,6 +22,8 @@ export function rowsToDefinitions(
     if (!name) return { error: "Enter a name for each token." };
     if (name.startsWith("_"))
       return { error: "Token names must not start with _." };
+    if (name.startsWith("!"))
+      return { error: "Token names must not start with !." };
     if (/[{}]/.test(name))
       return { error: "Token names must not contain { or }." };
     if (Object.prototype.hasOwnProperty.call(definitions, name))

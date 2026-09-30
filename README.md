@@ -89,6 +89,18 @@ wins; unset values inherit from parent groups, then application defaults. Use
 the new-request action beside a group to start a request there. Moving an
 existing request does not rewrite its method or URL.
 
+Request fields can reference tokens:
+
+| Syntax       | Resolves from                                      |
+| ------------ | -------------------------------------------------- |
+| `{{name}}`   | The nearest group token, then the workspace token  |
+| `{{_.name}}` | The workspace token only                           |
+| `{{!NAME}}`  | The `NAME` environment variable of the desktop app |
+
+Environment values resolve in the desktop backend when a request is sent.
+They are not shown in the editor or included in cURL exports. Token names
+cannot start with `_` or `!`.
+
 Secondary help appears in tooltips. Errors, effective authorization, storage
 failures, and destructive confirmations remain visible.
 Settings dialogs keep Save and Cancel visible while their contents scroll.

@@ -33,6 +33,7 @@ describe("rowsToDefinitions", () => {
   it.each([
     [[pair("", "x")], "Enter a name"],
     [[pair("_x", "1")], "must not start with _"],
+    [[pair("!x", "1")], "must not start with !"],
     [[pair("a{b", "1")], "must not contain"],
     [[pair("a", "1"), pair("a", "2")], "more than once"],
   ])("rejects invalid rows", (rows, message) => {

@@ -129,13 +129,29 @@ async fn run(request: RequestInput, options: TransportOptions) -> Result<Respons
 fn resolves_environment_references_without_exposing_values_in_errors() {
     std::env::set_var("BLINK_TOKEN_ENV_TEST", "from-environment");
     assert_eq!(
-        resolve_environment_references("Bearer <<BLINK_TOKEN_ENV_TEST>>").unwrap(),
+        resolve_environment_references("Bearer {{!BLINK_TOKEN_ENV_TEST}}").unwrap(),
         "Bearer from-environment"
     );
-    let error = resolve_environment_references("<<BLINK_TOKEN_MISSING>>").unwrap_err();
+    let error = resolve_environment_references("{{!BLINK_TOKEN_MISSING}}").unwrap_err();
     assert!(error.contains("BLINK_TOKEN_MISSING"));
     assert!(!error.contains("from-environment"));
     std::env::remove_var("BLINK_TOKEN_ENV_TEST");
+}
+
+#[test]
+fn keeps_shift_operators_and_other_braces_as_text() {
+    let text = "x << 2 >> 1; <<EOF; {\"a\": {\"b\": 1}}";
+    assert_eq!(resolve_environment_references(text).unwrap(), text);
+}
+
+#[test]
+fn rejects_invalid_environment_references() {
+    for text in ["{{!}}", "{{!1ABC}}", "{{!A-B}}", "{{!OPEN"] {
+        assert_eq!(
+            resolve_environment_references(text).unwrap_err(),
+            "Invalid environment variable reference."
+        );
+    }
 }
 
 #[tokio::test]

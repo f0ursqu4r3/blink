@@ -531,7 +531,7 @@ function handleCancel() {
                   Tokens
                 </h3>
                 <HelpTooltip
-                  text="Local tokens inherit through parent groups. Use {{name}} to interpolate tokens. Use <<NAME>> to read NAME from Blink's process environment when a request is sent."
+                  text="Local tokens inherit through parent groups. Use {{name}} to interpolate tokens. Use {{!NAME}} to read NAME from Blink's process environment when a request is sent."
                   ><button
                     class="grid place-items-center w-4 h-4 p-0 border border-input rounded-full text-muted-foreground bg-muted font-mono text-[10px] font-semibold leading-none hover:text-foreground hover:bg-accent focus-visible:text-foreground focus-visible:bg-accent"
                     data-token-help="local"

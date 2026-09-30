@@ -4,6 +4,8 @@
  * Syntax
  *   {{name}}   — resolves from local definitions, falls back to workspace
  *   {{_.name}} — resolves from workspace-global definitions only
+ *   {{!NAME}}  — reads NAME from the process environment. The native
+ *                transport resolves it when sending, so it stays as typed here.
  *
  * Token values can reference other tokens. Resolution detects cycles and never
  * includes values in errors.
@@ -17,6 +19,7 @@ export type InterpolationContext = {
 };
 
 const TOKEN_RE = /\{\{(_\.)?([^{}]+?)\}\}/g;
+const ENV_PREFIX = "!";
 
 /**
  * Resolve all `{{name}}` / `{{_.name}}` tokens in `template`.
@@ -30,7 +33,8 @@ export function interpolate(
   const { definitions, workspaceDefinitions = {} } = ctx;
   const resolve = (source: string, stack: string[]): string => {
     TOKEN_RE.lastIndex = 0;
-    return source.replace(TOKEN_RE, (_token, globalPrefix, name: string) => {
+    return source.replace(TOKEN_RE, (token, globalPrefix, name: string) => {
+      if (!globalPrefix && name.startsWith(ENV_PREFIX)) return token;
       const workspaceOnly = globalPrefix === "_.";
       const key = `${workspaceOnly ? "_." : ""}${name}`;
       if (stack.includes(key)) {

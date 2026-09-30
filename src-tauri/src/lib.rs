@@ -250,14 +250,17 @@ fn decode_preview(mut preview: Vec<u8>) -> (String, bool) {
     }
 }
 
+/// Replace each `{{!NAME}}` with the NAME process environment variable. The
+/// frontend resolves `{{name}}` tokens and keeps these as typed, so values
+/// from the environment never reach the webview.
 fn resolve_environment_references(value: &str) -> Result<String, String> {
     let mut output = String::with_capacity(value.len());
     let mut remainder = value;
 
-    while let Some(start) = remainder.find("<<") {
+    while let Some(start) = remainder.find("{{!") {
         output.push_str(&remainder[..start]);
-        let after_open = &remainder[start + 2..];
-        let Some(end) = after_open.find(">>") else {
+        let after_open = &remainder[start + 3..];
+        let Some(end) = after_open.find("}}") else {
             return Err("Invalid environment variable reference.".to_string());
         };
         let name = &after_open[..end];

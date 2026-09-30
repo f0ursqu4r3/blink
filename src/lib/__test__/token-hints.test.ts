@@ -35,7 +35,7 @@ describe("tokenSpans", () => {
   it("marks resolved, unresolved and environment references", () => {
     expect(
       tokenSpans(
-        "https://x/{{endpoint}}/{{nope}}?k={{_.apiKey}}&e=<<HOME>>",
+        "https://x/{{endpoint}}/{{nope}}?k={{_.apiKey}}&e={{!HOME}}",
         ctx,
       ),
     ).toEqual([
@@ -46,7 +46,7 @@ describe("tokenSpans", () => {
       { text: "?k=" },
       { text: "{{_.apiKey}}", token: "resolved", name: "_.apiKey" },
       { text: "&e=" },
-      { text: "<<HOME>>", token: "env" },
+      { text: "{{!HOME}}", token: "env" },
     ]);
   });
 
@@ -124,9 +124,9 @@ describe("resolveForDisplay", () => {
   it("replaces defined tokens and keeps the rest as typed", () => {
     expect(
       resolveForDisplay(
-        "https://{{_.host}}/{{endpoint}}/{{nope}}/<<HOME>>",
+        "https://{{_.host}}/{{endpoint}}/{{nope}}/{{!HOME}}",
         ctx,
       ),
-    ).toBe("https://global/users/{{nope}}/<<HOME>>");
+    ).toBe("https://global/users/{{nope}}/{{!HOME}}");
   });
 });

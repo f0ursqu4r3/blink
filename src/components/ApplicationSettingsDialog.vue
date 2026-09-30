@@ -310,7 +310,7 @@ function save() {
                   Global tokens
                 </h3>
                 <HelpTooltip
-                  text="Workspace-global tokens use {{_.name}}. Use <<NAME>> in a value to read NAME from Blink's process environment when sending."
+                  text="Workspace-global tokens use {{_.name}}. Use {{!NAME}} in a value to read NAME from Blink's process environment when sending."
                 >
                   <button
                     class="help-trigger"

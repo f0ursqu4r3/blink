@@ -1,7 +1,7 @@
 import { interpolate, type InterpolationContext } from "./interpolation";
 
 /**
- * Editor hints for `{{name}}`, `{{_.name}}` and `<<NAME>>` references.
+ * Editor hints for `{{name}}`, `{{_.name}}` and `{{!NAME}}` references.
  * Hints show the value a reference resolves to.
  */
 
@@ -21,7 +21,7 @@ export type TokenSpan = {
   token?: "resolved" | "unresolved" | "env";
 };
 
-const REFERENCE_RE = /\{\{(_\.)?([^{}]+?)\}\}|<<([^<>\s]+)>>/g;
+const REFERENCE_RE = /\{\{!([^{}]*)\}\}|\{\{(_\.)?([^{}]+?)\}\}/g;
 
 /**
  * The value `{{name}}` resolves to, with nested references resolved.
@@ -88,15 +88,16 @@ export function tokenSpans(
   for (const match of text.matchAll(REFERENCE_RE)) {
     const start = match.index;
     if (start > last) spans.push({ text: text.slice(last, start) });
-    const token = match[3]
+    const env = match[1] !== undefined;
+    const token = env
       ? "env"
-      : isResolved(match[2].trim(), match[1] === "_.", ctx)
+      : isResolved(match[3].trim(), match[2] === "_.", ctx)
         ? "resolved"
         : "unresolved";
     spans.push({
       text: match[0],
       token,
-      ...(match[3] ? {} : { name: `${match[1] ?? ""}${match[2].trim()}` }),
+      ...(env ? {} : { name: `${match[2] ?? ""}${match[3].trim()}` }),
     });
     last = start + match[0].length;
   }
@@ -118,7 +119,7 @@ export function tokenRanges(text: string, ctx?: InterpolationContext) {
 
 /**
  * `text` with each defined `{{name}}` replaced by its value. Undefined
- * references and `<<NAME>>` stay as typed.
+ * references and `{{!NAME}}` stay as typed.
  */
 export function resolveForDisplay(text: string, ctx?: InterpolationContext) {
   return tokenSpans(text, ctx)

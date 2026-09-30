@@ -30,6 +30,18 @@ describe("interpolate", () => {
     ).toThrow("token");
   });
 
+  it("keeps {{!NAME}} environment references for the native transport", () => {
+    expect(
+      interpolate("Bearer {{!API_TOKEN}} {{nested}}", {
+        definitions: { nested: "{{!OTHER}}" },
+      }),
+    ).toBe("Bearer {{!API_TOKEN}} {{!OTHER}}");
+  });
+
+  it("keeps << and >> as literal text", () => {
+    expect(interpolate("a << b >> c", { definitions: {} })).toBe("a << b >> c");
+  });
+
   it("local definitions shadow workspace for plain {{name}}", () => {
     expect(
       interpolate("{{x}}", {
