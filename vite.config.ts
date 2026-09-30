@@ -1,16 +1,16 @@
-import { defineConfig } from "vite";
-import vue from "@vitejs/plugin-vue";
-import tailwindcss from "@tailwindcss/vite";
-import process from "node:process";
-import { fileURLToPath, URL } from "node:url";
-const host = process.env.TAURI_DEV_HOST;
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
+import process from 'node:process'
+import { fileURLToPath, URL } from 'node:url'
+const host = process.env.TAURI_DEV_HOST
 
 // https://vite.dev/config/
 export default defineConfig(() => ({
   plugins: [vue(), tailwindcss()],
   resolve: {
     alias: {
-      "@": fileURLToPath(new URL("./src", import.meta.url)),
+      '@': fileURLToPath(new URL('./src', import.meta.url)),
     },
   },
 
@@ -22,16 +22,16 @@ export default defineConfig(() => ({
   server: {
     port: 1420,
     strictPort: true,
-    host: host || "127.0.0.1",
+    host: host || '127.0.0.1',
     hmr: {
-      protocol: "ws",
-      host: host || "127.0.0.1",
+      protocol: 'ws',
+      host: host || '127.0.0.1',
       port: 1421,
       clientPort: 1421,
     },
     watch: {
       // 3. tell Vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      ignored: ['**/src-tauri/**'],
     },
   },
-}));
+}))

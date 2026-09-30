@@ -1,29 +1,26 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
-import { useVirtualizer } from "@tanstack/vue-virtual";
-import { useFind } from "@/composables/useFind";
-import {
-  highlightResponseLine,
-  type ResponseLanguage,
-} from "@/lib/response-content";
+import { computed, nextTick, ref, watch } from 'vue'
+import { useVirtualizer } from '@tanstack/vue-virtual'
+import { useFind } from '@/composables/useFind'
+import { highlightResponseLine, type ResponseLanguage } from '@/lib/response-content'
 
 const props = withDefaults(
   defineProps<{
-    text: string;
-    language?: ResponseLanguage;
-    filter?: string;
+    text: string
+    language?: ResponseLanguage
+    filter?: string
     /** Highlight matches without hiding lines. */
-    find?: string;
-    wrap?: boolean;
-    active?: boolean;
+    find?: string
+    wrap?: boolean
+    active?: boolean
   }>(),
-  { language: "plaintext" },
-);
-const scroll = defineModel<number>("scroll", { default: 0 });
-const element = ref<HTMLElement>();
-const filter = computed(() => props.filter?.trim().toLocaleLowerCase() ?? "");
+  { language: 'plaintext' },
+)
+const scroll = defineModel<number>('scroll', { default: 0 })
+const element = ref<HTMLElement>()
+const filter = computed(() => props.filter?.trim().toLocaleLowerCase() ?? '')
 const lines = computed(() =>
-  props.text.split("\n").flatMap((text, index) =>
+  props.text.split('\n').flatMap((text, index) =>
     !filter.value || text.toLocaleLowerCase().includes(filter.value)
       ? [
           {
@@ -34,7 +31,7 @@ const lines = computed(() =>
         ]
       : [],
   ),
-);
+)
 const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
   computed(() => ({
     count: lines.value.length,
@@ -42,58 +39,55 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
     estimateSize: () => 23,
     initialRect: { width: 0, height: 800 },
     observeElementRect: (_instance, callback) => {
-      const target = element.value;
+      const target = element.value
       const report = () =>
         callback({
           width: target?.clientWidth ?? 0,
           height: target?.clientHeight || 800,
-        });
-      report();
-      if (!target || typeof ResizeObserver === "undefined") return;
-      const observer = new ResizeObserver(report);
-      observer.observe(target);
-      return () => observer.disconnect();
+        })
+      report()
+      if (!target || typeof ResizeObserver === 'undefined') return
+      const observer = new ResizeObserver(report)
+      observer.observe(target)
+      return () => observer.disconnect()
     },
     overscan: 12,
   })),
-);
-const virtualRows = computed(() => virtualizer.value.getVirtualItems());
+)
+const virtualRows = computed(() => virtualizer.value.getVirtualItems())
 const finder = useFind({
   element,
   texts: () => lines.value.map((line) => line.text),
-  query: () => props.find ?? "",
+  query: () => props.find ?? '',
   active: () => props.active !== false,
   rendered: () => virtualRows.value,
-  scrollToIndex: (index) =>
-    virtualizer.value.scrollToIndex(index, { align: "center" }),
-});
+  scrollToIndex: (index) => virtualizer.value.scrollToIndex(index, { align: 'center' }),
+})
 defineExpose({
   findCount: finder.count,
   findCurrent: finder.current,
   findStep: finder.step,
-});
+})
 
 watch([element, () => props.text], () => {
-  if (element.value && props.active !== false)
-    element.value.scrollTop = scroll.value;
-});
+  if (element.value && props.active !== false) element.value.scrollTop = scroll.value
+})
 watch(filter, () => {
-  if (element.value) element.value.scrollTop = 0;
-});
+  if (element.value) element.value.scrollTop = 0
+})
 
 function saveScroll() {
-  if (element.value && props.active !== false)
-    scroll.value = element.value.scrollTop;
+  if (element.value && props.active !== false) scroll.value = element.value.scrollTop
 }
 // Vue can call the ref before the row is in the DOM. A detached row measures
 // 0px, and correcting that later scrolls the list down one row at a time.
 function measureRow(node: unknown) {
-  if (!(node instanceof HTMLElement)) return;
-  if (node.isConnected) virtualizer.value.measureElement(node);
+  if (!(node instanceof HTMLElement)) return
+  if (node.isConnected) virtualizer.value.measureElement(node)
   else
     void nextTick(() => {
-      if (node.isConnected) virtualizer.value.measureElement(node);
-    });
+      if (node.isConnected) virtualizer.value.measureElement(node)
+    })
 }
 </script>
 
@@ -105,12 +99,10 @@ function measureRow(node: unknown) {
     :class="{ wrapped: wrap }"
     tabindex="0"
     aria-label="Response body"
-    @scroll.passive="saveScroll"
-  >
+    @scroll.passive="saveScroll">
     <pre
       class="m-0 min-w-max font-mono text-[0.8125rem] leading-[1.75] tab-2 in-[.wrapped]:w-full in-[.wrapped]:min-w-0"
-      :data-language="language"
-    ><code
+      :data-language="language"><code
       class="relative block"
       data-response-body
       :data-language="language"

@@ -13,47 +13,44 @@
 
 export type InterpolationContext = {
   /** Local definitions (group or request level). */
-  definitions: Record<string, string>;
+  definitions: Record<string, string>
   /** Workspace-global definitions. */
-  workspaceDefinitions?: Record<string, string>;
-};
+  workspaceDefinitions?: Record<string, string>
+}
 
-const TOKEN_RE = /\{\{(_\.)?([^{}]+?)\}\}/g;
-const ENV_PREFIX = "!";
+const TOKEN_RE = /\{\{(_\.)?([^{}]+?)\}\}/g
+const ENV_PREFIX = '!'
 
 /**
  * Resolve all `{{name}}` / `{{_.name}}` tokens in `template`.
  *
  * @throws {Error} naming the first unresolvable reference (never reveals values)
  */
-export function interpolate(
-  template: string,
-  ctx: InterpolationContext,
-): string {
-  const { definitions, workspaceDefinitions = {} } = ctx;
+export function interpolate(template: string, ctx: InterpolationContext): string {
+  const { definitions, workspaceDefinitions = {} } = ctx
   const resolve = (source: string, stack: string[]): string => {
-    TOKEN_RE.lastIndex = 0;
+    TOKEN_RE.lastIndex = 0
     return source.replace(TOKEN_RE, (token, globalPrefix, name: string) => {
-      if (!globalPrefix && name.startsWith(ENV_PREFIX)) return token;
-      const workspaceOnly = globalPrefix === "_.";
-      const key = `${workspaceOnly ? "_." : ""}${name}`;
+      if (!globalPrefix && name.startsWith(ENV_PREFIX)) return token
+      const workspaceOnly = globalPrefix === '_.'
+      const key = `${workspaceOnly ? '_.' : ''}${name}`
       if (stack.includes(key)) {
-        throw new Error(`Circular token reference: "${name}".`);
+        throw new Error(`Circular token reference: "${name}".`)
       }
 
       const value = workspaceOnly
         ? workspaceDefinitions[name]
         : Object.prototype.hasOwnProperty.call(definitions, name)
           ? definitions[name]
-          : workspaceDefinitions[name];
+          : workspaceDefinitions[name]
       if (value === undefined) {
         throw new Error(
-          `Undefined token reference: "${name}". Define it in your ${workspaceOnly ? "workspace" : "group or workspace"} variables.`,
-        );
+          `Undefined token reference: "${name}". Define it in your ${workspaceOnly ? 'workspace' : 'group or workspace'} variables.`,
+        )
       }
-      return resolve(value, [...stack, key]);
-    });
-  };
+      return resolve(value, [...stack, key])
+    })
+  }
 
-  return resolve(template, []);
+  return resolve(template, [])
 }

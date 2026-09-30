@@ -1,20 +1,20 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { mount, shallowMount } from "@vue/test-utils";
-import { defineComponent } from "vue";
-import ContextMenu from "../ContextMenu.vue";
-import ContextMenuContent from "../ContextMenuContent.vue";
-import ContextMenuSubContent from "../ContextMenuSubContent.vue";
-import ContextMenuTrigger from "../ContextMenuTrigger.vue";
+import { afterEach, describe, expect, it } from 'vitest'
+import { mount, shallowMount } from '@vue/test-utils'
+import { defineComponent } from 'vue'
+import ContextMenu from '../ContextMenu.vue'
+import ContextMenuContent from '../ContextMenuContent.vue'
+import ContextMenuSubContent from '../ContextMenuSubContent.vue'
+import ContextMenuTrigger from '../ContextMenuTrigger.vue'
 
-const wrappers: ReturnType<typeof mount>[] = [];
+const wrappers: ReturnType<typeof mount>[] = []
 
 afterEach(() => {
-  wrappers.splice(0).forEach((wrapper) => wrapper.unmount());
-  document.body.innerHTML = "";
-});
+  wrappers.splice(0).forEach((wrapper) => wrapper.unmount())
+  document.body.innerHTML = ''
+})
 
-describe("ContextMenuContent", () => {
-  it("marks opened menu content as an opaque context-menu surface", async () => {
+describe('ContextMenuContent', () => {
+  it('marks opened menu content as an opaque context-menu surface', async () => {
     const wrapper = mount(
       defineComponent({
         components: { ContextMenu, ContextMenuContent, ContextMenuTrigger },
@@ -30,22 +30,20 @@ describe("ContextMenuContent", () => {
       {
         attachTo: document.body,
       },
-    );
-    wrappers.push(wrapper);
+    )
+    wrappers.push(wrapper)
 
-    await wrapper.get("[data-menu-trigger]").trigger("contextmenu");
+    await wrapper.get('[data-menu-trigger]').trigger('contextmenu')
 
-    expect(
-      document.body.querySelector('[data-surface="context-menu"]'),
-    ).not.toBeNull();
-  });
+    expect(document.body.querySelector('[data-surface="context-menu"]')).not.toBeNull()
+  })
 
-  it("marks submenu content as an opaque context-menu surface", () => {
+  it('marks submenu content as an opaque context-menu surface', () => {
     const wrapper = shallowMount(ContextMenuSubContent, {
-      slots: { default: "Submenu item" },
-    });
-    wrappers.push(wrapper);
+      slots: { default: 'Submenu item' },
+    })
+    wrappers.push(wrapper)
 
-    expect(wrapper.get('[data-surface="context-menu"]')).toBeDefined();
-  });
-});
+    expect(wrapper.get('[data-surface="context-menu"]')).toBeDefined()
+  })
+})

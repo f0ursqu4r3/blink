@@ -1,10 +1,10 @@
-import { defineComponent, h, ref } from "vue";
+import { defineComponent, h, ref } from 'vue'
 
 /** Textarea stand-in for CodeEditor so RequestEditor tests avoid CodeMirror. */
 export default defineComponent({
-  name: "CodeEditor",
+  name: 'CodeEditor',
   props: {
-    modelValue: { type: String, default: "" },
+    modelValue: { type: String, default: '' },
     language: { type: String, required: true },
     schema: { type: Object, default: undefined },
     disabled: Boolean,
@@ -14,26 +14,23 @@ export default defineComponent({
     testId: { type: String, default: undefined },
     tokens: { type: Object, default: undefined },
   },
-  emits: ["update:modelValue"],
+  emits: ['update:modelValue'],
   setup(props, { emit, expose }) {
-    const errorOffset = ref<number>();
-    expose({ markError: (offset: number) => (errorOffset.value = offset) });
+    const errorOffset = ref<number>()
+    expose({ markError: (offset: number) => (errorOffset.value = offset) })
     return () =>
-      h("textarea", {
+      h('textarea', {
         id: props.id,
         value: props.modelValue,
         disabled: props.disabled,
         placeholder: props.placeholder,
-        "aria-labelledby": props.ariaLabelledby,
-        "data-testid": props.testId,
-        "data-language": props.language,
-        "data-error-offset": errorOffset.value,
-        "data-schema": props.schema ? "loaded" : "none",
+        'aria-labelledby': props.ariaLabelledby,
+        'data-testid': props.testId,
+        'data-language': props.language,
+        'data-error-offset': errorOffset.value,
+        'data-schema': props.schema ? 'loaded' : 'none',
         onInput: (event: Event) =>
-          emit(
-            "update:modelValue",
-            (event.target as HTMLTextAreaElement).value,
-          ),
-      });
+          emit('update:modelValue', (event.target as HTMLTextAreaElement).value),
+      })
   },
-});
+})

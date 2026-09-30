@@ -1,66 +1,65 @@
 <script setup lang="ts">
-import { computed, nextTick, ref, watch } from "vue";
-import { useVirtualizer } from "@tanstack/vue-virtual";
-import { parse } from "lossless-json";
+import { computed, nextTick, ref, watch } from 'vue'
+import { useVirtualizer } from '@tanstack/vue-virtual'
+import { parse } from 'lossless-json'
 import {
   ContextMenu,
   ContextMenuTrigger,
   ContextMenuContent,
   ContextMenuItem,
   ContextMenuSeparator,
-} from "@/components/ui/context-menu";
-import { useClipboard } from "@/composables/useClipboard";
-import { useFind } from "@/composables/useFind";
+} from '@/components/ui/context-menu'
+import { useClipboard } from '@/composables/useClipboard'
+import { useFind } from '@/composables/useFind'
 
-type JsonContainer = Record<string, unknown> | unknown[];
+type JsonContainer = Record<string, unknown> | unknown[]
 type JsonRow = {
-  id: string;
-  key: string | null;
-  value: unknown;
-  depth: number;
-  container: boolean;
-  label: string;
-};
+  id: string
+  key: string | null
+  value: unknown
+  depth: number
+  container: boolean
+  label: string
+}
 
 const props = defineProps<{
-  text: string;
-  filter?: string;
+  text: string
+  filter?: string
   /** Highlight matches without hiding rows. */
-  find?: string;
-  active?: boolean;
-  wrap?: boolean;
-}>();
+  find?: string
+  active?: boolean
+  wrap?: boolean
+}>()
 
-const scroll = defineModel<number>("scroll", { default: 0 });
-const element = ref<HTMLElement>();
-const collapsed = ref(new Set<string>());
+const scroll = defineModel<number>('scroll', { default: 0 })
+const element = ref<HTMLElement>()
+const collapsed = ref(new Set<string>())
 
-const value = computed(() => parse(props.text));
-const query = computed(() => props.filter?.trim().toLocaleLowerCase() ?? "");
+const value = computed(() => parse(props.text))
+const query = computed(() => props.filter?.trim().toLocaleLowerCase() ?? '')
 
 function isContainer(value: unknown): value is JsonContainer {
   return (
     Boolean(value) &&
-    typeof value === "object" &&
-    !("isLosslessNumber" in (value as Record<string, unknown>))
-  );
+    typeof value === 'object' &&
+    !('isLosslessNumber' in (value as Record<string, unknown>))
+  )
 }
 
 function childEntries(value: JsonContainer): [string, unknown][] {
   return Array.isArray(value)
     ? value.map((child, index) => [String(index), child])
-    : Object.entries(value);
+    : Object.entries(value)
 }
 
 function valueLabel(value: unknown) {
-  if (value === null) return "null";
-  if (typeof value === "string") return JSON.stringify(value);
-  if (typeof value === "boolean") return String(value);
-  if (typeof value === "object" && "isLosslessNumber" in (value as object))
-    return String(value);
-  if (Array.isArray(value)) return `[${value.length}]`;
-  if (isContainer(value)) return `{${Object.keys(value).length}}`;
-  return String(value);
+  if (value === null) return 'null'
+  if (typeof value === 'string') return JSON.stringify(value)
+  if (typeof value === 'boolean') return String(value)
+  if (typeof value === 'object' && 'isLosslessNumber' in (value as object)) return String(value)
+  if (Array.isArray(value)) return `[${value.length}]`
+  if (isContainer(value)) return `{${Object.keys(value).length}}`
+  return String(value)
 }
 
 function addRows(
@@ -69,32 +68,28 @@ function addRows(
   id: string,
   depth: number,
 ): { matches: boolean; rows: JsonRow[] } {
-  const label = `${key === null ? "root" : key} ${valueLabel(value)}`;
-  const container = isContainer(value);
+  const label = `${key === null ? 'root' : key} ${valueLabel(value)}`
+  const container = isContainer(value)
   const children = container
     ? childEntries(value).map(([childKey, child]) =>
         addRows(child, childKey, `${id}/${childKey}`, depth + 1),
       )
-    : [];
+    : []
   const matches =
     !query.value ||
     label.toLocaleLowerCase().includes(query.value) ||
-    children.some((child) => child.matches);
-  if (!matches) return { matches, rows: [] };
+    children.some((child) => child.matches)
+  if (!matches) return { matches, rows: [] }
 
-  const row: JsonRow = { id, key, value, depth, container, label };
-  const showChildren =
-    container && (Boolean(query.value) || !collapsed.value.has(id));
+  const row: JsonRow = { id, key, value, depth, container, label }
+  const showChildren = container && (Boolean(query.value) || !collapsed.value.has(id))
   return {
     matches,
-    rows: [
-      row,
-      ...(showChildren ? children.flatMap((child) => child.rows) : []),
-    ],
-  };
+    rows: [row, ...(showChildren ? children.flatMap((child) => child.rows) : [])],
+  }
 }
 
-const rows = computed(() => addRows(value.value, null, "$", 0).rows);
+const rows = computed(() => addRows(value.value, null, '$', 0).rows)
 const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
   computed(() => ({
     count: rows.value.length,
@@ -102,112 +97,106 @@ const virtualizer = useVirtualizer<HTMLElement, HTMLElement>(
     estimateSize: () => 25,
     initialRect: { width: 0, height: 800 },
     observeElementRect: (_instance, callback) => {
-      const target = element.value;
+      const target = element.value
       const report = () =>
         callback({
           width: target?.clientWidth ?? 0,
           height: target?.clientHeight || 800,
-        });
-      report();
-      if (!target || typeof ResizeObserver === "undefined") return;
-      const observer = new ResizeObserver(report);
-      observer.observe(target);
-      return () => observer.disconnect();
+        })
+      report()
+      if (!target || typeof ResizeObserver === 'undefined') return
+      const observer = new ResizeObserver(report)
+      observer.observe(target)
+      return () => observer.disconnect()
     },
     overscan: 12,
   })),
-);
-const virtualRows = computed(() => virtualizer.value.getVirtualItems());
+)
+const virtualRows = computed(() => virtualizer.value.getVirtualItems())
 const finder = useFind({
   element,
   // The text each row shows: "key": value.
   texts: () =>
     rows.value.map((row) =>
-      row.key === null
-        ? valueLabel(row.value)
-        : `"${row.key}": ${valueLabel(row.value)}`,
+      row.key === null ? valueLabel(row.value) : `"${row.key}": ${valueLabel(row.value)}`,
     ),
-  query: () => props.find ?? "",
+  query: () => props.find ?? '',
   active: () => props.active !== false,
   rendered: () => virtualRows.value,
-  scrollToIndex: (index) =>
-    virtualizer.value.scrollToIndex(index, { align: "center" }),
-});
+  scrollToIndex: (index) => virtualizer.value.scrollToIndex(index, { align: 'center' }),
+})
 defineExpose({
   findCount: finder.count,
   findCurrent: finder.current,
   findStep: finder.step,
-});
+})
 
 watch([element, () => props.text], () => {
-  if (element.value && props.active !== false)
-    element.value.scrollTop = scroll.value;
-});
+  if (element.value && props.active !== false) element.value.scrollTop = scroll.value
+})
 watch(query, () => {
-  if (element.value) element.value.scrollTop = 0;
-});
+  if (element.value) element.value.scrollTop = 0
+})
 
 function saveScroll() {
-  if (element.value && props.active !== false)
-    scroll.value = element.value.scrollTop;
+  if (element.value && props.active !== false) scroll.value = element.value.scrollTop
 }
 
 function toggle(row: JsonRow) {
-  const next = new Set(collapsed.value);
-  if (next.has(row.id)) next.delete(row.id);
-  else next.add(row.id);
-  collapsed.value = next;
+  const next = new Set(collapsed.value)
+  if (next.has(row.id)) next.delete(row.id)
+  else next.add(row.id)
+  collapsed.value = next
 }
 
 /** Ids of every container below the root. */
 function containerIds(value: unknown, id: string): string[] {
-  if (!isContainer(value)) return [];
+  if (!isContainer(value)) return []
   return childEntries(value).flatMap(([key, child]) => {
-    const childId = `${id}/${key}`;
-    return isContainer(child) ? [childId, ...containerIds(child, childId)] : [];
-  });
+    const childId = `${id}/${key}`
+    return isContainer(child) ? [childId, ...containerIds(child, childId)] : []
+  })
 }
 function collapseAll() {
-  collapsed.value = new Set(containerIds(value.value, "$"));
+  collapsed.value = new Set(containerIds(value.value, '$'))
 }
 function expandAll() {
-  collapsed.value = new Set();
+  collapsed.value = new Set()
 }
 
 function valueClass(value: unknown) {
-  if (value === null) return "text-info";
-  if (typeof value === "string") return "text-success";
-  if (typeof value === "boolean") return "text-info";
-  if (typeof value === "object" && value && "isLosslessNumber" in value)
-    return "text-warning";
-  return "text-muted-foreground";
+  if (value === null) return 'text-info'
+  if (typeof value === 'string') return 'text-success'
+  if (typeof value === 'boolean') return 'text-info'
+  if (typeof value === 'object' && value && 'isLosslessNumber' in value) return 'text-warning'
+  return 'text-muted-foreground'
 }
 // Vue can call the ref before the row is in the DOM. A detached row measures
 // 0px, and correcting that later scrolls the list down one row at a time.
 function measureRow(node: unknown) {
-  if (!(node instanceof HTMLElement)) return;
-  if (node.isConnected) virtualizer.value.measureElement(node);
+  if (!(node instanceof HTMLElement)) return
+  if (node.isConnected) virtualizer.value.measureElement(node)
   else
     void nextTick(() => {
-      if (node.isConnected) virtualizer.value.measureElement(node);
-    });
+      if (node.isConnected) virtualizer.value.measureElement(node)
+    })
 }
 
-const { copy } = useClipboard();
-const contextRow = ref<JsonRow | null>(null);
+const { copy } = useClipboard()
+const contextRow = ref<JsonRow | null>(null)
 
 function openContextMenu(row: JsonRow) {
-  contextRow.value = row;
+  contextRow.value = row
 }
 
 function copyPath() {
-  if (!contextRow.value) return;
-  void copy(contextRow.value.id);
+  if (!contextRow.value) return
+  void copy(contextRow.value.id)
 }
 
 function copyValue() {
-  if (!contextRow.value) return;
-  void copy(valueLabel(contextRow.value.value));
+  if (!contextRow.value) return
+  void copy(valueLabel(contextRow.value.value))
 }
 </script>
 
@@ -222,14 +211,12 @@ function copyValue() {
     data-language="json"
     tabindex="0"
     aria-label="JSON response body"
-    @scroll.passive="saveScroll"
-  >
+    @scroll.passive="saveScroll">
     <ContextMenu>
       <ContextMenuTrigger as-child>
         <div
           class="relative min-w-max in-[.wrapped]:min-w-0"
-          :style="{ height: `${virtualizer.getTotalSize()}px` }"
-        >
+          :style="{ height: `${virtualizer.getTotalSize()}px` }">
           <div
             v-for="virtualRow in virtualRows"
             :key="String(virtualRow.key)"
@@ -240,10 +227,7 @@ function copyValue() {
               transform: `translateY(${virtualRow.start}px)`,
               paddingInlineStart: `${virtualRow.index >= 0 ? rows[virtualRow.index].depth * 18 + 12 : 12}px`,
             }"
-            @contextmenu="
-              rows[virtualRow.index] && openContextMenu(rows[virtualRow.index])
-            "
-          >
+            @contextmenu="rows[virtualRow.index] && openContextMenu(rows[virtualRow.index])">
             <template v-if="rows[virtualRow.index]">
               <button
                 v-if="rows[virtualRow.index].container"
@@ -251,27 +235,20 @@ function copyValue() {
                 class="inline-flex w-3.5 h-5 flex-none items-center justify-center text-muted-foreground hover:text-foreground hover:bg-accent"
                 :aria-label="`${collapsed.has(rows[virtualRow.index].id) ? 'Expand' : 'Collapse'} ${rows[virtualRow.index].key ?? 'root'}`"
                 :aria-expanded="!collapsed.has(rows[virtualRow.index].id)"
-                @click="toggle(rows[virtualRow.index])"
-              >
-                {{ collapsed.has(rows[virtualRow.index].id) ? "›" : "⌄" }}
+                @click="toggle(rows[virtualRow.index])">
+                {{ collapsed.has(rows[virtualRow.index].id) ? '›' : '⌄' }}
               </button>
               <span
                 v-else
                 class="inline-flex w-3.5 h-5 flex-none items-center justify-center text-muted-foreground"
-                aria-hidden="true"
-              />
+                aria-hidden="true" />
               <span
                 v-if="rows[virtualRow.index].key !== null"
-                class="text-foreground in-[.wrapped]:wrap-anywhere"
-              >
+                class="text-foreground in-[.wrapped]:wrap-anywhere">
                 "{{ rows[virtualRow.index].key }}":
               </span>
               <span
-                :class="[
-                  valueClass(rows[virtualRow.index].value),
-                  'in-[.wrapped]:wrap-anywhere',
-                ]"
-              >
+                :class="[valueClass(rows[virtualRow.index].value), 'in-[.wrapped]:wrap-anywhere']">
                 {{ valueLabel(rows[virtualRow.index].value) }}
               </span>
             </template>
@@ -279,9 +256,7 @@ function copyValue() {
         </div>
       </ContextMenuTrigger>
       <ContextMenuContent>
-        <ContextMenuItem data-testid="ctx-copy-path" @select="copyPath">
-          Copy path
-        </ContextMenuItem>
+        <ContextMenuItem data-testid="ctx-copy-path" @select="copyPath">Copy path</ContextMenuItem>
         <ContextMenuItem data-testid="ctx-copy-value" @select="copyValue">
           Copy value
         </ContextMenuItem>
@@ -289,17 +264,13 @@ function copyValue() {
         <ContextMenuItem
           v-if="contextRow?.container"
           data-testid="ctx-toggle"
-          @select="contextRow && toggle(contextRow)"
-        >
-          {{
-            contextRow && collapsed.has(contextRow.id) ? "Expand" : "Collapse"
-          }}
+          @select="contextRow && toggle(contextRow)">
+          {{ contextRow && collapsed.has(contextRow.id) ? 'Expand' : 'Collapse' }}
         </ContextMenuItem>
         <ContextMenuItem
           data-testid="ctx-expand-all"
           :disabled="!collapsed.size"
-          @select="expandAll"
-        >
+          @select="expandAll">
           Expand all
         </ContextMenuItem>
         <ContextMenuItem data-testid="ctx-collapse-all" @select="collapseAll">

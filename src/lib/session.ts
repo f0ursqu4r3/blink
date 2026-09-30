@@ -1,78 +1,78 @@
-import { createDraft, pair, type Draft, type ApiResponse } from "./request";
-import type { HistoryEntry } from "./history";
-import { isWebSocketUrl } from "./websocket";
-import { createAssertion, createCapture, type AssertionResult } from "./checks";
-import { resolveTokenDefinitions } from "./authorization";
-import type { RequestGroup } from "./groups";
-import { resolveForDisplay } from "./token-hints";
+import { createDraft, pair, type Draft, type ApiResponse } from './request'
+import type { HistoryEntry } from './history'
+import { isWebSocketUrl } from './websocket'
+import { createAssertion, createCapture, type AssertionResult } from './checks'
+import { resolveTokenDefinitions } from './authorization'
+import type { RequestGroup } from './groups'
+import { resolveForDisplay } from './token-hints'
 
 export type RequestSession = {
-  id: number;
-  groupId: number | null;
-  draft: Draft;
-  response: ApiResponse | null;
-  busy: boolean;
-  error: string;
-  elapsed: number;
-  sentFingerprint: string;
-  view: RequestView;
+  id: number
+  groupId: number | null
+  draft: Draft
+  response: ApiResponse | null
+  busy: boolean
+  error: string
+  elapsed: number
+  sentFingerprint: string
+  view: RequestView
   /** Past sends, newest first. */
-  history?: HistoryEntry[];
+  history?: HistoryEntry[]
   /** Assertion results for the shown response. Not saved. */
-  testResults?: AssertionResult[];
+  testResults?: AssertionResult[]
   /** Capture problems from the last send. Not saved. */
-  captureErrors?: string[];
+  captureErrors?: string[]
   /** An event stream that is arriving now. Not saved. */
-  stream?: LiveStream;
+  stream?: LiveStream
   /** The WebSocket connection and its log. Not saved. */
-  socket?: import("./websocket").SocketSession;
+  socket?: import('./websocket').SocketSession
   /** The request changed since the shown response was sent. Not saved. */
-  stale?: boolean;
-};
+  stale?: boolean
+}
 export type LiveStream = {
-  status: number;
-  statusText: string;
-  headers: import("./request").Header[];
-  events: import("./sse").SseEvent[];
+  status: number
+  statusText: string
+  headers: import('./request').Header[]
+  events: import('./sse').SseEvent[]
   /** The body so far, up to the inspection limit. */
-  text: string;
-  bytes: number;
-  truncated: boolean;
-};
+  text: string
+  bytes: number
+  truncated: boolean
+}
 /** A live stream keeps at most this many events; older ones drop. */
-export const STREAM_EVENT_LIMIT = 5000;
+export const STREAM_EVENT_LIMIT = 5000
 export type RequestView = {
-  requestTab: string;
-  responseTab: string;
-  pretty: boolean;
-  wrap: boolean;
-  responseScroll: number;
-};
+  requestTab: string
+  responseTab: string
+  pretty: boolean
+  wrap: boolean
+  responseScroll: number
+}
 export const createView = (): RequestView => ({
-  requestTab: "query",
-  responseTab: "body",
+  requestTab: 'query',
+  responseTab: 'body',
   pretty: true,
   wrap: false,
   responseScroll: 0,
-});
-let sequence = 0;
+})
+let sequence = 0
 export function reserveSessionId(id: number) {
-  sequence = Math.max(sequence, id);
+  sequence = Math.max(sequence, id)
 }
 export function draftFingerprint(draft: Draft) {
-  const rows = (items: Draft["query"]) =>
+  const rows = (items: Draft['query']) =>
     items.map(({ key, value, enabled, file }) => ({
       key,
       value,
       enabled,
       file,
-    }));
+    }))
   return JSON.stringify({
     ...draft,
     query: rows(draft.query),
     headers: rows(draft.headers),
     form: draft.form && rows(draft.form),
-  });
+  })
 }
 
 /**
@@ -84,10 +84,10 @@ export function draftFingerprint(draft: Draft) {
  * @param authType Optional resolved auth type tag for the fingerprint.
  */
 export function requestFingerprint(
-  request: import("./request").RequestInput | null,
+  request: import('./request').RequestInput | null,
   authType?: string,
 ): string {
-  if (!request) return "";
+  if (!request) return ''
   return JSON.stringify({
     method: request.method,
     url: request.url,
@@ -96,22 +96,22 @@ export function requestFingerprint(
     bodyFile: request.bodyFile,
     multipart: request.multipart,
     _authType: authType,
-  });
+  })
 }
-const emptyFingerprint = draftFingerprint(createDraft());
+const emptyFingerprint = draftFingerprint(createDraft())
 export function hasDraft(session: RequestSession) {
   return (
     draftFingerprint(session.draft) !== emptyFingerprint ||
     Boolean(session.response || session.error)
-  );
+  )
 }
 export function createSession(source?: Draft): RequestSession {
-  const cloneRows = (rows: Draft["query"]) =>
+  const cloneRows = (rows: Draft['query']) =>
     rows.map((row) => ({
       ...pair(row.key, row.value),
       enabled: row.enabled,
       ...(row.file ? { file: true } : {}),
-    }));
+    }))
   return {
     id: ++sequence,
     groupId: null,
@@ -134,42 +134,37 @@ export function createSession(source?: Draft): RequestSession {
       : createDraft(),
     response: null,
     busy: false,
-    error: "",
+    error: '',
     elapsed: 0,
-    sentFingerprint: "",
+    sentFingerprint: '',
     view: createView(),
-  };
+  }
 }
 /** Groups and global tokens, so labels can show resolved token values. */
 export type LabelTokens = {
-  groups: RequestGroup[];
-  globalDefinitions: Record<string, string>;
-};
+  groups: RequestGroup[]
+  globalDefinitions: Record<string, string>
+}
 
 function displayUrl(session: RequestSession, tokens?: LabelTokens) {
-  if (!tokens) return session.draft.url;
-  const ctx = resolveTokenDefinitions(
-    session.groupId,
-    tokens.groups,
-    tokens.globalDefinitions,
-  );
-  return resolveForDisplay(session.draft.url, ctx);
+  if (!tokens) return session.draft.url
+  const ctx = resolveTokenDefinitions(session.groupId, tokens.groups, tokens.globalDefinitions)
+  return resolveForDisplay(session.draft.url, ctx)
 }
 
 export function sessionLabel(session: RequestSession, tokens?: LabelTokens) {
   try {
-    const url = new URL(displayUrl(session, tokens));
-    if (!["http:", "https:", "ws:", "wss:"].includes(url.protocol))
-      throw new Error();
-    if (url.pathname === "/") return url.host;
+    const url = new URL(displayUrl(session, tokens))
+    if (!['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol)) throw new Error()
+    if (url.pathname === '/') return url.host
     // Show token references such as {{id}} as typed, not percent-encoded.
     try {
-      return decodeURI(url.pathname);
+      return decodeURI(url.pathname)
     } catch {
-      return url.pathname;
+      return url.pathname
     }
   } catch {
-    return "Untitled " + String(session.id).padStart(2, "0");
+    return 'Untitled ' + String(session.id).padStart(2, '0')
   }
 }
 
@@ -179,23 +174,21 @@ export function sessionLabel(session: RequestSession, tokens?: LabelTokens) {
  * response panel — sessionStatus just reflects transport state.
  */
 export function sessionStatus(session: RequestSession) {
-  if (session.busy) return "Sending";
-  if (session.socket?.state === "open") return "Open";
-  if (session.error) return "Failed";
-  if (session.response) return String(session.response.status);
-  return "Draft";
+  if (session.busy) return 'Sending'
+  if (session.socket?.state === 'open') return 'Open'
+  if (session.error) return 'Failed'
+  if (session.response) return String(session.response.status)
+  return 'Draft'
 }
 export function sessionHost(session: RequestSession, tokens?: LabelTokens) {
   try {
-    const url = new URL(displayUrl(session, tokens));
-    return ["http:", "https:", "ws:", "wss:"].includes(url.protocol)
-      ? url.host
-      : "";
+    const url = new URL(displayUrl(session, tokens))
+    return ['http:', 'https:', 'ws:', 'wss:'].includes(url.protocol) ? url.host : ''
   } catch {
-    return "";
+    return ''
   }
 }
 
 /** The method to show: "WS" for a WebSocket request. */
 export const displayMethod = (session: RequestSession) =>
-  isWebSocketUrl(session.draft.url) ? "WS" : session.draft.method;
+  isWebSocketUrl(session.draft.url) ? 'WS' : session.draft.method

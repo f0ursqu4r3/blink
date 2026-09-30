@@ -1,8 +1,8 @@
-import { buildResolvedRequestContext } from "./authorization";
-import type { RequestGroup } from "./groups";
-import { buildRequest, toCurl } from "./request";
-import type { RequestSession } from "./session";
-import type { TransportOptions } from "./transport-options";
+import { buildResolvedRequestContext } from './authorization'
+import type { RequestGroup } from './groups'
+import { buildRequest, toCurl } from './request'
+import type { RequestSession } from './session'
+import type { TransportOptions } from './transport-options'
 
 /**
  * The cURL command for a session, resolved as a send resolves it. Empty when
@@ -15,14 +15,9 @@ export function sessionCurl(
   options?: TransportOptions,
 ) {
   try {
-    const ctx = buildResolvedRequestContext(
-      session.draft,
-      session.groupId ?? null,
-      groups,
-      globals,
-    );
-    return toCurl(buildRequest(session.draft, ctx), options);
+    const ctx = buildResolvedRequestContext(session.draft, session.groupId ?? null, groups, globals)
+    return toCurl(buildRequest(session.draft, ctx), options)
   } catch {
-    return "";
+    return ''
   }
 }

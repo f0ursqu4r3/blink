@@ -1,5 +1,5 @@
-import type { InterpolationContext } from "./interpolation";
-import { tokenSpans, tokenValue, type TokenSpan } from "./token-hints";
+import type { InterpolationContext } from './interpolation'
+import { tokenSpans, tokenValue, type TokenSpan } from './token-hints'
 
 /**
  * Show a field with each defined `{{name}}` replaced by its value, and map
@@ -12,34 +12,28 @@ import { tokenSpans, tokenValue, type TokenSpan } from "./token-hints";
  */
 
 export type DisplaySegment = {
-  span: TokenSpan;
+  span: TokenSpan
   /** Shown text: the value for a unit, else the raw text. */
-  text: string;
+  text: string
   /** True when the segment shows a value in place of its reference. */
-  unit: boolean;
-  from: number;
-  to: number;
-  rawFrom: number;
-  rawTo: number;
-};
+  unit: boolean
+  from: number
+  to: number
+  rawFrom: number
+  rawTo: number
+}
 
-export type TokenDisplay = { text: string; segments: DisplaySegment[] };
+export type TokenDisplay = { text: string; segments: DisplaySegment[] }
 
-export function tokenDisplay(
-  raw: string,
-  ctx?: InterpolationContext,
-): TokenDisplay {
-  const segments: DisplaySegment[] = [];
-  let from = 0;
-  let rawFrom = 0;
+export function tokenDisplay(raw: string, ctx?: InterpolationContext): TokenDisplay {
+  const segments: DisplaySegment[] = []
+  let from = 0
+  let rawFrom = 0
   for (const span of tokenSpans(raw, ctx)) {
-    const value =
-      span.token === "resolved" && span.name
-        ? tokenValue(span.name, ctx)
-        : undefined;
+    const value = span.token === 'resolved' && span.name ? tokenValue(span.name, ctx) : undefined
     // An empty value would leave nothing to see or edit.
-    const unit = !!value;
-    const text = unit ? value! : span.text;
+    const unit = !!value
+    const text = unit ? value! : span.text
     segments.push({
       span,
       text,
@@ -48,50 +42,46 @@ export function tokenDisplay(
       to: from + text.length,
       rawFrom,
       rawTo: rawFrom + span.text.length,
-    });
-    from += text.length;
-    rawFrom += span.text.length;
+    })
+    from += text.length
+    rawFrom += span.text.length
   }
-  return { text: segments.map((s) => s.text).join(""), segments };
+  return { text: segments.map((s) => s.text).join(''), segments }
 }
 
 /** Raw offset for a shown offset. A unit's inside maps to its raw end. */
 export function rawOffset(segments: DisplaySegment[], pos: number): number {
   for (const s of segments) {
-    if (pos < s.from || pos > s.to) continue;
-    if (!s.unit) return s.rawFrom + (pos - s.from);
-    return pos === s.from ? s.rawFrom : s.rawTo;
+    if (pos < s.from || pos > s.to) continue
+    if (!s.unit) return s.rawFrom + (pos - s.from)
+    return pos === s.from ? s.rawFrom : s.rawTo
   }
-  return segments[segments.length - 1]?.rawTo ?? 0;
+  return segments[segments.length - 1]?.rawTo ?? 0
 }
 
 /** Shown offset for a raw offset. A unit's inside maps to its shown end. */
 export function displayOffset(segments: DisplaySegment[], raw: number): number {
   for (const s of segments) {
-    if (raw < s.rawFrom || raw > s.rawTo) continue;
-    if (!s.unit) return s.from + (raw - s.rawFrom);
-    return raw === s.rawFrom ? s.from : s.to;
+    if (raw < s.rawFrom || raw > s.rawTo) continue
+    if (!s.unit) return s.from + (raw - s.rawFrom)
+    return raw === s.rawFrom ? s.from : s.to
   }
-  return segments[segments.length - 1]?.to ?? 0;
+  return segments[segments.length - 1]?.to ?? 0
 }
 
 const unitAround = (segments: DisplaySegment[], pos: number) =>
-  segments.find((s) => s.unit && s.from < pos && pos < s.to);
+  segments.find((s) => s.unit && s.from < pos && pos < s.to)
 
 /**
  * Move a caret out of a unit, to the edge in the direction it moved.
  * Returns `pos` when it is not inside a unit.
  */
-export function snapCaret(
-  segments: DisplaySegment[],
-  pos: number,
-  previous: number,
-): number {
-  const s = unitAround(segments, pos);
-  if (!s) return pos;
-  if (previous <= s.from) return s.to;
-  if (previous >= s.to) return s.from;
-  return pos - s.from < s.to - pos ? s.from : s.to;
+export function snapCaret(segments: DisplaySegment[], pos: number, previous: number): number {
+  const s = unitAround(segments, pos)
+  if (!s) return pos
+  if (previous <= s.from) return s.to
+  if (previous >= s.to) return s.from
+  return pos - s.from < s.to - pos ? s.from : s.to
 }
 
 /** Widen a shown range so it covers every unit it touches. */
@@ -101,14 +91,14 @@ export function widenRange(
   end: number,
 ): [number, number] {
   for (const s of segments) {
-    if (!s.unit || s.from >= end || s.to <= start) continue;
-    start = Math.min(start, s.from);
-    end = Math.max(end, s.to);
+    if (!s.unit || s.from >= end || s.to <= start) continue
+    start = Math.min(start, s.from)
+    end = Math.max(end, s.to)
   }
-  return [start, end];
+  return [start, end]
 }
 
-export type RawEdit = { raw: string; caret: number };
+export type RawEdit = { raw: string; caret: number }
 
 /**
  * Apply a native edit, found by comparing the shown text before and after,
@@ -120,25 +110,25 @@ export function applyDisplayEdit(
   after: string,
   caret: number,
 ): RawEdit {
-  const old = before.text;
-  const suffix = Math.min(after.length - caret, old.length);
-  let start = 0;
-  const limit = Math.min(caret, old.length - suffix);
-  while (start < limit && old[start] === after[start]) start++;
-  const oldEnd = old.length - suffix;
-  const inserted = after.slice(start, caret);
+  const old = before.text
+  const suffix = Math.min(after.length - caret, old.length)
+  let start = 0
+  const limit = Math.min(caret, old.length - suffix)
+  while (start < limit && old[start] === after[start]) start++
+  const oldEnd = old.length - suffix
+  const inserted = after.slice(start, caret)
 
-  let [from, to] = widenRange(before.segments, start, oldEnd);
+  let [from, to] = widenRange(before.segments, start, oldEnd)
   // Text typed inside a unit goes after it.
-  const inside = from === to && unitAround(before.segments, from);
-  if (inside) from = to = inside.to;
+  const inside = from === to && unitAround(before.segments, from)
+  if (inside) from = to = inside.to
 
-  const rawFrom = rawOffset(before.segments, from);
-  const rawTo = rawOffset(before.segments, to);
+  const rawFrom = rawOffset(before.segments, from)
+  const rawTo = rawOffset(before.segments, to)
   return {
     raw: raw.slice(0, rawFrom) + inserted + raw.slice(rawTo),
     caret: rawFrom + inserted.length,
-  };
+  }
 }
 
 /**
@@ -149,14 +139,14 @@ export function deleteIntoUnit(
   raw: string,
   segments: DisplaySegment[],
   pos: number,
-  direction: "backward" | "forward",
+  direction: 'backward' | 'forward',
 ): RawEdit | null {
   const s = segments.find(
-    (seg) => seg.unit && (direction === "backward" ? seg.to : seg.from) === pos,
-  );
-  if (!s) return null;
-  const at = direction === "backward" ? s.rawTo - 1 : s.rawFrom;
-  return { raw: raw.slice(0, at) + raw.slice(at + 1), caret: at };
+    (seg) => seg.unit && (direction === 'backward' ? seg.to : seg.from) === pos,
+  )
+  if (!s) return null
+  const at = direction === 'backward' ? s.rawTo - 1 : s.rawFrom
+  return { raw: raw.slice(0, at) + raw.slice(at + 1), caret: at }
 }
 
 /** Raw text for a shown selection, with touched units copied whole. */
@@ -166,6 +156,6 @@ export function rawSlice(
   start: number,
   end: number,
 ): string {
-  const [from, to] = widenRange(segments, start, end);
-  return raw.slice(rawOffset(segments, from), rawOffset(segments, to));
+  const [from, to] = widenRange(segments, start, end)
+  return raw.slice(rawOffset(segments, from), rawOffset(segments, to))
 }

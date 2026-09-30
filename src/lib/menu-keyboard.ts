@@ -1,13 +1,7 @@
 /** True for the keys that open a context menu: Shift+F10 and the Context Menu key. */
 export function isContextMenuKey(event: KeyboardEvent) {
-  if (event.key === "ContextMenu") return true;
-  return (
-    event.key === "F10" &&
-    event.shiftKey &&
-    !event.metaKey &&
-    !event.ctrlKey &&
-    !event.altKey
-  );
+  if (event.key === 'ContextMenu') return true
+  return event.key === 'F10' && event.shiftKey && !event.metaKey && !event.ctrlKey && !event.altKey
 }
 
 /**
@@ -15,13 +9,13 @@ export function isContextMenuKey(event: KeyboardEvent) {
  * send a contextmenu event for Shift+F10, so Blink sends one.
  */
 export function openContextMenuAt(target: Element) {
-  const rect = target.getBoundingClientRect();
+  const rect = target.getBoundingClientRect()
   target.dispatchEvent(
-    new MouseEvent("contextmenu", {
+    new MouseEvent('contextmenu', {
       bubbles: true,
       cancelable: true,
       clientX: rect.left + rect.width / 2,
       clientY: rect.top + rect.height / 2,
     }),
-  );
+  )
 }

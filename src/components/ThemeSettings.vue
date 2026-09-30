@@ -1,77 +1,70 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { useTheme } from "@/composables/useTheme";
-import { accentSlots, DEFAULT_ACCENT, type AccentSlot } from "@/lib/theme";
-import {
-  canReadGhosttyThemes,
-  listGhosttyThemes,
-  readGhosttyTheme,
-} from "@/lib/ghostty-themes";
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { useTheme } from '@/composables/useTheme'
+import { accentSlots, DEFAULT_ACCENT, type AccentSlot } from '@/lib/theme'
+import { canReadGhosttyThemes, listGhosttyThemes, readGhosttyTheme } from '@/lib/ghostty-themes'
 
-const { draft, error, saveError, preview } = useTheme();
-const names = ref<string[]>([]);
-const readError = ref("");
-const accent = computed(() => draft.value?.accent ?? DEFAULT_ACCENT);
-const message = computed(() => error.value || saveError.value);
+const { draft, error, saveError, preview } = useTheme()
+const names = ref<string[]>([])
+const readError = ref('')
+const accent = computed(() => draft.value?.accent ?? DEFAULT_ACCENT)
+const message = computed(() => error.value || saveError.value)
 // Guards against a slow readGhosttyTheme() overwriting a newer edit, reset,
 // theme choice, or accent change made while the read was in flight.
-let request = 0;
+let request = 0
 
 onMounted(async () => {
-  if (!canReadGhosttyThemes) return;
+  if (!canReadGhosttyThemes) return
   try {
-    names.value = await listGhosttyThemes();
+    names.value = await listGhosttyThemes()
   } catch {
-    readError.value = "Could not list Ghostty themes.";
+    readError.value = 'Could not list Ghostty themes.'
   }
-});
+})
 // Drops a pending readGhosttyTheme() that resolves after this component is
 // gone, so it cannot overwrite state another mounted instance owns.
 onUnmounted(() => {
-  request++;
-});
+  request++
+})
 
 async function choose(name: string) {
-  readError.value = "";
-  const current = ++request;
-  if (!name) return preview(null);
+  readError.value = ''
+  const current = ++request
+  if (!name) return preview(null)
   try {
-    const text = await readGhosttyTheme(name);
-    if (current !== request) return;
-    preview({ name, text, accent: accent.value });
+    const text = await readGhosttyTheme(name)
+    if (current !== request) return
+    preview({ name, text, accent: accent.value })
   } catch (reason) {
-    if (current !== request) return;
-    readError.value = String(reason);
+    if (current !== request) return
+    readError.value = String(reason)
   }
 }
 function edit(text: string) {
-  request++;
-  if (!text.trim()) return preview(null);
-  preview({ name: "Custom", text, accent: accent.value });
+  request++
+  if (!text.trim()) return preview(null)
+  preview({ name: 'Custom', text, accent: accent.value })
 }
 function setAccent(value: AccentSlot) {
-  request++;
-  if (draft.value) preview({ ...draft.value, accent: value });
+  request++
+  if (draft.value) preview({ ...draft.value, accent: value })
 }
 function reset() {
-  request++;
-  preview(null);
+  request++
+  preview(null)
 }
 </script>
 
 <template>
   <section class="grid gap-2 border-t border-border pt-3 text-xs">
-    <h3 class="font-semibold uppercase tracking-[0.07em] text-muted-foreground">
-      Theme
-    </h3>
+    <h3 class="font-semibold uppercase tracking-[0.07em] text-muted-foreground">Theme</h3>
     <div v-if="canReadGhosttyThemes" class="grid gap-1.5 text-muted-foreground">
       <label for="app-theme">Ghostty theme</label>
       <select
         id="app-theme"
         :value="draft?.name ?? ''"
         class="h-8 w-full min-w-0 border border-input rounded-sm px-2 bg-background text-foreground font-mono"
-        @change="choose(($event.target as HTMLSelectElement).value)"
-      >
+        @change="choose(($event.target as HTMLSelectElement).value)">
         <option value="">Blink (default)</option>
         <option v-if="draft && !names.includes(draft.name)" :value="draft.name">
           {{ draft.name }}
@@ -80,12 +73,7 @@ function reset() {
           {{ name }}
         </option>
       </select>
-      <p
-        v-if="readError"
-        class="text-destructive font-mono"
-        role="alert"
-        data-theme-read-error
-      >
+      <p v-if="readError" class="text-destructive font-mono" role="alert" data-theme-read-error>
         {{ readError }}
       </p>
     </div>
@@ -100,14 +88,8 @@ function reset() {
         data-theme-colors
         spellcheck="false"
         autocomplete="off"
-        @input="edit(($event.target as HTMLTextAreaElement).value)"
-      />
-      <p
-        v-if="message"
-        class="text-destructive font-mono"
-        role="alert"
-        data-theme-error
-      >
+        @input="edit(($event.target as HTMLTextAreaElement).value)" />
+      <p v-if="message" class="text-destructive font-mono" role="alert" data-theme-error>
         {{ message }}
       </p>
     </div>
@@ -119,17 +101,8 @@ function reset() {
           :value="accent"
           :disabled="!draft"
           class="h-8 w-full min-w-0 border border-input rounded-sm px-2 bg-background text-foreground font-mono disabled:opacity-50"
-          @change="
-            setAccent(
-              Number(($event.target as HTMLSelectElement).value) as AccentSlot,
-            )
-          "
-        >
-          <option
-            v-for="slot in accentSlots"
-            :key="slot.value"
-            :value="slot.value"
-          >
+          @change="setAccent(Number(($event.target as HTMLSelectElement).value) as AccentSlot)">
+          <option v-for="slot in accentSlots" :key="slot.value" :value="slot.value">
             {{ slot.label }} ({{ slot.value }})
           </option>
         </select>
@@ -139,8 +112,7 @@ function reset() {
         class="h-8 px-3 border border-border rounded-sm bg-background font-mono text-xs disabled:opacity-50"
         data-theme-reset
         :disabled="!draft"
-        @click="reset"
-      >
+        @click="reset">
         Reset to default
       </button>
     </div>

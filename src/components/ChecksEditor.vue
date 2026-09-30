@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { Plus, X } from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
-import HelpTooltip from "./HelpTooltip.vue";
+import { Plus, X } from 'lucide-vue-next'
+import { Button } from '@/components/ui/button'
+import HelpTooltip from './HelpTooltip.vue'
 import {
   CAPTURE_NAME_RE,
   checkOperators,
@@ -12,37 +12,30 @@ import {
   unaryOperators,
   type Assertion,
   type Capture,
-} from "@/lib/checks";
+} from '@/lib/checks'
 
-const assertions = defineModel<Assertion[]>("assertions", {
+const assertions = defineModel<Assertion[]>('assertions', {
   default: () => [],
-});
-const captures = defineModel<Capture[]>("captures", { default: () => [] });
-defineProps<{ disabled?: boolean }>();
+})
+const captures = defineModel<Capture[]>('captures', { default: () => [] })
+defineProps<{ disabled?: boolean }>()
 
-const captureSources = checkSources.filter(
-  (source) => source.id !== "time" && source.id !== "size",
-);
-const pathPlaceholder = (source: string) =>
-  source === "header" ? "Header name" : ".path.to.value";
+const captureSources = checkSources.filter((source) => source.id !== 'time' && source.id !== 'size')
+const pathPlaceholder = (source: string) => (source === 'header' ? 'Header name' : '.path.to.value')
 
 function updateAssertion(id: number, patch: Partial<Assertion>) {
-  assertions.value = assertions.value.map((row) =>
-    row.id === id ? { ...row, ...patch } : row,
-  );
+  assertions.value = assertions.value.map((row) => (row.id === id ? { ...row, ...patch } : row))
 }
 function updateCapture(id: number, patch: Partial<Capture>) {
-  captures.value = captures.value.map((row) =>
-    row.id === id ? { ...row, ...patch } : row,
-  );
+  captures.value = captures.value.map((row) => (row.id === id ? { ...row, ...patch } : row))
 }
 const input =
-  "h-8 min-w-0 bg-transparent border-0 px-2 font-mono text-xs rounded-none pointer-coarse:h-11 pointer-coarse:text-base";
+  'h-8 min-w-0 bg-transparent border-0 px-2 font-mono text-xs rounded-none pointer-coarse:h-11 pointer-coarse:text-base'
 const select =
-  "h-8 min-w-0 bg-transparent border-0 px-1.5 text-xs rounded-none text-foreground pointer-coarse:h-11";
-const cell = "h-8.5 border-b border-l border-border";
+  'h-8 min-w-0 bg-transparent border-0 px-1.5 text-xs rounded-none text-foreground pointer-coarse:h-11'
+const cell = 'h-8.5 border-b border-l border-border'
 const head =
-  "text-muted-foreground text-left text-[0.625rem] uppercase tracking-widest font-medium h-8 px-2 bg-muted border-l border-border";
+  'text-muted-foreground text-left text-[0.625rem] uppercase tracking-widest font-medium h-8 px-2 bg-muted border-l border-border'
 </script>
 
 <template>
@@ -50,16 +43,13 @@ const head =
     <section aria-labelledby="assertions-heading">
       <h3
         id="assertions-heading"
-        class="flex h-8 items-center justify-between px-3 font-mono text-[0.625rem] tracking-[0.12em] text-muted-foreground"
-      >
+        class="flex h-8 items-center justify-between px-3 font-mono text-[0.625rem] tracking-[0.12em] text-muted-foreground">
         ASSERTIONS
         <HelpTooltip
-          text="Checked after each send. Results show in the response Tests tab. JSON sources take a jq expression."
-        >
+          text="Checked after each send. Results show in the response Tests tab. JSON sources take a jq expression.">
           <button
             type="button"
-            class="font-sans text-[0.6875rem] tracking-normal underline decoration-dotted underline-offset-3"
-          >
+            class="font-sans text-[0.6875rem] tracking-normal underline decoration-dotted underline-offset-3">
             Help
           </button>
         </HelpTooltip>
@@ -88,8 +78,7 @@ const head =
                 :aria-label="`Enable assertion ${index + 1}`"
                 :checked="row.enabled"
                 :disabled="disabled"
-                @change="updateAssertion(row.id, { enabled: !row.enabled })"
-              />
+                @change="updateAssertion(row.id, { enabled: !row.enabled })" />
             </td>
             <td :class="cell">
               <select
@@ -101,16 +90,10 @@ const head =
                 data-assertion-source
                 @change="
                   updateAssertion(row.id, {
-                    source: ($event.target as HTMLSelectElement)
-                      .value as Assertion['source'],
+                    source: ($event.target as HTMLSelectElement).value as Assertion['source'],
                   })
-                "
-              >
-                <option
-                  v-for="source in checkSources"
-                  :key="source.id"
-                  :value="source.id"
-                >
+                ">
+                <option v-for="source in checkSources" :key="source.id" :value="source.id">
                   {{ source.label }}
                 </option>
               </select>
@@ -131,8 +114,7 @@ const head =
                   updateAssertion(row.id, {
                     path: ($event.target as HTMLInputElement).value,
                   })
-                "
-              />
+                " />
             </td>
             <td :class="cell">
               <select
@@ -144,16 +126,10 @@ const head =
                 data-assertion-operator
                 @change="
                   updateAssertion(row.id, {
-                    operator: ($event.target as HTMLSelectElement)
-                      .value as Assertion['operator'],
+                    operator: ($event.target as HTMLSelectElement).value as Assertion['operator'],
                   })
-                "
-              >
-                <option
-                  v-for="operator in checkOperators"
-                  :key="operator.id"
-                  :value="operator.id"
-                >
+                ">
+                <option v-for="operator in checkOperators" :key="operator.id" :value="operator.id">
                   {{ operator.label }}
                 </option>
               </select>
@@ -174,8 +150,7 @@ const head =
                   updateAssertion(row.id, {
                     expected: ($event.target as HTMLInputElement).value,
                   })
-                "
-              />
+                " />
             </td>
             <td class="h-8.5 border-b border-l border-border p-0">
               <Button
@@ -183,12 +158,7 @@ const head =
                 class="size-7 shrink-0 p-0"
                 :aria-label="`Remove assertion ${index + 1}`"
                 :disabled="disabled"
-                @click="
-                  assertions = assertions.filter(
-                    (candidate) => candidate.id !== row.id,
-                  )
-                "
-              >
+                @click="assertions = assertions.filter((candidate) => candidate.id !== row.id)">
                 <X :size="13" aria-hidden="true" />
               </Button>
             </td>
@@ -200,24 +170,21 @@ const head =
         class="m-1.5"
         data-add-assertion
         :disabled="disabled"
-        @click="assertions = [...assertions, createAssertion()]"
-      >
-        <Plus :size="13" aria-hidden="true" /> Add assertion
+        @click="assertions = [...assertions, createAssertion()]">
+        <Plus :size="13" aria-hidden="true" />
+        Add assertion
       </Button>
     </section>
     <section aria-labelledby="captures-heading" class="mt-2">
       <h3
         id="captures-heading"
-        class="flex h-8 items-center justify-between px-3 font-mono text-[0.625rem] tracking-[0.12em] text-muted-foreground"
-      >
+        class="flex h-8 items-center justify-between px-3 font-mono text-[0.625rem] tracking-[0.12em] text-muted-foreground">
         CAPTURES
         <HelpTooltip
-          text="After each successful send, saves a response value as a workspace token. Use it in other requests as {{name}}."
-        >
+          text="After each successful send, saves a response value as a workspace token. Use it in other requests as {{name}}.">
           <button
             type="button"
-            class="font-sans text-[0.6875rem] tracking-normal underline decoration-dotted underline-offset-3"
-          >
+            class="font-sans text-[0.6875rem] tracking-normal underline decoration-dotted underline-offset-3">
             Help
           </button>
         </HelpTooltip>
@@ -245,23 +212,19 @@ const head =
                 :aria-label="`Enable capture ${index + 1}`"
                 :checked="row.enabled"
                 :disabled="disabled"
-                @change="updateCapture(row.id, { enabled: !row.enabled })"
-              />
+                @change="updateCapture(row.id, { enabled: !row.enabled })" />
             </td>
             <td :class="cell">
               <input
                 :class="[
                   input,
                   {
-                    'text-destructive':
-                      row.name && !CAPTURE_NAME_RE.test(row.name),
+                    'text-destructive': row.name && !CAPTURE_NAME_RE.test(row.name),
                   },
                 ]"
                 class="w-full"
                 :aria-label="`Capture ${index + 1} token name`"
-                :aria-invalid="
-                  (row.name && !CAPTURE_NAME_RE.test(row.name)) || undefined
-                "
+                :aria-invalid="(row.name && !CAPTURE_NAME_RE.test(row.name)) || undefined"
                 :title="
                   row.name && !CAPTURE_NAME_RE.test(row.name)
                     ? 'Start with a letter. Use letters, digits, _, . or -.'
@@ -277,8 +240,7 @@ const head =
                   updateCapture(row.id, {
                     name: ($event.target as HTMLInputElement).value,
                   })
-                "
-              />
+                " />
             </td>
             <td :class="cell">
               <select
@@ -289,16 +251,10 @@ const head =
                 :disabled="disabled"
                 @change="
                   updateCapture(row.id, {
-                    source: ($event.target as HTMLSelectElement)
-                      .value as Capture['source'],
+                    source: ($event.target as HTMLSelectElement).value as Capture['source'],
                   })
-                "
-              >
-                <option
-                  v-for="source in captureSources"
-                  :key="source.id"
-                  :value="source.id"
-                >
+                ">
+                <option v-for="source in captureSources" :key="source.id" :value="source.id">
                   {{ source.label }}
                 </option>
               </select>
@@ -319,8 +275,7 @@ const head =
                   updateCapture(row.id, {
                     path: ($event.target as HTMLInputElement).value,
                   })
-                "
-              />
+                " />
             </td>
             <td class="h-8.5 border-b border-l border-border p-0">
               <Button
@@ -328,12 +283,7 @@ const head =
                 class="size-7 shrink-0 p-0"
                 :aria-label="`Remove capture ${index + 1}`"
                 :disabled="disabled"
-                @click="
-                  captures = captures.filter(
-                    (candidate) => candidate.id !== row.id,
-                  )
-                "
-              >
+                @click="captures = captures.filter((candidate) => candidate.id !== row.id)">
                 <X :size="13" aria-hidden="true" />
               </Button>
             </td>
@@ -345,9 +295,9 @@ const head =
         class="m-1.5"
         data-add-capture
         :disabled="disabled"
-        @click="captures = [...captures, createCapture('', 'json', '.')]"
-      >
-        <Plus :size="13" aria-hidden="true" /> Add capture
+        @click="captures = [...captures, createCapture('', 'json', '.')]">
+        <Plus :size="13" aria-hidden="true" />
+        Add capture
       </Button>
     </section>
   </div>

@@ -1,31 +1,22 @@
-import {
-  computed,
-  ref,
-  toValue,
-  onScopeDispose,
-  type MaybeRefOrGetter,
-} from "vue";
-import { buildRequest, toCurl } from "@/lib/request";
-import type { ResolvedRequestContext } from "@/lib/authorization";
+import { computed, ref, toValue, onScopeDispose, type MaybeRefOrGetter } from 'vue'
+import { buildRequest, toCurl } from '@/lib/request'
+import type { ResolvedRequestContext } from '@/lib/authorization'
 import {
   requestFingerprint,
   STREAM_EVENT_LIMIT,
   type LiveStream,
   type RequestSession,
-} from "@/lib/session";
-import { createSseParser } from "@/lib/sse";
-import type { StreamMessage } from "@/lib/transport";
-import { MIB } from "@/lib/transport-options";
-import { CANCELED, sendRequest } from "@/lib/transport";
-import { addHistory, historyEntry, nextHistoryId } from "@/lib/history";
-import { runAssertions, runCaptures } from "@/lib/checks";
-import { releaseResponse } from "@/lib/response-body";
-import {
-  defaultTransportOptions,
-  type TransportOptions,
-} from "@/lib/transport-options";
+} from '@/lib/session'
+import { createSseParser } from '@/lib/sse'
+import type { StreamMessage } from '@/lib/transport'
+import { MIB } from '@/lib/transport-options'
+import { CANCELED, sendRequest } from '@/lib/transport'
+import { addHistory, historyEntry, nextHistoryId } from '@/lib/history'
+import { runAssertions, runCaptures } from '@/lib/checks'
+import { releaseResponse } from '@/lib/response-body'
+import { defaultTransportOptions, type TransportOptions } from '@/lib/transport-options'
 
-export type { MaybeRefOrGetter };
+export type { MaybeRefOrGetter }
 
 /**
  * useRequestRunner — manages the send/cURL/stale lifecycle for a single session.
@@ -51,37 +42,34 @@ export function useRequestRunner(
   optionsSource?: MaybeRefOrGetter<TransportOptions | undefined>,
   hooks: {
     /** Receives token values from the request captures after a send. */
-    onCapture?: (values: Record<string, string>) => void;
+    onCapture?: (values: Record<string, string>) => void
   } = {},
 ) {
-  let alive = true;
-  let clock: ReturnType<typeof setInterval> | undefined;
-  let controller: AbortController | undefined;
+  let alive = true
+  let clock: ReturnType<typeof setInterval> | undefined
+  let controller: AbortController | undefined
   // The URL actually sent, captured at send time so a later edit to the
   // draft (or an unresolved token placeholder) does not change the name
   // suggested for a saved response body.
-  const sentUrl = ref("");
+  const sentUrl = ref('')
 
   const prepared = computed(() => {
     // toValue(undefined) → undefined; toValue(ref(ctx)) → ctx; toValue(() => ctx) → ctx
-    const ctx =
-      contextSource !== undefined ? toValue(contextSource) : undefined;
+    const ctx = contextSource !== undefined ? toValue(contextSource) : undefined
     try {
-      return { request: buildRequest(session.draft, ctx), error: "", ctx };
+      return { request: buildRequest(session.draft, ctx), error: '', ctx }
     } catch (cause) {
       return {
         request: null,
         error: cause instanceof Error ? cause.message : String(cause),
         ctx,
-      };
+      }
     }
-  });
+  })
 
   const curl = computed(() =>
-    prepared.value.request
-      ? toCurl(prepared.value.request, toValue(optionsSource))
-      : "",
-  );
+    prepared.value.request ? toCurl(prepared.value.request, toValue(optionsSource)) : '',
+  )
 
   /**
    * Stale: true when a response exists but the current fully-resolved
@@ -90,92 +78,92 @@ export function useRequestRunner(
    * definition changes are included.
    */
   const stale = computed(() => {
-    if (!session.response) return false;
-    const req = prepared.value.request;
-    const ctx = prepared.value.ctx;
-    const authType = ctx?.auth?.type;
-    return session.sentFingerprint !== requestFingerprint(req, authType);
-  });
+    if (!session.response) return false
+    const req = prepared.value.request
+    const ctx = prepared.value.ctx
+    const authType = ctx?.auth?.type
+    return session.sentFingerprint !== requestFingerprint(req, authType)
+  })
 
   async function send() {
-    if (session.busy || !prepared.value.request) return;
-    const request = prepared.value.request;
-    const ctx = prepared.value.ctx;
-    const authType = ctx?.auth?.type;
-    session.busy = true;
-    session.error = "";
-    releaseResponse(session.response);
-    session.response = null;
-    session.testResults = undefined;
-    session.captureErrors = undefined;
-    session.stream = undefined;
-    session.elapsed = 0;
-    sentUrl.value = request.url;
+    if (session.busy || !prepared.value.request) return
+    const request = prepared.value.request
+    const ctx = prepared.value.ctx
+    const authType = ctx?.auth?.type
+    session.busy = true
+    session.error = ''
+    releaseResponse(session.response)
+    session.response = null
+    session.testResults = undefined
+    session.captureErrors = undefined
+    session.stream = undefined
+    session.elapsed = 0
+    sentUrl.value = request.url
     // Persist the resolved-request fingerprint so stale can compare accurately.
-    session.sentFingerprint = requestFingerprint(request, authType);
-    const start = performance.now();
-    const sentAt = Date.now();
+    session.sentFingerprint = requestFingerprint(request, authType)
+    const start = performance.now()
+    const sentAt = Date.now()
     clock = setInterval(() => {
-      session.elapsed = performance.now() - start;
-    }, 100);
-    controller = new AbortController();
-    const options = toValue(optionsSource) ?? defaultTransportOptions();
-    const limit = options.inspectionLimitMiB * MIB;
-    const encoder = new TextEncoder();
+      session.elapsed = performance.now() - start
+    }, 100)
+    controller = new AbortController()
+    const options = toValue(optionsSource) ?? defaultTransportOptions()
+    const limit = options.inspectionLimitMiB * MIB
+    const encoder = new TextEncoder()
     const parser = createSseParser((event) => {
-      const stream = session.stream;
-      if (!stream) return;
+      const stream = session.stream
+      if (!stream) return
       stream.events.push({
         ...event,
         at: Math.round(performance.now() - start),
-      });
+      })
       if (stream.events.length > STREAM_EVENT_LIMIT)
-        stream.events.splice(0, stream.events.length - STREAM_EVENT_LIMIT);
-    });
+        stream.events.splice(0, stream.events.length - STREAM_EVENT_LIMIT)
+    })
     const onStream = (message: StreamMessage) => {
-      if (!alive) return;
-      if (message.kind === "head") {
+      if (!alive) return
+      if (message.kind === 'head') {
         session.stream = {
           status: message.status,
           statusText: message.statusText,
           headers: message.headers.map(([key, value]) => ({ key, value })),
           events: [],
-          text: "",
+          text: '',
           bytes: 0,
           truncated: false,
-        };
-        return;
+        }
+        return
       }
-      const stream = session.stream;
-      if (!stream) return;
-      stream.bytes += encoder.encode(message.text).byteLength;
+      const stream = session.stream
+      if (!stream) return
+      stream.bytes += encoder.encode(message.text).byteLength
       if (stream.text.length < limit)
-        stream.text += message.text.slice(0, limit - stream.text.length);
-      else stream.truncated = true;
-      parser.push(message.text);
-    };
+        stream.text += message.text.slice(0, limit - stream.text.length)
+      else stream.truncated = true
+      parser.push(message.text)
+    }
     try {
       const result = await sendRequest(request, options, {
         signal: controller.signal,
         onStream,
-      });
+      })
       // A result for an unmounted view has no owner, so free its body.
-      if (alive) session.response = result;
-      else releaseResponse(result);
+      if (alive) session.response = result
+      else releaseResponse(result)
       session.history = addHistory(
         session.history,
         historyEntry(nextHistoryId(session.history), sentAt, request, {
           response: result,
         }),
-      );
-      if (alive) await check(result);
+      )
+      if (alive) await check(result)
     } catch (cause) {
-      const message = cause instanceof Error ? cause.message : String(cause);
+      const message = cause instanceof Error ? cause.message : String(cause)
       // Set by onStream after the reset above, so TypeScript cannot narrow it.
-      const stream = session.stream as LiveStream | undefined;
+      const stream = session.stream as LiveStream | undefined
       if (alive && message === CANCELED && stream) {
         // Stopping a stream keeps what arrived.
-        parser.end();
+        parser.end()
         const result = {
           status: stream.status,
           statusText: stream.statusText,
@@ -184,16 +172,16 @@ export function useRequestRunner(
           body: stream.text,
           sizeBytes: stream.bytes,
           truncated: stream.truncated,
-        };
-        session.response = result;
+        }
+        session.response = result
         session.history = addHistory(
           session.history,
           historyEntry(nextHistoryId(session.history), sentAt, request, {
             response: result,
           }),
-        );
-        await check(result);
-      } else if (alive) session.error = message;
+        )
+        await check(result)
+      } else if (alive) session.error = message
       if (message !== CANCELED)
         session.history = addHistory(
           session.history,
@@ -201,41 +189,41 @@ export function useRequestRunner(
             error: message,
             durationMs: Math.round(performance.now() - start),
           }),
-        );
+        )
     } finally {
-      controller = undefined;
-      session.stream = undefined;
-      clearInterval(clock);
-      if (alive) session.busy = false;
+      controller = undefined
+      session.stream = undefined
+      clearInterval(clock)
+      if (alive) session.busy = false
     }
   }
 
   /** Run the assertions and captures of the draft on `result`. */
-  async function check(result: import("@/lib/request").ApiResponse) {
-    const { assertions, captures } = session.draft;
+  async function check(result: import('@/lib/request').ApiResponse) {
+    const { assertions, captures } = session.draft
     if (assertions?.some((row) => row.enabled))
-      session.testResults = await runAssertions(assertions, result);
+      session.testResults = await runAssertions(assertions, result)
     if (captures?.some((row) => row.enabled)) {
-      const { values, errors } = await runCaptures(captures, result);
-      session.captureErrors = errors.length ? errors : undefined;
-      if (Object.keys(values).length) hooks.onCapture?.(values);
+      const { values, errors } = await runCaptures(captures, result)
+      session.captureErrors = errors.length ? errors : undefined
+      if (Object.keys(values).length) hooks.onCapture?.(values)
     }
   }
 
   /** Stop the running send. Its error reads "Request canceled.". */
   function cancel() {
-    controller?.abort();
+    controller?.abort()
   }
 
   onScopeDispose(() => {
-    alive = false;
-    clearInterval(clock);
-  });
+    alive = false
+    clearInterval(clock)
+  })
 
   /** Run the checks again on the shown response. */
   async function recheck() {
-    if (session.response && !session.busy) await check(session.response);
+    if (session.response && !session.busy) await check(session.response)
   }
 
-  return { prepared, curl, stale, send, cancel, sentUrl, recheck };
+  return { prepared, curl, stale, send, cancel, sentUrl, recheck }
 }

@@ -1,12 +1,12 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { useDragDrop, type DropHit } from "@/composables/useDragDrop";
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { useDragDrop, type DropHit } from '@/composables/useDragDrop'
 
-const drag = useDragDrop();
-let surfaceEl: HTMLElement;
-let unregister: () => void;
-let hit: DropHit | null;
-const commit = vi.fn();
-const expand = vi.fn();
+const drag = useDragDrop()
+let surfaceEl: HTMLElement
+let unregister: () => void
+let hit: DropHit | null
+const commit = vi.fn()
+const expand = vi.fn()
 
 function rect(left: number, top: number, width: number, height: number) {
   return {
@@ -19,226 +19,206 @@ function rect(left: number, top: number, width: number, height: number) {
     x: left,
     y: top,
     toJSON() {},
-  } as DOMRect;
+  } as DOMRect
 }
-function pointer(
-  type: string,
-  x: number,
-  y: number,
-  init: PointerEventInit = {},
-) {
+function pointer(type: string, x: number, y: number, init: PointerEventInit = {}) {
   return new PointerEvent(type, {
     bubbles: true,
     button: 0,
     clientX: x,
     clientY: y,
-    pointerType: "mouse",
+    pointerType: 'mouse',
     ...init,
-  });
+  })
 }
-const move = (x: number, y: number) =>
-  window.dispatchEvent(pointer("pointermove", x, y));
-const up = (x: number, y: number) =>
-  window.dispatchEvent(pointer("pointerup", x, y));
+const move = (x: number, y: number) => window.dispatchEvent(pointer('pointermove', x, y))
+const up = (x: number, y: number) => window.dispatchEvent(pointer('pointerup', x, y))
 const source = {
-  payload: () => ({ kind: "requests" as const, ids: [1] }),
-  preview: () => ({ label: "one" }),
-};
+  payload: () => ({ kind: 'requests' as const, ids: [1] }),
+  preview: () => ({ label: 'one' }),
+}
 
 beforeEach(() => {
-  surfaceEl = document.createElement("div");
-  surfaceEl.getBoundingClientRect = () => rect(0, 0, 200, 400);
-  document.body.append(surfaceEl);
-  hit = { key: "request-2", zone: "before", commit, expand };
+  surfaceEl = document.createElement('div')
+  surfaceEl.getBoundingClientRect = () => rect(0, 0, 200, 400)
+  document.body.append(surfaceEl)
+  hit = { key: 'request-2', zone: 'before', commit, expand }
   unregister = drag.registerSurface({
     el: () => surfaceEl,
-    axis: "y",
+    axis: 'y',
     resolve: () => hit,
-  });
-});
+  })
+})
 afterEach(() => {
-  drag.cancel();
-  unregister();
-  surfaceEl.remove();
-  vi.clearAllMocks();
-  vi.useRealTimers();
-});
+  drag.cancel()
+  unregister()
+  surfaceEl.remove()
+  vi.clearAllMocks()
+  vi.useRealTimers()
+})
 
-describe("useDragDrop", () => {
-  it("starts only after 4px of movement", () => {
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    move(102, 101);
-    expect(drag.state.payload).toBeNull();
-    move(100, 105);
-    expect(drag.state.payload).toEqual({ kind: "requests", ids: [1] });
-    expect(drag.state.preview).toEqual({ label: "one" });
-    expect(drag.state.hit).toEqual({ key: "request-2", zone: "before" });
-    expect(document.documentElement.hasAttribute("data-dragging")).toBe(true);
-  });
+describe('useDragDrop', () => {
+  it('starts only after 4px of movement', () => {
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    move(102, 101)
+    expect(drag.state.payload).toBeNull()
+    move(100, 105)
+    expect(drag.state.payload).toEqual({ kind: 'requests', ids: [1] })
+    expect(drag.state.preview).toEqual({ label: 'one' })
+    expect(drag.state.hit).toEqual({ key: 'request-2', zone: 'before' })
+    expect(document.documentElement.hasAttribute('data-dragging')).toBe(true)
+  })
 
-  it("commits on release and swallows the next click", () => {
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    move(100, 120);
-    up(100, 120);
-    expect(commit).toHaveBeenCalledTimes(1);
-    expect(drag.state.payload).toBeNull();
-    const click = vi.fn();
-    surfaceEl.addEventListener("click", click);
-    surfaceEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(click).not.toHaveBeenCalled();
-  });
+  it('commits on release and swallows the next click', () => {
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    move(100, 120)
+    up(100, 120)
+    expect(commit).toHaveBeenCalledTimes(1)
+    expect(drag.state.payload).toBeNull()
+    const click = vi.fn()
+    surfaceEl.addEventListener('click', click)
+    surfaceEl.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(click).not.toHaveBeenCalled()
+  })
 
-  it("does not swallow a click when no drag started", () => {
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    up(100, 100);
-    const click = vi.fn();
-    surfaceEl.addEventListener("click", click);
-    surfaceEl.dispatchEvent(new MouseEvent("click", { bubbles: true }));
-    expect(click).toHaveBeenCalledTimes(1);
-  });
+  it('does not swallow a click when no drag started', () => {
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    up(100, 100)
+    const click = vi.fn()
+    surfaceEl.addEventListener('click', click)
+    surfaceEl.dispatchEvent(new MouseEvent('click', { bubbles: true }))
+    expect(click).toHaveBeenCalledTimes(1)
+  })
 
-  it("cancels on Escape without committing", () => {
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    move(100, 120);
-    window.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape" }));
-    up(100, 120);
-    expect(commit).not.toHaveBeenCalled();
-    expect(drag.state.payload).toBeNull();
-  });
+  it('cancels on Escape without committing', () => {
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    move(100, 120)
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+    up(100, 120)
+    expect(commit).not.toHaveBeenCalled()
+    expect(drag.state.payload).toBeNull()
+  })
 
-  it("cancels on window blur", () => {
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    move(100, 120);
-    window.dispatchEvent(new Event("blur"));
-    expect(drag.state.payload).toBeNull();
-  });
+  it('cancels on window blur', () => {
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    move(100, 120)
+    window.dispatchEvent(new Event('blur'))
+    expect(drag.state.payload).toBeNull()
+  })
 
-  it("ignores non-primary buttons and presses inside inputs", () => {
-    drag.startPress(pointer("pointerdown", 100, 100, { button: 2 }), source);
-    move(100, 120);
-    expect(drag.state.payload).toBeNull();
-    const input = document.createElement("input");
-    surfaceEl.append(input);
-    const event = pointer("pointerdown", 100, 100);
-    input.addEventListener("pointerdown", (pressed) =>
+  it('ignores non-primary buttons and presses inside inputs', () => {
+    drag.startPress(pointer('pointerdown', 100, 100, { button: 2 }), source)
+    move(100, 120)
+    expect(drag.state.payload).toBeNull()
+    const input = document.createElement('input')
+    surfaceEl.append(input)
+    const event = pointer('pointerdown', 100, 100)
+    input.addEventListener('pointerdown', (pressed) =>
       drag.startPress(pressed as PointerEvent, source),
-    );
-    input.dispatchEvent(event);
-    move(100, 120);
-    expect(drag.state.payload).toBeNull();
-  });
+    )
+    input.dispatchEvent(event)
+    move(100, 120)
+    expect(drag.state.payload).toBeNull()
+  })
 
-  it("drops a pending press when a context menu opens (macOS Ctrl+click)", () => {
-    drag.startPress(
-      pointer("pointerdown", 100, 100, { ctrlKey: true }),
-      source,
-    );
-    window.dispatchEvent(new MouseEvent("contextmenu", { bubbles: true }));
-    move(100, 140);
-    expect(drag.state.payload).toBeNull();
-  });
+  it('drops a pending press when a context menu opens (macOS Ctrl+click)', () => {
+    drag.startPress(pointer('pointerdown', 100, 100, { ctrlKey: true }), source)
+    window.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true }))
+    move(100, 140)
+    expect(drag.state.payload).toBeNull()
+  })
 
-  it("keeps an active drag when a context menu event fires (Android long-press)", () => {
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    move(100, 120);
-    const event = new MouseEvent("contextmenu", {
+  it('keeps an active drag when a context menu event fires (Android long-press)', () => {
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    move(100, 120)
+    const event = new MouseEvent('contextmenu', {
       bubbles: true,
       cancelable: true,
-    });
-    window.dispatchEvent(event);
-    expect(drag.state.payload).not.toBeNull();
-    expect(event.defaultPrevented).toBe(true);
-  });
+    })
+    window.dispatchEvent(event)
+    expect(drag.state.payload).not.toBeNull()
+    expect(event.defaultPrevented).toBe(true)
+  })
 
-  it("blocks text selection from the press until the drag ends", () => {
+  it('blocks text selection from the press until the drag ends', () => {
     const select = () => {
-      const event = new Event("selectstart", {
+      const event = new Event('selectstart', {
         bubbles: true,
         cancelable: true,
-      });
-      surfaceEl.dispatchEvent(event);
-      return event.defaultPrevented;
-    };
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    expect(select()).toBe(true);
-    move(100, 120);
-    up(100, 120);
-    expect(select()).toBe(false);
-  });
+      })
+      surfaceEl.dispatchEvent(event)
+      return event.defaultPrevented
+    }
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    expect(select()).toBe(true)
+    move(100, 120)
+    up(100, 120)
+    expect(select()).toBe(false)
+  })
 
-  it("lets Escape through during a pending press and drops the press", () => {
-    const outer = vi.fn();
-    window.addEventListener("keydown", outer);
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    const event = new KeyboardEvent("keydown", {
-      key: "Escape",
+  it('lets Escape through during a pending press and drops the press', () => {
+    const outer = vi.fn()
+    window.addEventListener('keydown', outer)
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    const event = new KeyboardEvent('keydown', {
+      key: 'Escape',
       bubbles: true,
       cancelable: true,
-    });
-    surfaceEl.dispatchEvent(event);
-    window.removeEventListener("keydown", outer);
-    expect(outer).toHaveBeenCalledTimes(1);
-    expect(event.defaultPrevented).toBe(false);
-    move(100, 120);
-    expect(drag.state.payload).toBeNull();
-  });
+    })
+    surfaceEl.dispatchEvent(event)
+    window.removeEventListener('keydown', outer)
+    expect(outer).toHaveBeenCalledTimes(1)
+    expect(event.defaultPrevented).toBe(false)
+    move(100, 120)
+    expect(drag.state.payload).toBeNull()
+  })
 
   it("clears the source's touch long-press when a touch drag starts", () => {
-    vi.useFakeTimers();
-    const row = document.createElement("div");
-    surfaceEl.append(row);
-    const touchMoves = vi.fn();
-    row.addEventListener("pointermove", (event) => {
-      if ((event as PointerEvent).pointerType === "touch") touchMoves();
-    });
-    row.addEventListener("pointerdown", (pressed) =>
+    vi.useFakeTimers()
+    const row = document.createElement('div')
+    surfaceEl.append(row)
+    const touchMoves = vi.fn()
+    row.addEventListener('pointermove', (event) => {
+      if ((event as PointerEvent).pointerType === 'touch') touchMoves()
+    })
+    row.addEventListener('pointerdown', (pressed) =>
       drag.startPress(pressed as PointerEvent, source),
-    );
-    row.dispatchEvent(
-      pointer("pointerdown", 100, 100, { pointerType: "touch" }),
-    );
-    expect(touchMoves).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(250);
-    expect(drag.state.payload).not.toBeNull();
-    expect(touchMoves).toHaveBeenCalledTimes(1);
-  });
+    )
+    row.dispatchEvent(pointer('pointerdown', 100, 100, { pointerType: 'touch' }))
+    expect(touchMoves).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(250)
+    expect(drag.state.payload).not.toBeNull()
+    expect(touchMoves).toHaveBeenCalledTimes(1)
+  })
 
-  it("marks the document when no target accepts", () => {
-    hit = null;
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    move(100, 120);
-    expect(drag.state.hit).toBeNull();
-    expect(document.documentElement.hasAttribute("data-drag-invalid")).toBe(
-      true,
-    );
-  });
+  it('marks the document when no target accepts', () => {
+    hit = null
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    move(100, 120)
+    expect(drag.state.hit).toBeNull()
+    expect(document.documentElement.hasAttribute('data-drag-invalid')).toBe(true)
+  })
 
-  it("expands a folder after hovering the into zone for 600ms", () => {
-    vi.useFakeTimers();
-    hit = { key: "group-1", zone: "into", commit, expand };
-    drag.startPress(pointer("pointerdown", 100, 100), source);
-    move(100, 120);
-    vi.advanceTimersByTime(599);
-    expect(expand).not.toHaveBeenCalled();
-    vi.advanceTimersByTime(1);
-    expect(expand).toHaveBeenCalledTimes(1);
-  });
+  it('expands a folder after hovering the into zone for 600ms', () => {
+    vi.useFakeTimers()
+    hit = { key: 'group-1', zone: 'into', commit, expand }
+    drag.startPress(pointer('pointerdown', 100, 100), source)
+    move(100, 120)
+    vi.advanceTimersByTime(599)
+    expect(expand).not.toHaveBeenCalled()
+    vi.advanceTimersByTime(1)
+    expect(expand).toHaveBeenCalledTimes(1)
+  })
 
-  it("starts a touch drag after a 250ms hold, and not after a swipe", () => {
-    vi.useFakeTimers();
-    drag.startPress(
-      pointer("pointerdown", 100, 100, { pointerType: "touch" }),
-      source,
-    );
-    vi.advanceTimersByTime(250);
-    expect(drag.state.payload).not.toBeNull();
-    drag.cancel();
-    drag.startPress(
-      pointer("pointerdown", 100, 100, { pointerType: "touch" }),
-      source,
-    );
-    move(100, 115);
-    vi.advanceTimersByTime(250);
-    expect(drag.state.payload).toBeNull();
-  });
-});
+  it('starts a touch drag after a 250ms hold, and not after a swipe', () => {
+    vi.useFakeTimers()
+    drag.startPress(pointer('pointerdown', 100, 100, { pointerType: 'touch' }), source)
+    vi.advanceTimersByTime(250)
+    expect(drag.state.payload).not.toBeNull()
+    drag.cancel()
+    drag.startPress(pointer('pointerdown', 100, 100, { pointerType: 'touch' }), source)
+    move(100, 115)
+    vi.advanceTimersByTime(250)
+    expect(drag.state.payload).toBeNull()
+  })
+})

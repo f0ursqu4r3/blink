@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { countRequests, importHttp, parseImport } from "../import";
+import { describe, expect, it } from 'vitest'
+import { countRequests, importHttp, parseImport } from '../import'
 
 const openapi = `openapi: 3.0.0
 info:
@@ -53,119 +53,116 @@ paths:
               $ref: "#/components/schemas/Pet"
   /health:
     get: {}
-`;
+`
 
-describe("OpenAPI import", () => {
-  it("builds tag groups, tokens, params, and bodies", async () => {
-    const { format, root, skipped } = await parseImport(openapi);
-    expect(format).toBe("openapi");
-    expect(skipped).toEqual([
-      "Bearer authentication: set a token in the group settings.",
-    ]);
-    expect(root.name).toBe("Pet Store");
+describe('OpenAPI import', () => {
+  it('builds tag groups, tokens, params, and bodies', async () => {
+    const { format, root, skipped } = await parseImport(openapi)
+    expect(format).toBe('openapi')
+    expect(skipped).toEqual(['Bearer authentication: set a token in the group settings.'])
+    expect(root.name).toBe('Pet Store')
     expect(root.definitions).toEqual({
-      baseUrl: "https://api.pets.test/v1",
-      petId: "7",
-    });
-    expect(root.auth).toBeUndefined();
-    expect(root.requests.map((r) => r.url)).toEqual(["{{baseUrl}}/health"]);
-    const [get, put] = root.groups[0].requests;
-    expect(root.groups[0].name).toBe("pets");
-    expect(get.url).toBe("{{baseUrl}}/pets/{{petId}}");
-    expect(get.query).toMatchObject([{ key: "expand", enabled: false }]);
+      baseUrl: 'https://api.pets.test/v1',
+      petId: '7',
+    })
+    expect(root.auth).toBeUndefined()
+    expect(root.requests.map((r) => r.url)).toEqual(['{{baseUrl}}/health'])
+    const [get, put] = root.groups[0].requests
+    expect(root.groups[0].name).toBe('pets')
+    expect(get.url).toBe('{{baseUrl}}/pets/{{petId}}')
+    expect(get.query).toMatchObject([{ key: 'expand', enabled: false }])
     expect(get.headers.map((h) => [h.key, h.enabled])).toEqual([
-      ["Accept", true],
-      ["X-Trace", true],
-    ]);
-    expect(put.method).toBe("PUT");
-    expect(put.bodyMode).toBe("json");
-    expect(JSON.parse(put.body)).toEqual({ name: "Rex", age: 0 });
-    expect(countRequests(root)).toBe(3);
-  });
-  it("reads Swagger 2 JSON", async () => {
+      ['Accept', true],
+      ['X-Trace', true],
+    ])
+    expect(put.method).toBe('PUT')
+    expect(put.bodyMode).toBe('json')
+    expect(JSON.parse(put.body)).toEqual({ name: 'Rex', age: 0 })
+    expect(countRequests(root)).toBe(3)
+  })
+  it('reads Swagger 2 JSON', async () => {
     const { root } = await parseImport(
       JSON.stringify({
-        swagger: "2.0",
-        info: { title: "Old" },
-        host: "old.test",
-        basePath: "/api",
-        schemes: ["http"],
-        paths: { "/a": { post: {} } },
+        swagger: '2.0',
+        info: { title: 'Old' },
+        host: 'old.test',
+        basePath: '/api',
+        schemes: ['http'],
+        paths: { '/a': { post: {} } },
       }),
-    );
-    expect(root.definitions?.baseUrl).toBe("http://old.test/api");
-    expect(root.requests[0].method).toBe("POST");
-  });
-});
+    )
+    expect(root.definitions?.baseUrl).toBe('http://old.test/api')
+    expect(root.requests[0].method).toBe('POST')
+  })
+})
 
-describe("Postman import", () => {
-  it("builds folders, variables, auth, and bodies", async () => {
+describe('Postman import', () => {
+  it('builds folders, variables, auth, and bodies', async () => {
     const { format, root, skipped } = await parseImport(
       JSON.stringify({
         info: {
-          name: "Shop",
-          schema:
-            "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+          name: 'Shop',
+          schema: 'https://schema.getpostman.com/json/collection/v2.1.0/collection.json',
         },
-        variable: [{ key: "host", value: "https://shop.test" }],
-        auth: { type: "bearer", bearer: [{ key: "token", value: "{{tok}}" }] },
+        variable: [{ key: 'host', value: 'https://shop.test' }],
+        auth: { type: 'bearer', bearer: [{ key: 'token', value: '{{tok}}' }] },
         item: [
           {
-            name: "Orders",
+            name: 'Orders',
             item: [
               {
-                name: "Create",
+                name: 'Create',
                 request: {
-                  method: "POST",
-                  url: { raw: "{{host}}/orders" },
+                  method: 'POST',
+                  url: { raw: '{{host}}/orders' },
                   header: [
-                    { key: "X-A", value: "1" },
-                    { key: "X-B", value: "2", disabled: true },
+                    { key: 'X-A', value: '1' },
+                    { key: 'X-B', value: '2', disabled: true },
                   ],
                   body: {
-                    mode: "raw",
+                    mode: 'raw',
                     raw: '{"a":1}',
-                    options: { raw: { language: "json" } },
+                    options: { raw: { language: 'json' } },
                   },
                 },
               },
               {
-                name: "Upload",
+                name: 'Upload',
                 request: {
-                  method: "POST",
-                  url: "{{host}}/upload",
+                  method: 'POST',
+                  url: '{{host}}/upload',
                   body: {
-                    mode: "formdata",
+                    mode: 'formdata',
                     formdata: [
-                      { key: "note", value: "x", type: "text" },
-                      { key: "file", type: "file", src: "/a" },
+                      { key: 'note', value: 'x', type: 'text' },
+                      { key: 'file', type: 'file', src: '/a' },
                     ],
                   },
-                  auth: { type: "noauth" },
+                  auth: { type: 'noauth' },
                 },
               },
             ],
           },
-          { name: "Ping", request: "https://shop.test/ping" },
+          { name: 'Ping', request: 'https://shop.test/ping' },
         ],
       }),
-    );
-    expect(format).toBe("postman");
-    expect(root.name).toBe("Shop");
-    expect(root.definitions).toEqual({ host: "https://shop.test" });
-    expect(root.auth).toEqual({ type: "bearer", token: "{{tok}}" });
-    expect(root.requests[0].url).toBe("https://shop.test/ping");
-    const [create, upload] = root.groups[0].requests;
-    expect(create.bodyMode).toBe("json");
-    expect(create.headers.map((h) => h.enabled)).toEqual([true, false]);
-    expect(upload.bodyMode).toBe("multipart");
-    expect(upload.localAuth).toEqual({ type: "none" });
-    expect(skipped).toEqual(["Upload: file fields need a file"]);
-  });
-});
+    )
+    expect(format).toBe('postman')
+    expect(root.name).toBe('Shop')
+    expect(root.definitions).toEqual({ host: 'https://shop.test' })
+    expect(root.auth).toEqual({ type: 'bearer', token: '{{tok}}' })
+    expect(root.requests[0].url).toBe('https://shop.test/ping')
+    const [create, upload] = root.groups[0].requests
+    expect(create.bodyMode).toBe('json')
+    expect(create.headers.map((h) => h.enabled)).toEqual([true, false])
+    expect(upload.bodyMode).toBe('multipart')
+    expect(upload.localAuth).toEqual({ type: 'none' })
+    expect(skipped).toEqual(['Upload: file fields need a file'])
+  })
+})
 
-describe(".http import", () => {
-  it("reads requests, headers, bodies, and file variables", () => {
+describe('.http import', () => {
+  it('reads requests, headers, bodies, and file variables', () => {
     const { root } = importHttp(
       `@host = https://api.test
 # comment
@@ -184,20 +181,20 @@ Content-Type: application/json
 ###
 https://api.test/plain
 `,
-      "users",
-    );
-    expect(root.name).toBe("users");
-    expect(root.definitions).toEqual({ host: "https://api.test" });
+      'users',
+    )
+    expect(root.name).toBe('users')
+    expect(root.definitions).toEqual({ host: 'https://api.test' })
     expect(root.requests.map((r) => [r.method, r.url])).toEqual([
-      ["GET", "{{host}}/users?page=2"],
-      ["POST", "{{host}}/users"],
-      ["GET", "https://api.test/plain"],
-    ]);
-    expect(root.requests[1].bodyMode).toBe("json");
-    expect(JSON.parse(root.requests[1].body)).toEqual({ name: "Ada" });
-  });
-  it("rejects files without requests", async () => {
-    await expect(parseImport("hello world")).rejects.toThrow("No requests");
-    await expect(parseImport('{"a":1}')).rejects.toThrow("can import");
-  });
-});
+      ['GET', '{{host}}/users?page=2'],
+      ['POST', '{{host}}/users'],
+      ['GET', 'https://api.test/plain'],
+    ])
+    expect(root.requests[1].bodyMode).toBe('json')
+    expect(JSON.parse(root.requests[1].body)).toEqual({ name: 'Ada' })
+  })
+  it('rejects files without requests', async () => {
+    await expect(parseImport('hello world')).rejects.toThrow('No requests')
+    await expect(parseImport('{"a":1}')).rejects.toThrow('can import')
+  })
+})

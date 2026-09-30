@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import type { RequestGroup } from "@/lib/groups";
+import { computed } from 'vue'
+import type { RequestGroup } from '@/lib/groups'
 import {
   ContextMenuCheckboxItem,
   ContextMenuItem,
@@ -8,7 +8,7 @@ import {
   ContextMenuSub,
   ContextMenuSubContent,
   ContextMenuSubTrigger,
-} from "@/components/ui/context-menu";
+} from '@/components/ui/context-menu'
 import {
   DropdownMenuCheckboxItem,
   DropdownMenuItem,
@@ -16,34 +16,34 @@ import {
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
-} from "@/components/ui/dropdown-menu";
+} from '@/components/ui/dropdown-menu'
 
 // A "Move to" menu that follows the group tree. A group with children opens
 // a submenu; its first item moves into the group itself.
-defineOptions({ name: "GroupMenuTree" });
+defineOptions({ name: 'GroupMenuTree' })
 const props = withDefaults(
   defineProps<{
-    groups: RequestGroup[];
-    rootLabel: string;
+    groups: RequestGroup[]
+    rootLabel: string
     /** The current location. Undefined: none. Null: the root. */
-    currentId?: number | null;
+    currentId?: number | null
     /** A group to hide with its subtree, so a group cannot move into itself. */
-    excludeId?: number;
-    kind?: "context" | "dropdown";
+    excludeId?: number
+    kind?: 'context' | 'dropdown'
     /** Internal: the parent whose children this level lists. */
-    parentId?: number | null;
+    parentId?: number | null
   }>(),
   {
     currentId: undefined,
     excludeId: undefined,
-    kind: "context",
+    kind: 'context',
     parentId: undefined,
   },
-);
-const emit = defineEmits<{ pick: [groupId: number | null] }>();
+)
+const emit = defineEmits<{ pick: [groupId: number | null] }>()
 
 const ui = computed(() =>
-  props.kind === "dropdown"
+  props.kind === 'dropdown'
     ? {
         Item: DropdownMenuItem,
         Check: DropdownMenuCheckboxItem,
@@ -60,19 +60,17 @@ const ui = computed(() =>
         SubTrigger: ContextMenuSubTrigger,
         SubContent: ContextMenuSubContent,
       },
-);
-const nested = computed(() => props.parentId !== undefined);
+)
+const nested = computed(() => props.parentId !== undefined)
 function children(parentId: number | null) {
-  return props.groups.filter(
-    (group) => group.parentId === parentId && group.id !== props.excludeId,
-  );
+  return props.groups.filter((group) => group.parentId === parentId && group.id !== props.excludeId)
 }
 // The current location is a checked, disabled item.
 function itemFor(id: number | null) {
-  return props.currentId === id ? ui.value.Check : ui.value.Item;
+  return props.currentId === id ? ui.value.Check : ui.value.Item
 }
 function itemProps(id: number | null) {
-  return props.currentId === id ? { modelValue: true, disabled: true } : {};
+  return props.currentId === id ? { modelValue: true, disabled: true } : {}
 }
 </script>
 
@@ -82,8 +80,7 @@ function itemProps(id: number | null) {
       :is="itemFor(null)"
       v-bind="itemProps(null)"
       data-move-target="root"
-      @select="emit('pick', null)"
-    >
+      @select="emit('pick', null)">
       {{ rootLabel }}
     </component>
     <component :is="ui.Separator" v-if="children(null).length" />
@@ -98,8 +95,7 @@ function itemProps(id: number | null) {
           :is="itemFor(group.id)"
           v-bind="itemProps(group.id)"
           :data-move-into="group.id"
-          @select="emit('pick', group.id)"
-        >
+          @select="emit('pick', group.id)">
           Move into {{ group.name }}
         </component>
         <component :is="ui.Separator" />
@@ -110,8 +106,7 @@ function itemProps(id: number | null) {
           :exclude-id="excludeId"
           :kind="kind"
           :parent-id="group.id"
-          @pick="emit('pick', $event)"
-        />
+          @pick="emit('pick', $event)" />
       </component>
     </component>
     <component
@@ -119,8 +114,7 @@ function itemProps(id: number | null) {
       v-else
       v-bind="itemProps(group.id)"
       :data-move-target="group.id"
-      @select="emit('pick', group.id)"
-    >
+      @select="emit('pick', group.id)">
       {{ group.name }}
     </component>
   </template>
