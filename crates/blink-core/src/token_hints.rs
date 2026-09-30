@@ -285,15 +285,14 @@ mod tests {
 
     #[test]
     fn lists_local_names_unshadowed_global_names_then_underscore_names() {
-        // Definitions are sorted by name, so globals list apiKey before host.
         assert_eq!(
             token_options(Some(&ctx())),
             [
                 option("endpoint", TokenScope::Local, "users"),
                 option("host", TokenScope::Local, "local"),
                 option("apiKey", TokenScope::Global, "secret"),
-                option("_.apiKey", TokenScope::Global, "secret"),
                 option("_.host", TokenScope::Global, "global"),
+                option("_.apiKey", TokenScope::Global, "secret"),
             ]
         );
     }

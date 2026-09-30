@@ -665,6 +665,7 @@ dependencies = [
  "fancy-regex",
  "futures",
  "futures-util",
+ "indexmap",
  "jaq-core",
  "jaq-json",
  "jaq-std",

@@ -1,12 +1,12 @@
 //! Shared data types. Field names and optionality match the saved workspace
 //! JSON (camelCase, absent optional fields) so snapshots stay compatible.
 
-use std::collections::BTreeMap;
-
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
-/// Token definitions: name to value. Ordered so encoding is stable.
-pub type Definitions = BTreeMap<String, String>;
+/// Token definitions: name to value, in insertion order as a JS object keeps
+/// them, so token tables list rows as the user entered them.
+pub type Definitions = IndexMap<String, String>;
 
 /// Common methods, offered as suggestions. Any HTTP token is valid.
 pub const METHODS: [&str; 7] = ["GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"];
