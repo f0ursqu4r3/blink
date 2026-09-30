@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/context-menu";
 import KeyValueEditor from "./KeyValueEditor.vue";
 import CodeEditor from "./CodeEditor.vue";
+import TokenInput from "./TokenInput.vue";
 import { activePairs, supportsBody, type Draft } from "@/lib/request";
 import type {
   AuthorizationConfig,
@@ -324,7 +325,12 @@ function clearBody() {
         value="query"
         class="flex-1 min-h-0 overflow-auto -outline-offset-2"
       >
-        <KeyValueEditor v-model="draft.query" label="Query" :disabled="busy" />
+        <KeyValueEditor
+          v-model="draft.query"
+          label="Query"
+          :disabled="busy"
+          :tokens="ctx"
+        />
         <div class="px-4 py-2">
           <HelpTooltip
             text="Enabled rows are appended to the URL. Duplicate keys are preserved."
@@ -346,6 +352,7 @@ function clearBody() {
           v-model="draft.headers"
           label="Header"
           :disabled="busy"
+          :tokens="ctx"
         />
         <div class="px-4 py-2">
           <HelpTooltip
@@ -502,6 +509,7 @@ function clearBody() {
           <CodeEditor
             v-else
             ref="bodyEditor"
+            :tokens="ctx"
             :id="`${id}-body`"
             :model-value="draft.body"
             :language="draft.bodyMode === 'graphql' ? 'graphql' : 'json'"
@@ -554,6 +562,7 @@ function clearBody() {
             >
               <CodeEditor
                 ref="variablesEditor"
+                :tokens="ctx"
                 :id="`${id}-variables`"
                 :model-value="draft.variables ?? ''"
                 language="json"
@@ -660,8 +669,9 @@ function clearBody() {
                 <label :for="`${id}-auth-user`" class="text-muted-foreground">
                   Username
                 </label>
-                <input
+                <TokenInput
                   :id="`${id}-auth-user`"
+                  :tokens="ctx"
                   v-model="
                     (
                       draft.localAuth as {

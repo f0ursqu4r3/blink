@@ -1,4 +1,7 @@
 import { createDraft, pair, type Draft, type ApiResponse } from "./request";
+import { resolveTokenDefinitions } from "./authorization";
+import type { RequestGroup } from "./groups";
+import { resolveForDisplay } from "./token-hints";
 
 export type RequestSession = {
   id: number;
@@ -89,11 +92,33 @@ export function createSession(source?: Draft): RequestSession {
     view: createView(),
   };
 }
-export function sessionLabel(session: RequestSession) {
+/** Groups and global tokens, so labels can show resolved token values. */
+export type LabelTokens = {
+  groups: RequestGroup[];
+  globalDefinitions: Record<string, string>;
+};
+
+function displayUrl(session: RequestSession, tokens?: LabelTokens) {
+  if (!tokens) return session.draft.url;
+  const ctx = resolveTokenDefinitions(
+    session.groupId,
+    tokens.groups,
+    tokens.globalDefinitions,
+  );
+  return resolveForDisplay(session.draft.url, ctx);
+}
+
+export function sessionLabel(session: RequestSession, tokens?: LabelTokens) {
   try {
-    const url = new URL(session.draft.url);
+    const url = new URL(displayUrl(session, tokens));
     if (!["http:", "https:"].includes(url.protocol)) throw new Error();
-    return url.pathname === "/" ? url.host : url.pathname;
+    if (url.pathname === "/") return url.host;
+    // Show token references such as {{id}} as typed, not percent-encoded.
+    try {
+      return decodeURI(url.pathname);
+    } catch {
+      return url.pathname;
+    }
   } catch {
     return "Untitled " + String(session.id).padStart(2, "0");
   }
@@ -110,9 +135,9 @@ export function sessionStatus(session: RequestSession) {
   if (session.response) return String(session.response.status);
   return "Draft";
 }
-export function sessionHost(session: RequestSession) {
+export function sessionHost(session: RequestSession, tokens?: LabelTokens) {
   try {
-    const url = new URL(session.draft.url);
+    const url = new URL(displayUrl(session, tokens));
     return ["http:", "https:"].includes(url.protocol) ? url.host : "";
   } catch {
     return "";

@@ -54,6 +54,7 @@ const props = defineProps<{
   openIds?: number[];
   activeId: number | null;
   groups: RequestGroup[];
+  globalDefinitions?: Record<string, string>;
   /** cURL text for a request; empty when its draft does not build. */
   curlFor?: (id: number) => string;
   /** Ask before deleting a request that has content. */
@@ -404,6 +405,12 @@ function dragIds(id: number) {
   return selected.value.has(id) ? (props.selectedIds ?? []) : [id];
 }
 
+const label = (session: RequestSession) =>
+  sessionLabel(session, {
+    groups: props.groups,
+    globalDefinitions: props.globalDefinitions ?? {},
+  });
+
 function pressRequest(session: RequestSession, event: PointerEvent) {
   if (deletingRequestId.value === session.id) return;
   drag.startPress(event, {
@@ -412,7 +419,7 @@ function pressRequest(session: RequestSession, event: PointerEvent) {
       const count = dragIds(session.id).length;
       return count > 1
         ? { label: `${count} requests` }
-        : { label: sessionLabel(session), method: session.draft.method };
+        : { label: label(session), method: session.draft.method };
     },
     onStart: () => {
       if (!selected.value.has(session.id))
@@ -653,7 +660,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     :aria-selected="selected.has(row.session.id)"
                     :data-request-id="row.session.id"
                     :data-drop-key="`request-${row.session.id}`"
-                    :title="sessionLabel(row.session)"
+                    :title="label(row.session)"
                     @click="selectRequest(row.session.id, $event)"
                     @contextmenu="handleRequestContextMenu(row.session.id)"
                     @pointerdown="pressRequest(row.session, $event)"
@@ -684,7 +691,7 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     <strong
                       class="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap font-medium"
                     >
-                      {{ sessionLabel(row.session) }}
+                      {{ label(row.session) }}
                     </strong>
                     <Lock
                       v-if="effectiveSessionAuth(row.session).type !== 'none'"
@@ -819,8 +826,8 @@ function effectiveGroupAuth(group: RequestGroup): AuthorizationConfig {
                     drafts and responses are lost.
                   </template>
                   <template v-else>
-                    Delete {{ sessionLabel(row.session) }}? Its draft and
-                    response are lost.
+                    Delete {{ label(row.session) }}? Its draft and response are
+                    lost.
                   </template>
                 </p>
                 <!-- prettier-ignore -->

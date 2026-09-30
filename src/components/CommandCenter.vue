@@ -8,6 +8,7 @@ import { matchRequests } from "@/lib/command-center";
 const props = defineProps<{
   sessions: RequestSession[];
   groups: RequestGroup[];
+  globalDefinitions?: Record<string, string>;
 }>();
 const emit = defineEmits<{ select: [id: number] }>();
 
@@ -18,7 +19,12 @@ const input = ref<HTMLInputElement>();
 const trigger = ref<HTMLButtonElement>();
 let opener: HTMLElement | null = null;
 const matches = computed(() =>
-  matchRequests(props.sessions, props.groups, query.value),
+  matchRequests(
+    props.sessions,
+    props.groups,
+    query.value,
+    props.globalDefinitions,
+  ),
 );
 watch(query, () => (index.value = 0));
 watch(matches, (list) => {

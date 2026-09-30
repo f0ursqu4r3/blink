@@ -370,6 +370,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         v-if="ready"
         ref="commandCenter"
         :sessions="sessions"
+        :global-definitions="globalDefinitions"
         :groups="groups"
         @select="selectFromSearch"
       />
@@ -411,6 +412,7 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         :open-ids="openIds"
         :active-id="activeId"
         :groups="groups"
+        :global-definitions="globalDefinitions"
         :confirm-delete="preferences.confirmCloseDrafts"
         :selected-ids="selectedRequestIds"
         :selection-anchor-id="selectionAnchorId"
@@ -439,6 +441,8 @@ onUnmounted(() => narrowQuery?.removeEventListener("change", updateNarrow));
         <RequestTabs
           :sessions="openSessions"
           :active-id="activeId"
+          :groups="groups"
+          :global-definitions="globalDefinitions"
           :curl-for="curlFor"
           @select="select"
           @create="create()"

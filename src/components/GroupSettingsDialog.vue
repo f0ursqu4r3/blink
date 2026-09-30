@@ -2,11 +2,13 @@
 import { computed, ref, watch } from "vue";
 import { DialogContent, DialogOverlay, DialogRoot, DialogTitle } from "reka-ui";
 import HelpTooltip from "./HelpTooltip.vue";
+import KeyValueEditor from "./KeyValueEditor.vue";
 import type { RequestGroup } from "../lib/groups";
 import type { RequestSession } from "../lib/session";
 import type { AuthorizationConfig } from "../lib/authorization";
 import { canNestGroup } from "../lib/groups";
-import type { Method } from "../lib/request";
+import type { Method, Pair } from "../lib/request";
+import { definitionsToRows, rowsToDefinitions } from "../lib/definitions";
 import {
   defaultPreferences,
   resolveNewRequestDefaults,
@@ -49,7 +51,7 @@ const parentId = ref<number | null>(null);
 const defaultMethod = ref<Method | "">("");
 const defaultUrl = ref("");
 
-const localTokenJson = ref("{}");
+const localTokenRows = ref<Pair[]>([]);
 const tokenError = ref("");
 const formError = ref("");
 
@@ -83,11 +85,7 @@ function initFromProps() {
     basicPassword.value = auth.password;
   }
 
-  localTokenJson.value = JSON.stringify(
-    props.group.localDefinitions ?? {},
-    null,
-    2,
-  );
+  localTokenRows.value = definitionsToRows(props.group.localDefinitions ?? {});
   tokenError.value = "";
   formError.value = "";
 }
@@ -215,28 +213,13 @@ const descendantRequestCount = computed(() => {
 
 // ---------- actions ----------
 function parseLocalDefinitions(): Record<string, string> | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(localTokenJson.value);
-  } catch {
-    tokenError.value = "Enter a valid JSON object.";
+  const result = rowsToDefinitions(localTokenRows.value);
+  if ("error" in result) {
+    tokenError.value = result.error;
     return null;
   }
-  if (
-    !parsed ||
-    Array.isArray(parsed) ||
-    typeof parsed !== "object" ||
-    Object.values(parsed).some((value) => typeof value !== "string")
-  ) {
-    tokenError.value =
-      "Token definitions must be a JSON object with string values.";
-    return null;
-  }
-  if (Object.keys(parsed).some((name) => name.startsWith("_"))) {
-    tokenError.value = "Token names must not start with _.";
-    return null;
-  }
-  return parsed as Record<string, string>;
+  tokenError.value = "";
+  return result.definitions;
 }
 
 function buildLocalAuth(): AuthorizationConfig | undefined {
@@ -559,22 +542,20 @@ function handleCancel() {
                   </button></HelpTooltip
                 >
               </div>
-              <label class="sr-only" for="local-token-json"
-                >Local tokens JSON</label
+              <div
+                class="overflow-hidden border border-input rounded-sm bg-background"
+                data-local-tokens
               >
-              <textarea
-                id="local-token-json"
-                v-model="localTokenJson"
-                rows="5"
-                class="min-h-28 resize-y p-2 border border-input rounded-sm bg-background text-foreground font-mono text-xs leading-relaxed"
-                data-local-token-json
-                spellcheck="false"
-                autocomplete="off"
-              />
+                <KeyValueEditor
+                  v-model="localTokenRows"
+                  label="Local tokens"
+                  hide-enabled
+                />
+              </div>
               <p
                 v-if="tokenError"
                 class="text-[10px] text-destructive"
-                data-token-json-error
+                data-token-error
                 role="alert"
               >
                 {{ tokenError }}

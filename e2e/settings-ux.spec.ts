@@ -116,8 +116,9 @@ test("group defaults save and inherit without changing existing requests or dupl
     .getByRole("button", { name: "New request in Child API", exact: true })
     .click();
   await expect(pane.getByLabel("HTTP method")).toHaveValue("PATCH");
+  // The URL field shows {{host}} as its value.
   await expect(pane.getByLabel("Request URL", { exact: true })).toHaveValue(
-    "{{host}}/v1",
+    "https://example.test/v1",
   );
   await expect(pane.getByLabel("Request URL", { exact: true })).toBeFocused();
   await expect(

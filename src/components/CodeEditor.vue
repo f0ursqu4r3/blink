@@ -2,12 +2,15 @@
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
 import type { GraphQLSchema } from "graphql";
 import type { CodeEditorHandle, CodeLanguage } from "@/lib/code-editor";
+import type { InterpolationContext } from "@/lib/interpolation";
 const model = defineModel<string>({ default: "" });
 const props = defineProps<{
   language: CodeLanguage;
   schema?: GraphQLSchema;
   disabled?: boolean;
   placeholder?: string;
+  /** Tokens to color and suggest after `{{`. */
+  tokens?: InterpolationContext;
   id?: string;
   ariaLabelledby?: string;
   testId?: string;
@@ -32,6 +35,7 @@ onMounted(async () => {
     schema: props.schema,
     disabled: !!props.disabled,
     placeholder: props.placeholder,
+    tokens: props.tokens,
     attributes,
     onChange: (value) => (model.value = value),
   });
@@ -53,6 +57,10 @@ defineExpose({
   /** Move the cursor to `offset` and mark its line until the next edit. */
   markError: (offset: number) => handle?.markError(offset),
 });
+watch(
+  () => props.tokens,
+  (tokens) => handle?.setTokens(tokens),
+);
 watch(
   () => props.placeholder,
   (text) => handle?.setPlaceholder(text),

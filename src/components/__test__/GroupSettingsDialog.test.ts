@@ -322,36 +322,37 @@ describe("GroupSettingsDialog", () => {
       expect(w.find(".help-text").exists()).toBe(false);
     });
 
-    it("shows local token definitions as JSON", () => {
+    it("shows local token definitions as key-value rows", () => {
       const group = mkGroup({
         localDefinitions: { mytoken: "abc", other: "xyz" },
       });
       const w = mountDialog({ group, groups: [group] });
-      expect(
-        (w.get("[data-local-token-json]").element as HTMLTextAreaElement).value,
-      ).toContain('"mytoken"');
+      const names = w
+        .get("[data-local-tokens]")
+        .findAll<HTMLInputElement>("[data-row-name]")
+        .map((input) => input.element.value);
+      expect(names).toEqual(["mytoken", "other"]);
     });
 
-    it("emits parsed local definitions from the JSON editor", async () => {
+    it("emits local definitions from the rows", async () => {
       const group = mkGroup({ id: 7, localDefinitions: {} });
       const w = mountDialog({ group, groups: [group] });
+      await w.get('[aria-label="Local tokens name 1"]').setValue("mykey");
       await w
-        .get("[data-local-token-json]")
-        .setValue('{"mykey":"{{_.apiKey}}"}');
+        .get('[aria-label="Local tokens value 1"]')
+        .setValue("{{_.apiKey}}");
       await w.find('[data-testid="save-button"]').trigger("click");
       expect((w.emitted("save")![0][1] as any).localDefinitions).toEqual({
         mykey: "{{_.apiKey}}",
       });
     });
 
-    it("rejects invalid local token JSON", async () => {
+    it("rejects a token value without a name", async () => {
       const group = mkGroup({ id: 7, localDefinitions: {} });
       const w = mountDialog({ group, groups: [group] });
-      await w.get("[data-local-token-json]").setValue('{"port":443}');
+      await w.get('[aria-label="Local tokens value 1"]').setValue("443");
       await w.find('[data-testid="save-button"]').trigger("click");
-      expect(w.get("[data-token-json-error]").text()).toContain(
-        "string values",
-      );
+      expect(w.get("[data-token-error]").text()).toContain("Enter a name");
       expect(w.emitted("save")).toBeFalsy();
     });
   });

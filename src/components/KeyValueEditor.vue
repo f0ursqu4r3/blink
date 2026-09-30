@@ -11,9 +11,18 @@ import {
   ContextMenuCheckboxItem,
 } from "@/components/ui/context-menu";
 import { useClipboard } from "@/composables/useClipboard";
+import TokenInput from "./TokenInput.vue";
+import type { InterpolationContext } from "@/lib/interpolation";
 import { pair, type Pair } from "@/lib/request";
 const rows = defineModel<Pair[]>({ required: true });
-const props = defineProps<{ label: string; disabled?: boolean }>();
+const props = defineProps<{
+  label: string;
+  disabled?: boolean;
+  /** Hide the Enabled column and menu items, for rows that are always on. */
+  hideEnabled?: boolean;
+  /** Tokens to color and suggest in values. */
+  tokens?: InterpolationContext;
+}>();
 const editor = ref<HTMLElement | null>(null);
 const { copyError, copy } = useClipboard();
 function focusRow(index: number) {
@@ -29,12 +38,10 @@ function focusRow(index: number) {
 function canEdit() {
   return !props.disabled;
 }
-function update(id: number, field: "key" | "value", event: Event) {
+function update(id: number, field: "key" | "value", value: string) {
   if (!canEdit()) return;
   rows.value = rows.value.map((row) =>
-    row.id === id
-      ? { ...row, [field]: (event.target as HTMLInputElement).value }
-      : row,
+    row.id === id ? { ...row, [field]: value } : row,
   );
 }
 function duplicateRow(id: number) {
@@ -88,13 +95,15 @@ function addRow() {
           <thead>
             <tr>
               <th
+                v-if="!hideEnabled"
                 class="w-8.5 text-center p-0 text-muted-foreground text-[0.625rem] uppercase tracking-widest font-medium h-8 bg-muted"
               >
                 <span class="sr-only">Enabled</span>
               </th>
               <th
                 scope="col"
-                class="text-muted-foreground text-left text-[0.625rem] uppercase tracking-widest font-medium h-8 px-2.5 bg-muted border-l border-border"
+                class="text-muted-foreground text-left text-[0.625rem] uppercase tracking-widest font-medium h-8 px-2.5 bg-muted border-border"
+                :class="{ 'border-l': !hideEnabled }"
               >
                 Name
               </th>
@@ -119,6 +128,7 @@ function addRow() {
               >
                 <tr>
                   <td
+                    v-if="!hideEnabled"
                     class="w-8.5 text-center p-0 h-8.5 border-b border-border pointer-coarse:h-11"
                   >
                     <input
@@ -131,7 +141,8 @@ function addRow() {
                     />
                   </td>
                   <td
-                    class="h-8.5 border-b border-border border-l pointer-coarse:h-11"
+                    class="h-8.5 border-b border-border pointer-coarse:h-11"
+                    :class="{ 'border-l': !hideEnabled }"
                   >
                     <input
                       :aria-label="`${label} name ${index + 1}`"
@@ -144,23 +155,30 @@ function addRow() {
                       autocomplete="off"
                       class="w-full h-8.25 bg-transparent border-0 px-2.5 font-mono text-xs rounded-none pointer-coarse:h-11 pointer-coarse:text-base"
                       :class="{ 'text-muted-foreground': !row.enabled }"
-                      @input="update(row.id, 'key', $event)"
+                      @input="
+                        update(
+                          row.id,
+                          'key',
+                          ($event.target as HTMLInputElement).value,
+                        )
+                      "
                     />
                   </td>
                   <td
                     class="h-8.5 border-b border-l border-border pointer-coarse:h-11"
                   >
-                    <input
+                    <TokenInput
                       :aria-label="`${label} value ${index + 1}`"
                       @contextmenu.stop
-                      :value="row.value"
+                      :model-value="row.value"
+                      :tokens="tokens"
                       placeholder="Value"
                       :disabled="disabled"
                       spellcheck="false"
                       autocomplete="off"
                       class="w-full h-8.25 bg-transparent border-0 px-2.5 font-mono text-xs rounded-none pointer-coarse:h-11 pointer-coarse:text-base"
                       :class="{ 'text-muted-foreground': !row.enabled }"
-                      @input="update(row.id, 'value', $event)"
+                      @update:model-value="update(row.id, 'value', $event)"
                     />
                   </td>
                   <td
@@ -180,6 +198,7 @@ function addRow() {
               </ContextMenuTrigger>
               <ContextMenuContent>
                 <ContextMenuCheckboxItem
+                  v-if="!hideEnabled"
                   data-testid="kv-row-ctx-toggle"
                   :model-value="row.enabled"
                   :disabled="disabled"
@@ -231,21 +250,23 @@ function addRow() {
         >
           Add row
         </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          data-testid="kv-ctx-enable-all"
-          :disabled="disabled"
-          @select="enableAll"
-        >
-          Enable all
-        </ContextMenuItem>
-        <ContextMenuItem
-          data-testid="kv-ctx-disable-all"
-          :disabled="disabled"
-          @select="disableAll"
-        >
-          Disable all
-        </ContextMenuItem>
+        <template v-if="!hideEnabled">
+          <ContextMenuSeparator />
+          <ContextMenuItem
+            data-testid="kv-ctx-enable-all"
+            :disabled="disabled"
+            @select="enableAll"
+          >
+            Enable all
+          </ContextMenuItem>
+          <ContextMenuItem
+            data-testid="kv-ctx-disable-all"
+            :disabled="disabled"
+            @select="disableAll"
+          >
+            Disable all
+          </ContextMenuItem>
+        </template>
       </ContextMenuContent>
     </ContextMenu>
     <p v-if="copyError" class="px-3 py-1 text-xs text-destructive" role="alert">

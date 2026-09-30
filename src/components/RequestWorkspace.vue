@@ -25,6 +25,7 @@ import {
 import { useRequestRunner } from "@/composables/useRequestRunner";
 import { useClipboard } from "@/composables/useClipboard";
 import HelpTooltip from "./HelpTooltip.vue";
+import TokenInput from "./TokenInput.vue";
 const props = defineProps<{
   session: RequestSession;
   active: boolean;
@@ -82,7 +83,7 @@ const { prepared, curl, stale, send, sentUrl } = useRequestRunner(
 );
 const { copied, copyError, copy } = useClipboard();
 const showCurl = ref(false);
-const urlInput = ref<HTMLInputElement>();
+const urlInput = ref<InstanceType<typeof TokenInput>>();
 const workspace = ref<HTMLElement>();
 const requestPanelWidth = ref(420);
 const resizing = ref(false);
@@ -227,11 +228,12 @@ function resizeWithKeyboard(event: KeyboardEvent) {
               />
             </div>
             <label :for="`${prefix}-url`" class="sr-only">Request URL</label>
-            <input
+            <TokenInput
               :id="`${prefix}-url`"
               data-request-url
               ref="urlInput"
               v-model="session.draft.url"
+              :tokens="resolvedCtx"
               :disabled="session.busy"
               :aria-describedby="
                 session.draft.url && prepared.error

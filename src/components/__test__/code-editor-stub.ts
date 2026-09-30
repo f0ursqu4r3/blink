@@ -12,6 +12,7 @@ export default defineComponent({
     id: { type: String, default: undefined },
     ariaLabelledby: { type: String, default: undefined },
     testId: { type: String, default: undefined },
+    tokens: { type: Object, default: undefined },
   },
   emits: ["update:modelValue"],
   setup(props, { emit, expose }) {

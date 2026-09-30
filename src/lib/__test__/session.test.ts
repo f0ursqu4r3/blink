@@ -16,6 +16,29 @@ describe("request session metadata", () => {
     expect(sessionLabel(session)).toBe("/v1/health");
     expect(sessionHost(session)).toBe("example.test");
   });
+  it("shows resolved token values in the label and host", () => {
+    const session = createSession();
+    session.groupId = 1;
+    session.draft.url = "{{base}}/{{endpoint}}";
+    const tokens = {
+      groups: [
+        {
+          id: 1,
+          name: "g",
+          parentId: null,
+          localDefinitions: { endpoint: "users" },
+        },
+      ],
+      globalDefinitions: { base: "https://api.example.test" },
+    } as unknown as Parameters<typeof sessionLabel>[1];
+    expect(sessionLabel(session, tokens)).toBe("/users");
+    expect(sessionHost(session, tokens)).toBe("api.example.test");
+  });
+  it("shows token references in the label as typed", () => {
+    const session = createSession();
+    session.draft.url = "https://example.test/{{endpoint}}/a%20b";
+    expect(sessionLabel(session)).toBe("/{{endpoint}}/a b");
+  });
   it("marks responses from an earlier draft as edited", () => {
     const session = createSession();
     expect(hasDraft(session)).toBe(false);

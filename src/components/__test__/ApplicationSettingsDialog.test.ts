@@ -36,7 +36,7 @@ describe("ApplicationSettingsDialog", () => {
     expect(wrapper.find(".help-text").exists()).toBe(false);
   });
 
-  it("edits workspace-global definitions as a JSON object", async () => {
+  it("edits workspace-global definitions as key-value rows", async () => {
     const wrapper = mount(ApplicationSettingsDialog, {
       props: {
         definitions: { apiHost: "api.example.test" },
@@ -52,9 +52,15 @@ describe("ApplicationSettingsDialog", () => {
     });
     await nextTick();
 
-    const editor = wrapper.get<HTMLTextAreaElement>("[data-global-token-json]");
-    expect(editor.element.value).toContain('"apiHost"');
-    await editor.setValue('{"apiHost":"api.internal.test"}');
+    const tokens = wrapper.get("[data-global-tokens]");
+    const name = tokens.get<HTMLInputElement>(
+      '[aria-label="Global tokens name 1"]',
+    );
+    expect(name.element.value).toBe("apiHost");
+    expect(tokens.find('input[type="checkbox"]').exists()).toBe(false);
+    await tokens
+      .get('[aria-label="Global tokens value 1"]')
+      .setValue("api.internal.test");
     await wrapper.get("[data-save-application-settings]").trigger("click");
 
     expect(wrapper.emitted("save")?.[0]).toEqual([
@@ -63,15 +69,15 @@ describe("ApplicationSettingsDialog", () => {
     ]);
   });
 
-  it("rejects non-string token values without emitting a save", async () => {
+  it("rejects reserved token names without emitting a save", async () => {
     const wrapper = renderOpen();
     await nextTick();
 
-    await wrapper.get("[data-global-token-json]").setValue('{"port":443}');
+    await wrapper.get('[aria-label="Global tokens name 1"]').setValue("_port");
     await wrapper.get("[data-save-application-settings]").trigger("click");
 
-    expect(wrapper.get("[data-token-json-error]").text()).toContain(
-      "string values",
+    expect(wrapper.get("[data-token-error]").text()).toContain(
+      "must not start with _",
     );
     expect(wrapper.emitted("save")).toBeFalsy();
   });

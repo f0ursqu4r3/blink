@@ -1,5 +1,5 @@
 import type { RequestGroup } from "./groups";
-import { sessionLabel, type RequestSession } from "./session";
+import { sessionLabel, type LabelTokens, type RequestSession } from "./session";
 
 export type RequestMatch = {
   id: number;
@@ -27,13 +27,15 @@ export function matchRequests(
   sessions: RequestSession[],
   groups: RequestGroup[],
   query: string,
+  globalDefinitions: Record<string, string> = {},
 ): RequestMatch[] {
+  const tokens: LabelTokens = { groups, globalDefinitions };
   const needle = query.trim().toLowerCase();
   return sessions
     .map((session) => ({
       id: session.id,
       method: session.draft.method,
-      label: sessionLabel(session),
+      label: sessionLabel(session, tokens),
       url: session.draft.url,
       groupPath: groupPath(groups, session.groupId),
     }))

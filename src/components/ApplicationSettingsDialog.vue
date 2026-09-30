@@ -8,12 +8,15 @@ import {
   DialogTitle,
 } from "reka-ui";
 import HelpTooltip from "./HelpTooltip.vue";
+import KeyValueEditor from "./KeyValueEditor.vue";
 import ThemeSettings from "./ThemeSettings.vue";
 import { useTheme } from "../composables/useTheme";
 import {
   defaultPreferences,
   type WorkspacePreferences,
 } from "../lib/preferences";
+import type { Pair } from "../lib/request";
+import { definitionsToRows, rowsToDefinitions } from "../lib/definitions";
 import {
   transportFieldErrors,
   type TransportField,
@@ -35,7 +38,7 @@ const emit = defineEmits<{
 }>();
 
 const methodInput = ref<HTMLSelectElement | null>(null);
-const source = ref("{}");
+const tokenRows = ref<Pair[]>([]);
 const error = ref("");
 const preferences = ref(defaultPreferences());
 const theme = useTheme();
@@ -85,15 +88,11 @@ watch(
   },
 );
 
-function formatDefinitions(definitions: Record<string, string>) {
-  return JSON.stringify(definitions, null, 2);
-}
-
 watch(
   () => [props.open, props.definitions] as const,
   ([open]) => {
     if (!open) return;
-    source.value = formatDefinitions(props.definitions);
+    tokenRows.value = definitionsToRows(props.definitions);
     preferences.value = { ...(props.preferences ?? defaultPreferences()) };
     error.value = "";
     submitted.value = false;
@@ -102,27 +101,13 @@ watch(
 );
 
 function parseDefinitions(): Record<string, string> | null {
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(source.value);
-  } catch {
-    error.value = "Enter a valid JSON object.";
+  const result = rowsToDefinitions(tokenRows.value);
+  if ("error" in result) {
+    error.value = result.error;
     return null;
   }
-  if (
-    !parsed ||
-    Array.isArray(parsed) ||
-    typeof parsed !== "object" ||
-    Object.values(parsed).some((value) => typeof value !== "string")
-  ) {
-    error.value = "Token definitions must be a JSON object with string values.";
-    return null;
-  }
-  if (Object.keys(parsed).some((name) => name.startsWith("_"))) {
-    error.value = "Token names must not start with _.";
-    return null;
-  }
-  return parsed as Record<string, string>;
+  error.value = "";
+  return result.definitions;
 }
 
 function save() {
@@ -319,11 +304,11 @@ function save() {
             <ThemeSettings />
             <section class="grid gap-2 border-t border-border pt-3">
               <div class="flex items-center gap-1.5">
-                <label
+                <h3
                   class="text-xs font-semibold uppercase tracking-[0.07em] text-muted-foreground"
-                  for="global-token-json"
-                  >Global tokens</label
                 >
+                  Global tokens
+                </h3>
                 <HelpTooltip
                   text="Workspace-global tokens use {{_.name}}. Use <<NAME>> in a value to read NAME from Blink's process environment when sending."
                 >
@@ -337,20 +322,21 @@ function save() {
                   </button>
                 </HelpTooltip>
               </div>
-              <textarea
-                id="global-token-json"
-                v-model="source"
-                rows="5"
-                class="min-h-28 w-full resize-y p-2 border border-input rounded-sm text-foreground bg-background font-mono text-xs leading-relaxed"
-                data-global-token-json
-                spellcheck="false"
-                autocomplete="off"
-              />
+              <div
+                class="overflow-hidden border border-input rounded-sm bg-background"
+                data-global-tokens
+              >
+                <KeyValueEditor
+                  v-model="tokenRows"
+                  label="Global tokens"
+                  hide-enabled
+                />
+              </div>
             </section>
             <p
               v-if="error"
               class="text-destructive font-mono text-xs"
-              data-token-json-error
+              data-token-error
               role="alert"
             >
               {{ error }}
