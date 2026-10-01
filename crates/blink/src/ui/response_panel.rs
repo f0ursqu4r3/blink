@@ -12,6 +12,7 @@ use std::time::Duration;
 
 use blink_core::find::{Finder, filter_headers, find_status};
 use blink_core::jq::run_jq;
+use blink_core::html::format_html;
 use blink_core::json::format_json;
 use blink_core::model::{ApiResponse, RequestSession, SseEvent};
 use blink_core::preferences::transport_options;
@@ -145,6 +146,8 @@ struct Cache {
     source_parsed: bool,
     /// Formatted JSON of the jq output, or of the body.
     parsed: Option<SharedString>,
+    /// Formatted HTML of the body.
+    markup: Option<SharedString>,
     event_stream: bool,
     events: Vec<SseEvent>,
 }
@@ -284,12 +287,17 @@ impl ResponsePanel {
         } else {
             format_json(&response.body).ok()
         };
+        let markup = (!limited
+            && formatted.is_none()
+            && response_language(&content_type(response)) == ResponseLanguage::Html)
+            .then(|| SharedString::from(format_html(&response.body)));
         let event_stream = is_event_stream(header_value(response, "content-type"));
         self.cache = Cache {
             key: response_key(Some(response)),
             body: SharedString::from(response.body.clone()),
             source_parsed: formatted.is_some(),
             parsed: formatted.map(SharedString::from),
+            markup,
             event_stream,
             events: if event_stream {
                 parse_sse(&response.body)
@@ -326,13 +334,14 @@ impl ResponsePanel {
         self.search.read(cx).value().to_string()
     }
 
-    /// The body text shown: pretty JSON, jq output, or the body.
+    /// The body text shown: pretty JSON, jq output, pretty HTML, or the body.
     fn text(&self, pretty: bool) -> SharedString {
         match (&self.cache.parsed, pretty) {
             (Some(parsed), true) => parsed.clone(),
             _ => self
                 .jq_output
                 .clone()
+                .or_else(|| self.cache.markup.clone().filter(|_| pretty))
                 .unwrap_or_else(|| self.cache.body.clone()),
         }
     }
@@ -893,7 +902,7 @@ impl ResponsePanel {
         let truncated = response.is_truncated();
         let binary = response.is_binary();
         let body_tab = tab == "body";
-        let parsed = self.cache.parsed.is_some();
+        let formatted = self.cache.parsed.is_some() || self.cache.markup.is_some();
         let savable = can_save_response(response);
         let show_tests = shows_tests(session);
         let tests = session.test_results.clone().unwrap_or_default();
@@ -950,7 +959,7 @@ impl ResponsePanel {
         let tools = div()
             .flex()
             .items_center()
-            .when(body_tab && (parsed || truncated) && !binary, |this| {
+            .when(body_tab && (formatted || truncated) && !binary, |this| {
                 this.child(
                     ghost_button("response-pretty", cx)
                         .h(r(28.))
@@ -1038,7 +1047,7 @@ impl ResponsePanel {
                     );
                 if body_tab && !binary {
                     menu = menu.separator();
-                    if parsed {
+                    if formatted {
                         let pretty_entity = entity.clone();
                         menu = menu.item(PopupMenuItem::new("Pretty").checked(pretty).on_click(
                             move |_, window, cx| {

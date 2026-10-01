@@ -18,7 +18,7 @@ pub fn highlight_line(text: &str, language: ResponseLanguage) -> Spans {
     match language {
         Plaintext | Markdown => vec![],
         Json => json(text),
-        Xml => xml(text),
+        Xml | Html => xml(text),
         Yaml => yaml(text),
         Ini => ini(text),
         Css => generic(text, &Rules::CSS),

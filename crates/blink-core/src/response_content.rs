@@ -6,6 +6,7 @@ pub enum ResponseLanguage {
     Bash,
     Css,
     Graphql,
+    Html,
     Ini,
     Javascript,
     Json,
@@ -23,6 +24,7 @@ impl ResponseLanguage {
             ResponseLanguage::Bash => "bash",
             ResponseLanguage::Css => "css",
             ResponseLanguage::Graphql => "graphql",
+            ResponseLanguage::Html => "html",
             ResponseLanguage::Ini => "ini",
             ResponseLanguage::Javascript => "javascript",
             ResponseLanguage::Json => "json",
@@ -51,7 +53,10 @@ pub fn response_language(content_type: &str) -> ResponseLanguage {
     if kind == "application/json" || kind.ends_with("+json") {
         return Json;
     }
-    if matches!(kind, "application/xml" | "text/xml" | "text/html") || kind.ends_with("+xml") {
+    if matches!(kind, "text/html" | "application/xhtml+xml") {
+        return Html;
+    }
+    if matches!(kind, "application/xml" | "text/xml") || kind.ends_with("+xml") {
         return Xml;
     }
     match kind {
@@ -76,7 +81,9 @@ mod tests {
         use ResponseLanguage::*;
         assert_eq!(response_language("application/problem+json"), Json);
         assert_eq!(response_language("application/xml"), Xml);
-        assert_eq!(response_language("text/html; charset=utf-8"), Xml);
+        assert_eq!(response_language("text/html; charset=utf-8"), Html);
+        assert_eq!(response_language("application/xhtml+xml"), Html);
+        assert_eq!(response_language("image/svg+xml"), Xml);
         assert_eq!(response_language("text/css"), Css);
         assert_eq!(response_language("application/javascript"), Javascript);
         assert_eq!(response_language("application/yaml"), Yaml);

@@ -22,6 +22,7 @@ pub mod graphql;
 pub mod graphql_schema;
 pub mod groups;
 pub mod history;
+pub mod html;
 pub mod import;
 pub mod interpolation;
 pub mod jq;

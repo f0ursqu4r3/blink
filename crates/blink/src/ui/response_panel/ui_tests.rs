@@ -1,4 +1,5 @@
-//! Headless flows through the real response panel: saving bodies.
+//! Headless flows through the real response panel: saving bodies and
+//! formatting HTML.
 
 use core::prelude::v1::test;
 
@@ -120,6 +121,34 @@ fn saves_the_full_stored_body_byte_for_byte(cx: &mut TestAppContext) {
     });
     assert!(!cx.did_prompt_for_new_path());
     assert!(!cx.read(|cx| panel.read(cx).saving));
+}
+
+#[gpui_kit::test]
+fn pretty_formats_html_and_raw_shows_the_body(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let body = "<html><body><h1>Not Found</h1></body></html>";
+    let (base, _requests) =
+        serve(move |_| Reply::ok("text/html; charset=utf-8", body.as_bytes().to_vec()));
+    let harness = test_support::open(cx, &engine);
+
+    send(&harness, cx, &format!("{base}/missing"));
+    assert!(harness.session(cx, |s| s.view.pretty), "pretty is the default");
+    let panel = panel(&harness, cx);
+    let shown = |cx: &TestAppContext, pretty| {
+        cx.read(|cx| panel.read(cx).text(pretty).to_string())
+    };
+    assert_eq!(
+        shown(cx, true),
+        "<html>\n  <body>\n    <h1>Not Found</h1>\n  </body>\n</html>"
+    );
+    assert_eq!(shown(cx, false), body);
+
+    harness.update(cx, |window, cx| {
+        panel.update(cx, |panel, cx| panel.toggle_pretty(window, cx));
+    });
+    assert!(!harness.session(cx, |s| s.view.pretty));
 }
 
 #[test]
