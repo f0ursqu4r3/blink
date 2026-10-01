@@ -473,14 +473,6 @@ impl ThemeTokens {
     }
 }
 
-/// Tokens for a theme setting, or the default tokens with None.
-pub fn theme_tokens(palette: Option<&Palette>, accent: AccentSlot) -> ThemeTokens {
-    match palette {
-        Some(palette) => ThemeTokens::from_palette(palette, accent),
-        None => ThemeTokens::default_tokens(),
-    }
-}
-
 fn valid_setting(value: &serde_json::Value) -> Option<ThemeSetting> {
     let setting = value.as_object()?;
     let name = setting.get("name")?.as_str()?;

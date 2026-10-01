@@ -133,18 +133,6 @@ impl GraphqlSchema {
             .and_then(|name| self.get_type(name))
     }
 
-    pub fn get_mutation_type(&self) -> Option<&NamedType> {
-        self.mutation_type
-            .as_deref()
-            .and_then(|name| self.get_type(name))
-    }
-
-    pub fn get_subscription_type(&self) -> Option<&NamedType> {
-        self.subscription_type
-            .as_deref()
-            .and_then(|name| self.get_type(name))
-    }
-
     /// A field of an object or interface, including `__typename`, and
     /// `__schema` and `__type` on the query type.
     pub fn field(&self, type_name: &str, field_name: &str) -> Option<Field> {

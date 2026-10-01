@@ -27,10 +27,6 @@ pub fn is_code_target(value: &str) -> bool {
     code_target_from_id(value).is_some()
 }
 
-pub fn code_target_label(target: CodeTarget) -> &'static str {
-    target.label()
-}
-
 // JSON string literals are valid string literals in JavaScript, Python and Go.
 fn str(value: &str) -> String {
     serde_json::to_string(value).unwrap_or_default()
