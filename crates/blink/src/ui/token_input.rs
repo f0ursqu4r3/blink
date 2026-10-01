@@ -534,10 +534,12 @@ fn token_content(raw: &str, ctx: Option<&InterpolationContext>) -> InputContent 
     )
 }
 
-/// One token as the input draws it: a value on a tint, or a warning.
+/// One token as the input draws it: a value on a tint, or a warning. It
+/// shows as selected only in a `focused` field, as the selected text does.
 fn render_token(
     token: &InlineTokenContext,
     ctx: Option<&InterpolationContext>,
+    focused: bool,
     cx: &App,
 ) -> AnyElement {
     let colors = theme::colors(cx);
@@ -573,7 +575,9 @@ fn render_token(
                 .text_decoration_color(colors.destructive.opacity(0.6))
                 .child(token.token().label().clone()),
         })
-        .when(token.is_selected(), |this| this.bg(colors.selection))
+        .when(focused && token.is_selected(), |this| {
+            this.bg(colors.selection)
+        })
         .when(!hint.is_empty(), |this| {
             let hint = hint.clone();
             this.tooltip(move |window, cx| Tooltip::new(hint.clone()).build(window, cx))
@@ -589,12 +593,15 @@ impl Render for TokenInput {
         let colors = theme::colors(cx);
         let paste_filter = self.paste_filter.clone();
         let this = cx.entity().downgrade();
+        let focus = self.input.read(cx).focus_handle(cx);
         let mut input = Input::new(&self.input)
             .font_family(theme::MONO)
             .text_size(self.text_size)
             .appearance(self.appearance)
             .disabled(self.disabled)
-            .token(move |token, _, cx| render_token(token, ctx.as_ref(), cx));
+            .token(move |token, window, cx| {
+                render_token(token, ctx.as_ref(), focus.is_focused(window), cx)
+            });
         if let Some(size) = self.size {
             input = input.with_size(size);
         }
