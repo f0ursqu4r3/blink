@@ -68,7 +68,7 @@ impl CodeView {
             lines: Rc::new(Vec::new()),
             widest: 0,
             finder: Rc::new(Finder::new()),
-            rows: Rows::new(),
+            rows: Rows::new(LINE_HEIGHT),
         }
     }
 

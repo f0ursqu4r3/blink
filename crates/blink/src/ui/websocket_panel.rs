@@ -22,6 +22,7 @@ use gpui_kit::*;
 
 use crate::store::{Store, StoreEvent};
 use crate::theme;
+use crate::ui::code_view::rows::HeightEstimate;
 use crate::ui::response_panel::r;
 use crate::ui::widgets::tracked;
 
@@ -55,11 +56,15 @@ pub fn display(message: &SocketMessage) -> String {
     canonical_json(&message.text).unwrap_or_else(|| message.text.clone())
 }
 
+/// A one-line message row: the line, `py-1.5`, and the bottom border.
+const ROW_HEIGHT: f32 = 19.2 + 12. + 1.;
+
 pub struct WebSocketPanel {
     store: Entity<Store>,
     session_id: u64,
     message: Entity<TextareaState>,
     log: ListState,
+    log_estimate: HeightEstimate,
     /// First message id and count at the last render.
     shown: (u64, usize),
     _subscriptions: Vec<Subscription>,
@@ -122,6 +127,7 @@ impl WebSocketPanel {
             session_id,
             message,
             log,
+            log_estimate: HeightEstimate::default(),
             shown: (0, 0),
             _subscriptions,
         }
@@ -162,6 +168,7 @@ impl WebSocketPanel {
         } else if (first, messages.len()) != self.shown {
             let following = self.log.is_following_tail();
             self.log.reset(messages.len());
+            self.log_estimate.invalidate();
             if following {
                 self.log.set_follow_mode(FollowMode::Tail);
             }
@@ -346,7 +353,10 @@ impl Render for WebSocketPanel {
                             .child("Connect to open the socket. Messages you send and receive show here."),
                     )
                 } else {
-                    this.relative().child(log).vertical_scrollbar(&self.log)
+                    this.relative()
+                        .child(log)
+                        .child(self.log_estimate.element(&self.log, ROW_HEIGHT))
+                        .vertical_scrollbar(&self.log)
                 }
             });
         let composer = div()

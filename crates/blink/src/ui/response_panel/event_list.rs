@@ -10,7 +10,11 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::theme;
+use crate::ui::code_view::rows::HeightEstimate;
 use crate::ui::response_panel::r;
+
+/// A one-line row: the line, `py-1.5`, and the bottom border.
+pub const ROW_HEIGHT: f32 = 19.2 + 12. + 1.;
 
 /// Rendered rows. The stream keeps more; the newest show.
 pub const RENDER_LIMIT: usize = 1000;
@@ -35,6 +39,7 @@ struct Row {
 /// The list state of one event list. The owner keeps it across renders.
 pub struct EventList {
     list: ListState,
+    estimate: HeightEstimate,
     /// Events and hidden count at the last render.
     shown: (usize, usize),
     live: bool,
@@ -44,6 +49,7 @@ impl EventList {
     pub fn new() -> Self {
         EventList {
             list: ListState::new(0, ListAlignment::Top, px(400.)),
+            estimate: HeightEstimate::default(),
             shown: (0, 0),
             live: false,
         }
@@ -74,6 +80,7 @@ impl EventList {
         } else if (shown.len(), hidden) != self.shown {
             let following = self.list.is_following_tail();
             self.list.reset(shown.len());
+            self.estimate.invalidate();
             if following {
                 self.list.set_follow_mode(FollowMode::Tail);
             }
@@ -187,6 +194,7 @@ impl EventList {
                         .flex_1()
                         .min_h_0()
                         .child(list)
+                        .child(self.estimate.element(&self.list, ROW_HEIGHT))
                         .vertical_scrollbar(&self.list),
                 ),
             })

@@ -200,7 +200,7 @@ impl JsonTree {
             rows: Rc::new(Vec::new()),
             widest: 0,
             finder: Rc::new(Finder::new()),
-            list: Rows::new(),
+            list: Rows::new(ROW_HEIGHT),
         }
     }
 
