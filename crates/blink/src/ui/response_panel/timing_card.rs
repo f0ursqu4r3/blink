@@ -11,6 +11,7 @@ use gpui_kit::*;
 
 use crate::theme;
 use crate::ui::response_panel::r;
+use crate::ui::widgets::tracked;
 
 /// Bar placement as fractions of the total: `(left, width)`.
 pub fn bar(offset_ms: f64, ms: f64, total: f64) -> (f32, f32) {
@@ -26,18 +27,19 @@ pub fn render(timing: Option<&ResponseTiming>, duration_ms: f64, cx: &App) -> An
         .sum::<f64>()
         .max(duration_ms)
         .max(1.0);
+    // `underline decoration-dotted decoration-muted-foreground
+    // underline-offset-3` under `{{ durationMs }} <small>ms</small>`: the
+    // collapsed space between them is in the number's font.
+    let underline = Some(colors.muted_foreground);
     let trigger = div()
         .id("response-duration")
         .cursor_default()
-        .underline()
-        .text_decoration_color(colors.muted_foreground)
-        .child(js_number_string(duration_ms))
+        .child(tracked(format!("{} ", js_number_string(duration_ms)), 0.).dotted_underline(underline))
         .child(
             div()
-                .ml(r(3.))
                 .text_size(r(9.))
                 .text_color(colors.muted_foreground)
-                .child("ms"),
+                .child(tracked("ms", 0.).dotted_underline(underline)),
         )
         .flex()
         .items_baseline();
@@ -62,7 +64,7 @@ pub fn render(timing: Option<&ResponseTiming>, duration_ms: f64, cx: &App) -> An
                         .mb(r(8.))
                         .text_size(r(9.))
                         .text_color(colors.muted_foreground)
-                        .child("TIMING"),
+                        .child(tracked("TIMING", 0.1)),
                 )
                 .when(phases.is_empty(), |this| {
                     this.child(

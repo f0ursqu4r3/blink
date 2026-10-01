@@ -26,6 +26,7 @@ use crate::theme;
 use crate::ui::browser::DragPreview;
 use crate::ui::app::NARROW_WIDTH;
 use crate::ui::status_bar::css;
+use crate::ui::widgets::tracked;
 
 /// Requests being dragged, from the tab strip or the Browser. Both surfaces
 /// accept it: the tab strip opens or reorders them, the Browser moves them.
@@ -354,7 +355,7 @@ impl RequestTabs {
                             .text_size(css(9.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(theme::method_color(&method, cx))
-                            .child(method.clone()),
+                            .child(tracked(method.clone(), 0.04)),
                     )
                     .child(
                         div()
@@ -572,7 +573,7 @@ impl RequestTabs {
                                         .text_size(px(9.))
                                         .font_weight(FontWeight::BOLD)
                                         .text_color(method_color)
-                                        .child(method.clone()),
+                                        .child(tracked(method.clone(), 0.04)),
                                 )
                                 .child(truncated(label.clone()))
                         })

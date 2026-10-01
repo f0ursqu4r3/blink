@@ -9,6 +9,7 @@ use gpui_kit::component::{IndexPath, Sizable as _, h_flex};
 use gpui_kit::*;
 
 use crate::theme;
+use crate::ui::widgets::tracked;
 
 /// A size in CSS pixels at zoom 1. It scales with the root rem size, as
 /// the webview zoom scaled the Vue dialogs.
@@ -83,7 +84,8 @@ pub fn selected(select: &Entity<ChoiceSelect>, cx: &App) -> String {
         .unwrap_or_default()
 }
 
-/// The dialog title bar: `border-b px-4 py-3`, bold 14 px title.
+/// The dialog title bar: `border-b px-4 py-3`, bold 14 px title with
+/// `tracking-[0.08em]`.
 pub fn dialog_header(title: &'static str, cx: &App) -> Div {
     div()
         .flex_shrink_0()
@@ -96,7 +98,7 @@ pub fn dialog_header(title: &'static str, cx: &App) -> Div {
                 .text_size(u(14.))
                 .font_weight(FontWeight::BOLD)
                 .text_color(theme::colors(cx).foreground)
-                .child(title),
+                .child(tracked(title, 0.08)),
         )
 }
 
@@ -124,13 +126,14 @@ pub fn footer_button(id: &'static str, label: &'static str, primary: bool) -> Bu
     if primary { button.primary() } else { button.outline() }
 }
 
-/// Uppercase section heading: `text-xs font-semibold uppercase`.
+/// Uppercase section heading: `text-xs font-semibold uppercase
+/// tracking-[0.07em]`.
 pub fn section_heading(text: &'static str, cx: &App) -> Div {
     div()
         .text_size(u(12.))
         .font_weight(FontWeight::SEMIBOLD)
         .text_color(theme::colors(cx).muted_foreground)
-        .child(text.to_uppercase())
+        .child(tracked(text.to_uppercase(), 0.07))
 }
 
 /// A heading with a `?` help trigger, as `HelpTooltip.vue` around a button.

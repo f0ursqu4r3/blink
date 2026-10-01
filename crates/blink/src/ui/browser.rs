@@ -38,7 +38,7 @@ use crate::actions::{CollapseAllGroups, ImportFile, OpenGroupSettings};
 use crate::store::Store;
 use crate::theme;
 use crate::ui::tabs::DraggedRequests;
-use crate::ui::widgets::method_label;
+use crate::ui::widgets::{method_label, tracked};
 
 pub use drag::DragPreview;
 use drag::{DraggedGroup, edge_speed};
@@ -858,7 +858,7 @@ impl Browser {
                     .text_color(colors.muted_foreground)
                     .font_family(theme::MONO)
                     .text_size(css(9.))
-                    .child("UNGROUPED"),
+                    .child(tracked("UNGROUPED", 0.12)),
             )
             .child(
                 small_button("browser-ungrouped-move", IconName::MoveRight, 13., cx)
@@ -1277,7 +1277,7 @@ impl Browser {
                             .text_size(css(9.))
                             .font_weight(FontWeight::SEMIBOLD)
                             .text_color(color)
-                            .child(name.unwrap_or_else(|| "NO ENV".into())),
+                            .child(tracked(name.unwrap_or_else(|| "NO ENV".into()), 0.06)),
                     )
                     .h(css(14.))
                     .px(css(4.))
@@ -1443,7 +1443,7 @@ impl Browser {
                     .text_size(css(11.))
                     .font_weight(FontWeight::BOLD)
                     .text_color(colors.foreground)
-                    .child("REQUESTS"),
+                    .child(tracked("REQUESTS", 0.08)),
             )
             .child(
                 header_button("browser-new-request", IconName::FilePlus, cx)
@@ -1511,7 +1511,7 @@ impl Browser {
                 .font_family(theme::MONO)
                 .text_size(css(10.))
                 .text_color(colors.muted_foreground)
-                .child(div().flex_shrink_0().child("FOCUSED"))
+                .child(div().flex_shrink_0().child(tracked("FOCUSED", 0.08)))
                 .child(
                     div()
                         .id("browser-focus-name")

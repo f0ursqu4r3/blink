@@ -19,6 +19,7 @@ use gpui_kit::*;
 
 use crate::theme;
 use crate::ui::token_input::{TokenInput, TokenInputEvent};
+use crate::ui::widgets::{WIDEST, tracked};
 
 #[derive(Debug, Clone, Default)]
 pub struct KeyValueOptions {
@@ -538,7 +539,7 @@ impl KeyValueEditor {
                 .text_size(px(10.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(colors.muted_foreground)
-                .when_some(text, |this, text| this.child(text.to_uppercase()))
+                .when_some(text, |this, text| this.child(tracked(text.to_uppercase(), WIDEST)))
         };
         let key = placeholder(&self.options.key_label, "Name");
         let value = placeholder(&self.options.value_label, "Value");

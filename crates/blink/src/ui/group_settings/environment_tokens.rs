@@ -21,6 +21,7 @@ use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::theme;
+use crate::ui::widgets::{WIDEST, tracked};
 
 /// One token as typed: a base value and a value per environment id.
 #[derive(Debug, Clone, PartialEq, Default)]
@@ -495,7 +496,7 @@ impl Render for EnvironmentTokens {
                 .items_center()
                 .px(px(10.))
                 .font_weight(FontWeight::MEDIUM)
-                .child(text.to_uppercase())
+                .child(tracked(text.to_uppercase(), WIDEST))
         };
         let mut header = h_flex()
             .h(px(32.))
@@ -554,7 +555,7 @@ impl Render for EnvironmentTokens {
                                             .text_size(px(10.))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(color)
-                                            .child(div().truncate().child(label.clone()))
+                                            .child(div().truncate().child(tracked(label.clone(), WIDEST)))
                                             .when(column.protected, |this| {
                                                 this.child(
                                                     div()

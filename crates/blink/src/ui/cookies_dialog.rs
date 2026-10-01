@@ -13,6 +13,7 @@ use gpui_kit::*;
 
 use crate::store::Store;
 use crate::theme;
+use crate::ui::widgets::{WIDEST, tracked};
 
 /// Open the dialog.
 pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
@@ -24,6 +25,9 @@ pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
         let empty = jar.read(cx).cookies.is_empty();
         dialog
             .w(px(760.))
+            // `top-1/2 -translate-y-1/2 max-h-[80dvh]`.
+            .centered(true)
+            .max_h(relative(0.8))
             .p_0()
             .close_button(false)
             .title(jar.read(cx).render_header(jar.clone(), cx).w_full())
@@ -183,7 +187,7 @@ impl CookieJar {
                             .text_size(px(14.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(colors.foreground)
-                            .child("Cookies"),
+                            .child(tracked("Cookies", 0.08)),
                     )
                     .child(
                         div()
@@ -191,10 +195,13 @@ impl CookieJar {
                             .text_size(px(10.))
                             .font_weight(FontWeight::NORMAL)
                             .text_color(colors.muted_foreground)
-                            .child(format!(
-                                "{} COOKIES · {} DOMAINS",
-                                self.cookies.len(),
-                                domain_count(&self.cookies)
+                            .child(tracked(
+                                format!(
+                                    "{} COOKIES · {} DOMAINS",
+                                    self.cookies.len(),
+                                    domain_count(&self.cookies)
+                                ),
+                                0.1,
                             )),
                     ),
             )
@@ -250,7 +257,7 @@ impl Render for CookieJar {
                 .text_size(px(10.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(colors.muted_foreground)
-                .child(text.to_uppercase())
+                .child(tracked(text.to_uppercase(), WIDEST))
         };
         let cell = || div().px(px(12.)).py(px(6.)).min_w_0();
         let rows = shown.into_iter().map(|cookie| {

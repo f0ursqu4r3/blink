@@ -15,6 +15,7 @@ use gpui_kit::*;
 use crate::store::Store;
 use crate::theme;
 use crate::ui::response_panel::r;
+use crate::ui::widgets::tracked;
 
 /// Unchanged lines kept around each change, as the TS default.
 const DIFF_CONTEXT: usize = 3;
@@ -277,7 +278,7 @@ impl HistoryView {
                     .font_family(theme::MONO)
                     .text_size(r(10.))
                     .text_color(colors.muted_foreground)
-                    .child(section.title.to_uppercase())
+                    .child(tracked(section.title.to_uppercase(), 0.1))
                     .when(!section.changed, |this| this.child("· No changes"));
                 let content = match &section.hunks {
                     None => Some(
@@ -348,9 +349,9 @@ impl HistoryView {
             .font_family(theme::MONO)
             .text_size(r(10.))
             .text_color(colors.muted_foreground)
-            .child(format!(
-                "{count} {}",
-                if count == 1 { "SEND" } else { "SENDS" }
+            .child(tracked(
+                format!("{count} {}", if count == 1 { "SEND" } else { "SENDS" }),
+                0.1,
             ))
             .child(
                 Button::new("history-clear")

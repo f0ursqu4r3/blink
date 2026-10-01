@@ -33,6 +33,7 @@ use crate::store::Store;
 use crate::theme;
 use crate::ui::code_view::{CodeContent, CodeView};
 use crate::ui::history_view::HistoryView;
+use crate::ui::widgets::{dotted, tracked};
 use event_list::EventList;
 use json_tree::{JsonTree, TreeContent};
 
@@ -798,13 +799,13 @@ impl ResponsePanel {
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(r(11.))
                     .text_color(colors.foreground)
-                    .child("RESPONSE"),
+                    .child(tracked("RESPONSE", 0.12)),
             )
             .child(
                 div()
                     .ml_auto()
                     .text_color(colors.muted_foreground)
-                    .child(header_status(session)),
+                    .child(tracked(header_status(session), 0.12)),
             )
             .child(
                 ghost_button("response-history", cx)
@@ -1238,13 +1239,14 @@ impl ResponsePanel {
                 div()
                     .id("truncated-save")
                     .when(enabled, |this| {
-                        this.underline()
-                            .cursor_pointer()
+                        this.cursor_pointer()
                             .hover(|this| this.text_color(colors.foreground))
                             .on_click(cx.listener(|this, _, window, cx| this.save_body(window, cx)))
                     })
                     .when(!enabled, |this| this.opacity(0.5))
-                    .child("Save…"),
+                    // `underline decoration-dotted underline-offset-3
+                    // disabled:no-underline`.
+                    .child(if enabled { dotted("Save…") } else { tracked("Save…", 0.) }),
             )
             .child("to get the full body.")
     }
@@ -1400,11 +1402,14 @@ impl ResponsePanel {
                     .font_family(theme::MONO)
                     .text_size(r(10.))
                     .text_color(colors.muted_foreground)
-                    .child(if results.is_empty() {
-                        "NO RESULTS".to_string()
-                    } else {
-                        format!("{passed} OF {} PASSED", results.len())
-                    })
+                    .child(tracked(
+                        if results.is_empty() {
+                            "NO RESULTS".to_string()
+                        } else {
+                            format!("{passed} OF {} PASSED", results.len())
+                        },
+                        0.1,
+                    ))
                     .child(
                         Button::new("tests-recheck")
                             .ghost()
@@ -1666,7 +1671,7 @@ fn state_title(text: &'static str, cx: &App) -> Div {
         .font_family(theme::MONO)
         .text_size(r(11.))
         .text_color(theme::colors(cx).foreground)
-        .child(text)
+        .child(tracked(text, 0.14))
 }
 
 impl Render for ResponsePanel {

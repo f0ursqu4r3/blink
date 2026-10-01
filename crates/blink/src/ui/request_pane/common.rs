@@ -194,9 +194,8 @@ pub fn help_link(
         .id(id)
         .text_size(px(11.))
         .text_color(colors.muted_foreground)
-        .underline()
-        .text_decoration_color(colors.muted_foreground.opacity(0.7))
         .cursor_default()
-        .child(label.into())
+        // `underline decoration-dotted underline-offset-3`.
+        .child(crate::ui::widgets::dotted(label.into()))
         .tooltip(move |window, cx| Tooltip::new(text.clone()).build(window, cx))
 }

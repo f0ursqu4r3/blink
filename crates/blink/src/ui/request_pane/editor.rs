@@ -35,6 +35,10 @@ use crate::ui::request_pane::common::{
     edit_draft, fill_select, help_link, replace_draft, select_button, session_context,
 };
 use crate::ui::token_input::{TokenInput, TokenInputEvent};
+use crate::ui::widgets::tracked;
+
+/// The header and footer `tracking-[0.12em]`.
+const HEADER_TRACKING: f32 = 0.12;
 
 pub const BODY_MODES: [(BodyMode, &str); 7] = [
     (BodyMode::None, "None"),
@@ -752,14 +756,18 @@ impl RequestEditor {
                     .items_center()
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_size(px(11.))
-                    .child(div().text_color(colors.muted_foreground).mr(px(10.)).child("01"))
-                    .child("REQUEST"),
+                    .child(
+                        div()
+                            .text_color(colors.muted_foreground)
+                            .mr(px(10.))
+                            .child(tracked("01", HEADER_TRACKING)),
+                    )
+                    .child(tracked("REQUEST", HEADER_TRACKING)),
             )
-            .child(
-                div()
-                    .text_color(colors.muted_foreground)
-                    .child(if busy { "SENDING" } else { "COMPOSE" }),
-            )
+            .child(div().text_color(colors.muted_foreground).child(tracked(
+                if busy { "SENDING" } else { "COMPOSE" },
+                HEADER_TRACKING,
+            )))
     }
 
     fn render_tabs(&self, active: &str, draft: &Draft, effective: &AuthorizationConfig, cx: &mut Context<Self>) -> impl IntoElement {
@@ -1430,8 +1438,8 @@ impl Render for RequestEditor {
                     .font_family(theme::MONO)
                     .text_size(px(9.))
                     .text_color(colors.muted_foreground)
-                    .child(counts)
-                    .child(auth),
+                    .child(tracked(counts, HEADER_TRACKING))
+                    .child(tracked(auth, HEADER_TRACKING)),
             )
             .into_any_element()
     }

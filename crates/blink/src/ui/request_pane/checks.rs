@@ -15,6 +15,7 @@ use crate::store::Store;
 use crate::theme;
 use crate::ui::key_value_editor::{check_box, ghost_button};
 use crate::ui::request_pane::common::{cell_select, edit_draft, help_link};
+use crate::ui::widgets::{WIDEST, tracked};
 
 const ROW_HEIGHT: f32 = 34.;
 const SIDE_COLUMN: f32 = 34.;
@@ -412,7 +413,7 @@ fn section_heading(title: &'static str, id: &'static str, help: &'static str, cx
         .font_family(theme::MONO)
         .text_size(px(10.))
         .text_color(colors.muted_foreground)
-        .child(title)
+        .child(tracked(title, 0.12))
         .child(help_link(id, "Help", help, cx).font_family(theme::SANS))
 }
 
@@ -428,7 +429,7 @@ fn head(text: Option<&'static str>, cx: &App) -> Div {
         .text_size(px(10.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors.muted_foreground)
-        .when_some(text, |this, text| this.child(text.to_uppercase()))
+        .when_some(text, |this, text| this.child(tracked(text.to_uppercase(), WIDEST)))
 }
 
 fn table_row(cx: &App) -> Div {

@@ -23,6 +23,7 @@ use gpui_kit::*;
 use crate::store::{Store, StoreEvent};
 use crate::theme;
 use crate::ui::response_panel::r;
+use crate::ui::widgets::tracked;
 
 /// `stateLabel` in `WebSocketPanel.vue`.
 pub fn state_label(socket: Option<&SocketSession>) -> &'static str {
@@ -208,7 +209,7 @@ impl Render for WebSocketPanel {
                     .text_size(r(11.))
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(colors.foreground)
-                    .child("WEBSOCKET"),
+                    .child(tracked("WEBSOCKET", 0.12)),
             )
             .child(
                 div()
@@ -218,7 +219,7 @@ impl Render for WebSocketPanel {
                     } else {
                         colors.muted_foreground
                     })
-                    .child(state_label(socket.as_ref())),
+                    .child(tracked(state_label(socket.as_ref()), 0.12)),
             );
         let count =
             |id: &'static str, icon: IconName, color: Hsla, value: usize, tip: &'static str| {

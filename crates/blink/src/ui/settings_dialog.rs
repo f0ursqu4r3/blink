@@ -24,6 +24,7 @@ use self::theme_settings::ThemeSettings;
 use crate::store::Store;
 use crate::theme::{self, AppTheme};
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
+use crate::ui::widgets::dotted;
 
 /// Open the dialog.
 pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
@@ -35,13 +36,12 @@ pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
         let confirm = settings.clone();
         let save = settings.clone();
         let colors = theme::colors(cx);
-        let viewport = window.viewport_size().height;
         dialog
-            // `w-[min(560px,…)]` at the current zoom; centered with at most
-            // `max-h-[90dvh]`, so the top margin is 5% of the viewport.
+            // `w-[min(560px,…)]` at the current zoom; `top-1/2
+            // -translate-y-1/2` with at most `max-h-[90dvh]`.
             .w(u(560.).to_pixels(window.rem_size()))
-            .margin_top(viewport * 0.05)
-            .max_h(viewport * 0.9)
+            .centered(true)
+            .max_h(relative(0.9))
             .p_0()
             .close_button(false)
             .overlay_closable(false)
@@ -481,10 +481,9 @@ impl Render for Settings {
                                     .id("manage-cookies")
                                     .text_size(u(11.))
                                     .text_color(muted)
-                                    .underline()
                                     .cursor_pointer()
                                     .hover(move |style| style.text_color(colors.foreground))
-                                    .child("Manage cookies…")
+                                    .child(dotted("Manage cookies…"))
                                     .on_click(cx.listener(|this, _, window, cx| {
                                         this.manage_cookies(window, cx)
                                     })),

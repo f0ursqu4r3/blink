@@ -15,6 +15,7 @@ use gpui_kit::*;
 
 use crate::store::Store;
 use crate::theme;
+use crate::ui::widgets::tracked;
 
 /// The user closed the panel from its menu.
 pub struct CloseCode;
@@ -175,10 +176,10 @@ impl Render for CodePanel {
                     .font_family(theme::MONO)
                     .text_size(px(9.))
                     .text_color(colors.warning)
-                    .underline()
-                    .text_decoration_color(colors.warning.opacity(0.7))
                     .cursor_default()
-                    .child("INCLUDES CREDENTIALS")
+                    // `tracking-[0.08em] underline decoration-dotted
+                    // underline-offset-3`.
+                    .child(tracked("INCLUDES CREDENTIALS", 0.08).dotted_underline(None))
                     .tooltip(|window, cx| {
                         Tooltip::new(
                             "The generated code includes credentials. Review it before sharing.",

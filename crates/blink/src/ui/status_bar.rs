@@ -16,6 +16,12 @@ use crate::actions::{UndoDelete, ZoomReset};
 use crate::store::Store;
 use crate::theme;
 use crate::ui::app::NARROW_WIDTH;
+use crate::ui::widgets::{Tracked, tracked};
+
+/// The footer's `tracking-[0.07em]`, inherited by every label in it.
+fn t(text: impl Into<SharedString>) -> Tracked {
+    tracked(text, 0.07)
+}
 
 /// Local storage tooltip, word for word from `App.vue`.
 pub const STORAGE_TOOLTIP: &str =
@@ -65,26 +71,26 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
             .child(
                 div()
                     .text_color(theme::method_color(&method, cx))
-                    .child(method),
+                    .child(t(method)),
             );
         if active.busy {
-            row = row.child(format!("· {:.1} s", active.elapsed / 1000.0));
+            row = row.child(t(format!("· {:.1} s", active.elapsed / 1000.0)));
         } else if !active.error.is_empty() {
-            row = row.child(div().text_color(colors.destructive).child("· FAILED"));
+            row = row.child(div().text_color(colors.destructive).child(t("· FAILED")));
         } else if let Some(response) = &active.response {
             row = row
-                .child("·")
+                .child(t("·"))
                 .child(
                     div()
                         .text_color(theme::status_color(response.status, cx))
-                        .child(response.status.to_string()),
+                        .child(t(response.status.to_string())),
                 )
-                .child(format!(
+                .child(t(format!(
                     "· {} ms · {}",
                     response.duration_ms,
                     format_bytes(response.size_bytes)
-                ))
-                .when(active.stale, |row| row.child("· EDITED"));
+                )))
+                .when(active.stale, |row| row.child(t("· EDITED")));
         }
         let path = group_path(&workspace.groups, active.group_id);
         if !path.is_empty() {
@@ -94,7 +100,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .child(format!("· {}", path.to_uppercase())),
+                    .child(t(format!("· {}", path.to_uppercase()))),
             );
         }
         if let Some(environment) = workspace.active_environment() {
@@ -102,7 +108,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
                 div()
                     .font_weight(FontWeight::SEMIBOLD)
                     .text_color(theme::environment_color(environment.color, cx))
-                    .child(format!("· {}", environment.name)),
+                    .child(t(format!("· {}", environment.name))),
             );
         }
         row
@@ -124,7 +130,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
             .text_ellipsis()
             .when(state.import_failed, |this| this.text_color(colors.destructive))
             .tooltip(move |window, cx| Tooltip::new(details.clone()).build(window, cx))
-            .child(notice)
+            .child(t(notice))
     });
 
     let undo = (!deletion.is_empty()).then(|| {
@@ -140,7 +146,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
                     .overflow_hidden()
                     .whitespace_nowrap()
                     .text_ellipsis()
-                    .child(deletion),
+                    .child(t(deletion)),
             )
             .child(
                 div()
@@ -148,11 +154,10 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
                     .test_support()
                     .cursor_pointer()
                     .text_color(colors.foreground)
-                    .underline()
-                    .text_decoration_color(colors.foreground)
                     .tooltip(move |window, cx| Tooltip::new(undo_title.clone()).build(window, cx))
                     .on_click(|_, window, cx| window.dispatch_action(Box::new(UndoDelete), cx))
-                    .child("UNDO"),
+                    // `underline decoration-dotted underline-offset-3`.
+                    .child(t("UNDO").dotted_underline(None)),
             )
             .child(
                 div()
@@ -165,7 +170,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
                             store.update_workspace(cx, |workspace| workspace.discard_deletion())
                         })
                     })
-                    .child("×"),
+                    .child(t("×")),
             )
     });
 
@@ -177,7 +182,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
             .hover(|style| style.text_color(colors.foreground))
             .tooltip(move |window, cx| Tooltip::new(title.clone()).build(window, cx))
             .on_click(|_, window, cx| window.dispatch_action(Box::new(ZoomReset), cx))
-            .child(format!("{}%", (zoom * 100.0).round()))
+            .child(t(format!("{}%", (zoom * 100.0).round())))
     });
 
     div()
@@ -201,18 +206,18 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
                 .hover(|style| style.text_color(colors.foreground))
                 .tooltip(|window, cx| Tooltip::new(STORAGE_TOOLTIP).build(window, cx))
                 .child(Icon::new(IconName::HardDrive).size(css(11.)))
-                .child(state.status()),
+                .child(t(state.status())),
         )
-        .child(request_count_label(workspace.sessions.len()))
+        .child(t(request_count_label(workspace.sessions.len())))
         .children(summary)
         .when(sending > 0, |this| {
             this.child(
                 div()
                     .text_color(colors.primary)
-                    .child(format!("{sending} SENDING")),
+                    .child(t(format!("{sending} SENDING"))),
             )
         })
-        .when(state.copied, |this| this.child("COPIED"))
+        .when(state.copied, |this| this.child(t("COPIED")))
         .children(import)
         .children(undo)
         .when(!transport.verify_tls, |this| {
@@ -222,19 +227,19 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
                     .test_support()
                     .aria_label("TLS VERIFY OFF")
                     .text_color(colors.warning)
-                    .child("TLS VERIFY OFF"),
+                    .child(t("TLS VERIFY OFF")),
             )
         })
         .child(div().flex_1())
         .when(!narrow, |this| {
-            this.child(transport_label(
+            this.child(t(transport_label(
                 !transport.proxy_url.is_empty(),
                 transport.timeout_seconds,
                 transport.inspection_limit_mi_b,
-            ))
+            )))
         })
         .children(zoom_button)
-        .child(theme::theme_name(cx))
+        .child(t(theme::theme_name(cx)))
         .into_any_element()
 }
 

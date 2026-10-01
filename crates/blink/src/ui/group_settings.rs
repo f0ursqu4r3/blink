@@ -42,6 +42,9 @@ pub fn open(store: Entity<Store>, group_id: u64, window: &mut Window, cx: &mut A
         let confirm = form.clone();
         dialog
             .w(px(760.))
+            // `top-1/2 -translate-y-1/2 max-h-[90dvh]`.
+            .centered(true)
+            .max_h(relative(0.9))
             .p_0()
             .close_button(false)
             .overlay_closable(false)

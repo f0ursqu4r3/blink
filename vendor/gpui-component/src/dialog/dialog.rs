@@ -204,6 +204,8 @@ pub(crate) struct DialogProps {
     width: Pixels,
     max_width: Option<Pixels>,
     margin_top: Option<Pixels>,
+    // Blink patch: center vertically instead of `margin_top`.
+    centered: bool,
     close_button: bool,
 
     overlay: bool,
@@ -216,6 +218,7 @@ impl Default for DialogProps {
     fn default() -> Self {
         Self {
             margin_top: None,
+            centered: false,
             width: px(448.),
             max_width: None,
             overlay: true,
@@ -444,6 +447,14 @@ impl Dialog {
         self
     }
 
+    /// Blink patch: center the dialog vertically in the viewport, as a CSS
+    /// `top-1/2 -translate-y-1/2` dialog. `margin_top` is then ignored.
+    /// Combine with `max_h` (kept by the patch) to cap the height.
+    pub fn centered(mut self, centered: bool) -> Self {
+        self.props.centered = centered;
+        self
+    }
+
     /// Sets the width of the dialog, defaults to 448px.
     ///
     /// The dialog is never wider than the viewport minus a margin on each side.
@@ -581,7 +592,21 @@ impl RenderOnce for Dialog {
             .width
             .min((view_size.width - margin * 2.).max(px(0.)));
         let x = (view_size.width - width) / 2.;
-        let max_height = (view_size.height - margin * 2. - layer_offset).max(px(0.));
+        let mut max_height = (view_size.height - margin * 2. - layer_offset).max(px(0.));
+        // Blink patch: a `max_h` set by the app also caps the height (a
+        // fraction is of the viewport height), as CSS `max-h-[90dvh]`.
+        if let Some(gpui::Length::Definite(length)) = self.style.max_size.height {
+            let rem_size = window.rem_size();
+            max_height = max_height.min(length.to_pixels(view_size.height.into(), rem_size));
+        }
+        // Blink patch: a centered dialog anchors its left-center point at
+        // the viewport middle; the positioner then centers it at any height.
+        let centered = self.props.centered;
+        let (anchor, y) = if centered {
+            (Anchor::LeftCenter, view_size.height / 2. + layer_offset)
+        } else {
+            (Anchor::TopLeft, y)
+        };
 
         let base_size = window.text_style().font_size;
         let rem_size = window.rem_size();
@@ -657,7 +682,7 @@ impl RenderOnce for Dialog {
                             })
                             .popup(
                                 gpui_base::Positioner::corner(
-                                    Anchor::TopLeft,
+                                    anchor,
                                     point(window_paddings.left + x, window_paddings.top + y),
                                 )
                                 .margin(margin)
@@ -779,9 +804,16 @@ impl RenderOnce for Dialog {
                                     "slide-down",
                                     animation.clone(),
                                     move |this, delta| {
+                                        // Blink patch: a centered dialog
+                                        // slides down its last 16px only.
+                                        let y = if centered {
+                                            y - px(16.) * (1. - delta)
+                                        } else {
+                                            y * delta
+                                        };
                                         this.position(point(
                                             window_paddings.left + x,
-                                            window_paddings.top + y * delta,
+                                            window_paddings.top + y,
                                         ))
                                     },
                                 ),

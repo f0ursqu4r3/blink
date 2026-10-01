@@ -3,10 +3,13 @@
 
 use blink_core::theme::{DEFAULT_ACCENT, ThemeSetting, ThemeState};
 use gpui_kit::component::WindowExt as _;
-use gpui_kit::{AppContext as _, Entity, Hsla, TestAppContext, rgb};
+use gpui_kit::{
+    Action, AppContext as _, Bounds, Entity, Hsla, Pixels, TestAppContext, VisualTestContext, px,
+    rgb, size,
+};
 
 use super::Settings;
-use crate::actions::OpenSettings;
+use crate::actions::{ManageCookies, OpenGroupSettings, OpenSettings};
 use crate::test_support::{self, Harness};
 use crate::theme;
 
@@ -98,4 +101,56 @@ fn previews_saves_cancels_and_resets_the_theme(cx: &mut TestAppContext) {
     assert_eq!(cx.read(theme::theme_name), "Blink");
     cx.update(|cx| theme::init(&engine, cx));
     assert_eq!(background(cx), default_background);
+}
+
+/// The bounds of the open dialog's surface.
+fn dialog_bounds(harness: &Harness, cx: &mut TestAppContext) -> Bounds<Pixels> {
+    harness.draw(cx);
+    harness.draw(cx);
+    let mut visual = VisualTestContext::from_window(harness.window, cx);
+    visual.debug_bounds("dialog-0").expect("the dialog is painted")
+}
+
+/// As Vue `top-1/2 -translate-y-1/2 max-h-[90dvh]` (`80dvh` for Cookies):
+/// each dialog is centered in the window and at most that tall.
+#[gpui_kit::test]
+fn dialogs_are_centered_and_capped(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    cx.update(|cx| cx.set_reduce_motion(true));
+    let harness = test_support::open(cx, &engine);
+    let group_id = harness.store.update(cx, |store, cx| {
+        let mut id = 0;
+        store.update_workspace(cx, |workspace| id = workspace.add_group("API", None));
+        id
+    });
+
+    for height in [800., 480.] {
+        let viewport = size(px(1280.), px(height));
+        VisualTestContext::from_window(harness.window, cx).simulate_resize(viewport);
+        harness.draw(cx);
+        let opens: [(&str, f32, Box<dyn Action>); 3] = [
+            ("settings", 0.9, Box::new(OpenSettings)),
+            ("group", 0.9, Box::new(OpenGroupSettings { group_id })),
+            ("cookies", 0.8, Box::new(ManageCookies)),
+        ];
+        for (name, cap, action) in opens {
+            harness.update(cx, |window, cx| window.dispatch_action(action, cx));
+            assert!(harness.update(cx, |window, cx| window.has_active_dialog(cx)), "{name}");
+            let bounds = dialog_bounds(&harness, cx);
+            let middle = bounds.origin.y + bounds.size.height / 2.;
+            assert!(
+                (middle - viewport.height / 2.).abs() <= px(1.),
+                "{name} at {height}: {bounds:?} is not centered"
+            );
+            assert!(
+                bounds.size.height <= viewport.height * cap + px(0.5),
+                "{name} at {height}: {bounds:?} is taller than {cap} of the window"
+            );
+            harness.update(cx, |window, cx| window.close_dialog(cx));
+            harness.draw(cx);
+            assert!(!harness.update(cx, |window, cx| window.has_active_dialog(cx)));
+        }
+    }
 }
