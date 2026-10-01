@@ -145,6 +145,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
             .child(
                 div()
                     .id("status-undo")
+                    .test_support()
                     .cursor_pointer()
                     .text_color(colors.foreground)
                     .underline()
@@ -215,7 +216,14 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
         .children(import)
         .children(undo)
         .when(!transport.verify_tls, |this| {
-            this.child(div().text_color(colors.warning).child("TLS VERIFY OFF"))
+            this.child(
+                div()
+                    .id("status-tls")
+                    .test_support()
+                    .aria_label("TLS VERIFY OFF")
+                    .text_color(colors.warning)
+                    .child("TLS VERIFY OFF"),
+            )
         })
         .child(div().flex_1())
         .when(!narrow, |this| {
@@ -342,6 +350,9 @@ pub fn render_storage_notice(store: &Entity<Store>, window: &mut Window, cx: &mu
         })
         .into_any_element()
 }
+
+#[cfg(test)]
+mod ui_tests;
 
 #[cfg(test)]
 mod tests {

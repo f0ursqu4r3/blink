@@ -143,6 +143,12 @@ impl BlinkApp {
         }
     }
 
+    /// The pane of request `id`, for the UI tests.
+    #[cfg(test)]
+    pub fn pane(&self, id: u64) -> Option<Entity<RequestPane>> {
+        self.panes.get(&id).cloned()
+    }
+
     fn active_pane(&self, cx: &App) -> Option<Entity<RequestPane>> {
         let id = self.store.read(cx).workspace.shown_active_id()?;
         self.panes.get(&id).cloned()
@@ -871,3 +877,6 @@ impl Render for BlinkApp {
             .child(status)
     }
 }
+
+#[cfg(test)]
+mod ui_tests;

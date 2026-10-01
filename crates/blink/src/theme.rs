@@ -6,8 +6,9 @@ use std::path::PathBuf;
 use blink_core::engine::Engine;
 use blink_core::model::EnvironmentColor;
 use blink_core::theme::{Rgba as TokenColor, SyntaxRole, ThemeState, ThemeTokens};
+use gpui_kit::component::menu::PopupMenuMetrics;
 use gpui_kit::component::{Theme, ThemeMode};
-use gpui_kit::{App, Global, Hsla, Rgba, px};
+use gpui_kit::{App, Global, Hsla, Rgba, px, rems};
 
 /// The Blink tokens in use. Components read colors from here or from the
 /// GPUI Kit theme, which `apply` keeps in step.
@@ -405,4 +406,26 @@ pub fn apply(tokens: ThemeTokens, cx: &mut App) {
         t.scrollbar_thumb = scrollbar.0;
         t.scrollbar_thumb_hover = scrollbar.1;
     });
+    cx.set_global(menu_metrics());
+}
+
+/// Every menu row as `menu-classes.ts`: `text-xs`, `h-6`, a check gutter
+/// (`left-2.5` indicator, `pl-8` text), `pr-2`, no row gap, `min-w-45`, and a
+/// `my-1 h-px` separator. Label rows use `text-[11px]`. In rems, so zoom
+/// scales them as the webview zoom did.
+pub fn menu_metrics() -> PopupMenuMetrics {
+    let css = |value: f32| rems(value / REM).into();
+    PopupMenuMetrics {
+        text_size: css(12.),
+        label_text_size: css(11.),
+        item_height: css(24.),
+        // 10 px to the 12 px check column, then 10 px to the text at 32 px.
+        indicator_left: css(10.),
+        indicator_gap: css(10.),
+        padding_right: css(8.),
+        item_gap: css(0.),
+        min_width: css(180.),
+        separator_height: css(1.),
+        separator_margin: css(4.),
+    }
 }

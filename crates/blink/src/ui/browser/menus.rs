@@ -19,7 +19,7 @@ use crate::store::Store;
 use crate::theme;
 
 use super::rows::{self, AuthMode, count_label};
-use super::{Browser, css, delete_group, delete_request, update};
+use super::{Browser, css, update};
 
 type Pick = Rc<dyn Fn(Option<u64>, &mut Window, &mut App)>;
 
@@ -104,6 +104,7 @@ pub fn group_menu_tree(
 /// The request row menu.
 pub fn request_menu(
     store: Entity<Store>,
+    browser: WeakEntity<Browser>,
     session_id: u64,
 ) -> impl Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -> PopupMenu + 'static {
     move |menu, window, cx| {
@@ -217,11 +218,15 @@ pub fn request_menu(
                 },
             );
         }
-        let s = store.clone();
+        let browser = browser.clone();
         menu.separator().item(
             destructive(count_label("Delete", count, ""))
                 .disabled(busy)
-                .on_click(move |_, window, cx| delete_request(&s, session_id, window, cx)),
+                .on_click(move |_, _, cx| {
+                    browser
+                        .update(cx, |this, cx| this.request_delete(session_id, cx))
+                        .ok();
+                }),
         )
     }
 }
@@ -332,11 +337,13 @@ pub fn group_menu(
                 )
             });
         }
-        let s = store.clone();
-        menu.separator().item(
-            destructive("Delete group")
-                .on_click(move |_, window, cx| delete_group(&s, group_id, window, cx)),
-        )
+        let browser = browser.clone();
+        menu.separator()
+            .item(destructive("Delete group").on_click(move |_, _, cx| {
+                browser
+                    .update(cx, |this, cx| this.ask_delete_group(group_id, cx))
+                    .ok();
+            }))
     }
 }
 

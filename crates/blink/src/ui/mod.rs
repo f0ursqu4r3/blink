@@ -5,7 +5,6 @@ pub mod browser;
 pub mod code_view;
 pub mod command_center;
 pub mod cookies_dialog;
-pub mod dialogs;
 pub mod group_settings;
 pub mod history_view;
 pub mod key_value_editor;

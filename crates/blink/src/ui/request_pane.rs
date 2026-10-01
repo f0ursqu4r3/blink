@@ -175,6 +175,12 @@ impl RequestPane {
         &self.response
     }
 
+    /// The WebSocket side, once shown, for the UI tests.
+    #[cfg(test)]
+    pub fn websocket(&self) -> Option<&Entity<WebSocketPanel>> {
+        self.websocket.as_ref()
+    }
+
     /// Focus the URL field and select its text (`Cmd/Ctrl+L`).
     pub fn focus_url(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.url.update(cx, |url, cx| url.focus_and_select(window, cx));
@@ -712,6 +718,9 @@ impl Render for RequestPane {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+mod ui_tests;
 
 #[cfg(test)]
 mod tests {

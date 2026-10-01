@@ -3,6 +3,8 @@
 mod drag;
 mod menus;
 mod rows;
+#[cfg(test)]
+mod ui_tests;
 
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
@@ -35,7 +37,6 @@ use gpui_kit::*;
 use crate::actions::{CollapseAllGroups, ImportFile, OpenGroupSettings};
 use crate::store::Store;
 use crate::theme;
-use crate::ui::dialogs;
 use crate::ui::tabs::DraggedRequests;
 use crate::ui::widgets::method_label;
 
@@ -61,6 +62,13 @@ const UNGROUPED_ROW: f32 = 28.;
 const FORM_ROW: f32 = 36.;
 const ROOT_END: f32 = 32.;
 const LIST_PADDING: f32 = 8.;
+/// The delete confirmation strip: 9 px text at `leading-[1.45]`, 9 px
+/// buttons at the inherited 1.5 line height, `py-1.25`, `gap-1.25`.
+const CONFIRM_TEXT: f32 = 9.;
+const CONFIRM_LINE: f32 = CONFIRM_TEXT * 1.45;
+const CONFIRM_BUTTONS: f32 = CONFIRM_TEXT * 1.5;
+const CONFIRM_PADDING: f32 = 5.;
+const CONFIRM_GAP: f32 = 5.;
 const EXPAND_DELAY: Duration = Duration::from_millis(600);
 
 /// Change the workspace through the store.
@@ -72,55 +80,36 @@ pub(super) fn update<R>(
     store.update(cx, |store, cx| store.update_workspace(cx, change))
 }
 
-/// Delete from a request row menu; several targets or a draft ask first.
-pub(super) fn delete_request(store: &Entity<Store>, id: u64, window: &mut Window, cx: &mut App) {
-    let result = update(store, cx, |workspace| workspace.request_delete(id));
-    let DeleteRequest::Confirm(ids) = result else {
-        return;
-    };
-    let workspace = &store.read(cx).workspace;
-    let (title, description) = if ids.len() > 1 {
-        (
-            format!("Delete {} requests?", ids.len()),
-            "Their drafts and responses are lost.",
-        )
-    } else {
-        let label = workspace
-            .session(id)
-            .map(|session| label_of(workspace, session))
-            .unwrap_or_default();
-        (format!("Delete {label}?"), "Its draft and response are lost.")
-    };
-    let store = store.clone();
-    dialogs::confirm(title, description, "Delete", window, cx, move |_, cx| {
-        let ids = ids.clone();
-        update(&store, cx, |workspace| {
-            // A target that started sending since the question stays.
-            let busy = ids
-                .iter()
-                .any(|id| workspace.session(*id).is_some_and(|session| session.busy));
-            if !busy {
-                workspace.remove_requests(&ids);
-            }
-        });
-    });
+/// The text of a delete confirmation strip.
+fn confirm_text(workspace: &Workspace, item: &Item) -> Option<String> {
+    match item {
+        Item::ConfirmDeleteRequests { id, ids, .. } => Some(if ids.len() > 1 {
+            format!(
+                "Delete {} requests? Their drafts and responses are lost.",
+                ids.len()
+            )
+        } else {
+            let label = workspace
+                .session(*id)
+                .map(|session| label_of(workspace, session))
+                .unwrap_or_default();
+            format!("Delete {label}? Its draft and response are lost.")
+        }),
+        Item::ConfirmDeleteGroup { id, .. } => workspace.group(*id).map(|group| {
+            format!(
+                "Delete {}? Requests move to {}. Child groups are promoted.",
+                group.name,
+                rows::parent_name(workspace, group.parent_id)
+            )
+        }),
+        _ => None,
+    }
 }
 
-/// Ask, then delete a group. Its requests and child groups move to its parent.
-pub(super) fn delete_group(store: &Entity<Store>, id: u64, window: &mut Window, cx: &mut App) {
-    let workspace = &store.read(cx).workspace;
-    let Some(group) = workspace.group(id) else {
-        return;
-    };
-    let title = format!("Delete {}?", group.name);
-    let description = format!(
-        "Requests move to {}. Child groups are promoted.",
-        rows::parent_name(workspace, group.parent_id)
-    );
-    let store = store.clone();
-    dialogs::confirm(title, description, "Delete", window, cx, move |_, cx| {
-        update(&store, cx, |workspace| workspace.delete_group(id));
-    });
+/// Height of a confirmation strip with `lines` lines of text: `py-1.25`,
+/// the `leading-[1.45]` text, a `gap-1.25`, the button row, and `border-b`.
+fn confirm_height(lines: usize) -> f32 {
+    CONFIRM_PADDING * 2. + lines.max(1) as f32 * CONFIRM_LINE + CONFIRM_GAP + CONFIRM_BUTTONS + 1.
 }
 
 fn label_of(workspace: &Workspace, session: &blink_core::model::RequestSession) -> String {
@@ -149,6 +138,10 @@ enum Item {
     Tree(usize),
     /// The new child group form below a group row.
     CreateForm { group_id: u64, level: usize },
+    /// The delete confirmation below the request row `id`, for `ids`.
+    ConfirmDeleteRequests { id: u64, ids: Vec<u64>, level: usize },
+    /// The delete confirmation below a group row and its child form.
+    ConfirmDeleteGroup { id: u64, level: usize },
     RootEnd,
 }
 
@@ -176,6 +169,13 @@ pub struct Browser {
     /// The parent of the group form: `Some(None)` for top level.
     creating_parent: Option<Option<u64>>,
     editing_id: Option<u64>,
+    /// The group whose delete confirmation is open (`deletingId`).
+    deleting_group: Option<u64>,
+    /// The request row whose delete confirmation is open, and the requests
+    /// it deletes (`deletingRequestId`, `deletingRequestIds`).
+    deleting_requests: Option<(u64, Vec<u64>)>,
+    /// Width of the list in the last frame, for the confirmation text wrap.
+    list_width: Rc<Cell<Pixels>>,
     grouping_selection: Option<Vec<u64>>,
     tree: Vec<TreeRow>,
     guides: Vec<Option<TreeGuide>>,
@@ -224,6 +224,9 @@ impl Browser {
             name_input,
             creating_parent: None,
             editing_id: None,
+            deleting_group: None,
+            deleting_requests: None,
+            list_width: Rc::new(Cell::new(Pixels::ZERO)),
             grouping_selection: None,
             tree: Vec::new(),
             guides: Vec::new(),
@@ -262,6 +265,7 @@ impl Browser {
     ) {
         self.creating_parent = Some(parent_id);
         self.editing_id = None;
+        self.deleting_group = None;
         self.grouping_selection = session_ids.filter(|ids| !ids.is_empty());
         self.set_draft("", parent_id.is_none(), window, cx);
     }
@@ -278,7 +282,59 @@ impl Browser {
         };
         self.editing_id = Some(id);
         self.creating_parent = None;
+        self.deleting_group = None;
         self.set_draft(&name, false, window, cx);
+    }
+
+    // ── Delete confirmations ───────────────────────────────────────────────
+
+    /// Delete from a request row menu. Several targets, or a draft, ask in
+    /// a strip below the row first.
+    pub(super) fn request_delete(&mut self, id: u64, cx: &mut Context<Self>) {
+        let result = update(&self.store, cx, |workspace| workspace.request_delete(id));
+        if let DeleteRequest::Confirm(ids) = result {
+            self.deleting_requests = Some((id, ids));
+            cx.notify();
+        }
+    }
+
+    fn confirm_delete_requests(&mut self, cx: &mut Context<Self>) {
+        let Some((_, ids)) = self.deleting_requests.take() else {
+            return;
+        };
+        update(&self.store, cx, |workspace| {
+            // A target that started sending since the question stays.
+            let busy = ids
+                .iter()
+                .any(|id| workspace.session(*id).is_some_and(|session| session.busy));
+            if !busy {
+                workspace.remove_requests(&ids);
+            }
+        });
+        cx.notify();
+    }
+
+    fn cancel_delete_requests(&mut self, cx: &mut Context<Self>) {
+        self.deleting_requests = None;
+        cx.notify();
+    }
+
+    /// Ask in a strip below the group row. Its requests and child groups
+    /// move to its parent.
+    pub(super) fn ask_delete_group(&mut self, id: u64, cx: &mut Context<Self>) {
+        self.deleting_group = Some(id);
+        cx.notify();
+    }
+
+    fn confirm_delete_group(&mut self, id: u64, cx: &mut Context<Self>) {
+        update(&self.store, cx, |workspace| workspace.delete_group(id));
+        self.deleting_group = None;
+        cx.notify();
+    }
+
+    fn cancel_delete_group(&mut self, cx: &mut Context<Self>) {
+        self.deleting_group = None;
+        cx.notify();
     }
 
     fn set_draft(&mut self, value: &str, top: bool, window: &mut Window, cx: &mut Context<Self>) {
@@ -609,13 +665,32 @@ impl Browser {
         }
         for (index, row) in self.tree.iter().enumerate() {
             items.push(Item::Tree(index));
-            if let TreeRow::Group { id, level } = row
-                && self.creating_parent == Some(Some(*id))
-            {
-                items.push(Item::CreateForm {
-                    group_id: *id,
-                    level: *level,
-                });
+            match row {
+                TreeRow::Request { id, level } => {
+                    if let Some((row_id, ids)) = &self.deleting_requests
+                        && row_id == id
+                    {
+                        items.push(Item::ConfirmDeleteRequests {
+                            id: *id,
+                            ids: ids.clone(),
+                            level: *level,
+                        });
+                    }
+                }
+                TreeRow::Group { id, level } => {
+                    if self.creating_parent == Some(Some(*id)) {
+                        items.push(Item::CreateForm {
+                            group_id: *id,
+                            level: *level,
+                        });
+                    }
+                    if self.deleting_group == Some(*id) {
+                        items.push(Item::ConfirmDeleteGroup {
+                            id: *id,
+                            level: *level,
+                        });
+                    }
+                }
             }
         }
         items.push(Item::RootEnd);
@@ -628,7 +703,8 @@ impl Browser {
         }
     }
 
-    fn item_height(&self, item: &Item) -> f32 {
+    /// Height in CSS pixels. A confirmation strip grows with its wrapped text.
+    fn item_height(&self, item: &Item, window: &Window, cx: &App) -> f32 {
         match item {
             Item::Padding => LIST_PADDING,
             Item::Ungrouped => UNGROUPED_ROW,
@@ -637,8 +713,50 @@ impl Browser {
                 TreeRow::Group { .. } => GROUP_ROW,
             },
             Item::CreateForm { .. } => FORM_ROW,
+            Item::ConfirmDeleteRequests { level, .. } | Item::ConfirmDeleteGroup { level, .. } => {
+                let text = confirm_text(&self.store.read(cx).workspace, item).unwrap_or_default();
+                confirm_height(self.confirm_lines(&text, *level, window))
+            }
             Item::RootEnd => ROOT_END,
         }
+    }
+
+    /// Lines of the confirmation text at the strip's text width, as the
+    /// rendered text wraps it.
+    fn confirm_lines(&self, text: &str, level: usize, window: &Window) -> usize {
+        let zoom = window.rem_size().as_f32() / 16.;
+        let mut width = self.list_width.get();
+        if width <= Pixels::ZERO {
+            // Before the first frame: the card width inside its border.
+            width = px((WIDTH - 2.) * zoom);
+        }
+        let wrap = width - px((rows::indent(level + 1) + 9.) * zoom);
+        if text.is_empty() || wrap <= Pixels::ZERO {
+            return 1;
+        }
+        let run = TextRun {
+            len: text.len(),
+            font: font(theme::MONO),
+            color: Hsla::default(),
+            background_color: None,
+            underline: None,
+            strikethrough: None,
+        };
+        window
+            .text_system()
+            .shape_text(
+                SharedString::from(text.to_string()),
+                px(CONFIRM_TEXT * zoom),
+                &[run],
+                Some(wrap),
+                None,
+            )
+            .map_or(1, |lines| {
+                lines
+                    .iter()
+                    .map(|line| line.wrap_boundaries().len() + 1)
+                    .sum()
+            })
     }
 
     fn render_items(
@@ -664,6 +782,9 @@ impl Browser {
                 Item::CreateForm { group_id, level } => {
                     self.render_child_form(group_id, level, cx)
                 }
+                Item::ConfirmDeleteRequests { .. } | Item::ConfirmDeleteGroup { .. } => {
+                    self.render_confirm(&item, window, cx)
+                }
                 Item::RootEnd => div()
                     .h(css(ROOT_END))
                     .child(self.drop_recorder(TreeTarget::Root(RootPosition::End), RowKind::Group))
@@ -681,6 +802,24 @@ impl Browser {
                 kind,
                 bounds,
             }),
+            |_, _, _, _| {},
+        )
+        .absolute()
+        .inset_0()
+    }
+
+    /// Records the list width. A change re-renders an open confirmation
+    /// strip at its new text wrap.
+    fn width_recorder(&self, cx: &Context<Self>) -> impl IntoElement {
+        let width = self.list_width.clone();
+        let confirming = self.deleting_group.is_some() || self.deleting_requests.is_some();
+        let view = cx.entity().downgrade();
+        canvas(
+            move |bounds, _, cx| {
+                if width.replace(bounds.size.width) != bounds.size.width && confirming {
+                    view.update(cx, |_, cx| cx.notify()).ok();
+                }
+            },
             |_, _, _, _| {},
         )
         .absolute()
@@ -783,6 +922,7 @@ impl Browser {
         let this = cx.entity().downgrade();
         div()
             .id(("browser-request", id))
+            .test_support()
             .relative()
             .flex()
             .w_full()
@@ -879,7 +1019,7 @@ impl Browser {
                     })
                 },
             )
-            .context_menu(menus::request_menu(self.store.clone(), id))
+            .context_menu(menus::request_menu(self.store.clone(), cx.entity().downgrade(), id))
             .into_any_element()
     }
 
@@ -1061,6 +1201,7 @@ impl Browser {
         let can_drag = !editing && !focused;
         div()
             .id(("browser-group", id))
+            .test_support()
             .group(group_name)
             .relative()
             .flex()
@@ -1199,6 +1340,76 @@ impl Browser {
             .h(css(FORM_ROW))
             .pl(css(rows::indent(level + 1)))
             .pr(css(9.))
+            .into_any_element()
+    }
+
+    /// The delete confirmation strip below a request or group row.
+    fn render_confirm(&self, item: &Item, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let colors = theme::colors(cx);
+        let workspace = &self.store.read(cx).workspace;
+        let text = confirm_text(workspace, item).unwrap_or_default();
+        let height = self.item_height(item, window, cx);
+        let (level, key, busy) = match item {
+            Item::ConfirmDeleteRequests { id, ids, level } => (
+                *level,
+                ("browser-confirm-delete-request", *id),
+                ids.iter()
+                    .any(|id| workspace.session(*id).is_some_and(|session| session.busy)),
+            ),
+            Item::ConfirmDeleteGroup { id, level } => {
+                (*level, ("browser-confirm-delete-group", *id), false)
+            }
+            _ => return div().into_any_element(),
+        };
+        let request = matches!(item, Item::ConfirmDeleteRequests { .. });
+        let group_id = match item {
+            Item::ConfirmDeleteGroup { id, .. } => Some(*id),
+            _ => None,
+        };
+        let delete = text_button("browser-confirm-delete", "Delete", cx)
+            .h(css(CONFIRM_BUTTONS))
+            .disabled(busy)
+            .on_click(cx.listener(move |this, _, _, cx| match group_id {
+                Some(id) => this.confirm_delete_group(id, cx),
+                None => this.confirm_delete_requests(cx),
+            }));
+        let cancel = text_button("browser-confirm-cancel", "Cancel", cx)
+            .h(css(CONFIRM_BUTTONS))
+            .on_click(cx.listener(move |this, _, _, cx| {
+                if request {
+                    this.cancel_delete_requests(cx);
+                } else {
+                    this.cancel_delete_group(cx);
+                }
+            }));
+        div()
+            .id(key)
+            .test_support()
+            .when(request, |this| this.aria_label("Confirm delete request"))
+            .flex()
+            .flex_col()
+            .items_start()
+            .gap(css(CONFIRM_GAP))
+            .w_full()
+            .h(css(height))
+            .py(css(CONFIRM_PADDING))
+            .pl(css(rows::indent(level + 1)))
+            .pr(css(9.))
+            .border_b_1()
+            .border_color(colors.border)
+            .bg(colors.secondary)
+            .font_family(theme::MONO)
+            .text_size(css(CONFIRM_TEXT))
+            .text_color(colors.muted_foreground)
+            .child(div().w_full().line_height(css(CONFIRM_LINE)).child(text))
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .gap(css(CONFIRM_GAP))
+                    .child(delete)
+                    .child(cancel),
+            )
             .into_any_element()
     }
 
@@ -1356,7 +1567,7 @@ impl Render for Browser {
         let sizes: Rc<Vec<Size<Pixels>>> = Rc::new(
             self.items
                 .iter()
-                .map(|item| size(px(0.), px(self.item_height(item) * zoom)))
+                .map(|item| size(px(0.), px(self.item_height(item, window, cx) * zoom)))
                 .collect(),
         );
         let narrow = window.viewport_size().width <= px(NARROW_WIDTH);
@@ -1388,6 +1599,7 @@ impl Render for Browser {
                     .relative()
                     .flex_1()
                     .min_h_0()
+                    .child(self.width_recorder(cx))
                     .child(
                         v_virtual_list(view, "browser-rows", sizes, |this, range, window, cx| {
                             this.render_items(range, window, cx)

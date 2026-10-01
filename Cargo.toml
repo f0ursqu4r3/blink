@@ -1,6 +1,8 @@
 [workspace]
 resolver = "2"
 members = ["crates/blink", "crates/blink-core"]
+# The patched GPUI Kit crate is a dependency, not a workspace member.
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.1.0"
@@ -14,3 +16,7 @@ lto = true
 opt-level = 3
 panic = "abort"
 strip = true
+
+# Menu row metrics. See vendor/gpui-component/BLINK-PATCH.md.
+[patch.crates-io]
+gpui-component = { path = "vendor/gpui-component" }

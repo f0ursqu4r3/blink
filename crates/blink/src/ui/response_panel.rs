@@ -2,6 +2,8 @@
 //! `JsonTreeView.vue`, `EventList.vue`, and `TimingCard.vue`.
 
 mod event_list;
+#[cfg(test)]
+mod ui_tests;
 mod json_tree;
 mod timing_card;
 
@@ -120,6 +122,17 @@ pub fn save_error_message(reason: &str) -> String {
         "Cannot save the file: {}.",
         reason.strip_suffix('.').unwrap_or(reason)
     )
+}
+
+/// Where the save dialog opens: `~/Downloads` when it exists, else the
+/// home folder, else the root.
+fn save_directory(home: Option<std::ffi::OsString>) -> PathBuf {
+    let home = home.map(PathBuf::from).filter(|path| path.is_dir());
+    home.as_ref()
+        .map(|home| home.join("Downloads"))
+        .filter(|path| path.is_dir())
+        .or(home)
+        .unwrap_or_else(|| PathBuf::from("/"))
 }
 
 /// Derived response data, rebuilt when the response or jq output changes.
@@ -500,6 +513,23 @@ impl ResponsePanel {
         self.store.update(cx, |store, cx| store.copy(text, cx));
     }
 
+    /// The history view and whether it is shown, for the UI tests.
+    #[cfg(test)]
+    pub fn history_view(&self) -> &Entity<HistoryView> {
+        &self.history
+    }
+
+    #[cfg(test)]
+    pub fn history_shown(&self) -> bool {
+        self.history_open
+    }
+
+    /// The scroll offset of the plain body view, for the UI tests.
+    #[cfg(test)]
+    pub fn body_scroll(&self, cx: &App) -> f64 {
+        self.code.read(cx).scroll_offset()
+    }
+
     pub fn toggle_history(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         self.history_open = !self.history_open;
         cx.notify();
@@ -518,10 +548,7 @@ impl ResponsePanel {
         }
         let name = suggested_file_name(&response, &session.draft.url);
         let engine = self.store.read(cx).engine.clone();
-        let directory = std::env::var_os("HOME")
-            .map(|home| PathBuf::from(home).join("Downloads"))
-            .filter(|path| path.is_dir())
-            .unwrap_or_else(|| PathBuf::from("/"));
+        let directory = save_directory(std::env::var_os("HOME"));
         let picked = cx.prompt_for_new_path(&directory, Some(&name));
         self.saving = true;
         self.save_error.clear();

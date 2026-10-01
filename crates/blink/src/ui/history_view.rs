@@ -575,6 +575,9 @@ impl Render for HistoryView {
 }
 
 #[cfg(test)]
+mod ui_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     // `gpui_kit::*` exports its own `test` attribute; use the standard one.

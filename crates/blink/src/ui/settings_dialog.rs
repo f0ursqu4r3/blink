@@ -558,6 +558,9 @@ impl Render for Settings {
 }
 
 #[cfg(test)]
+mod ui_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use core::prelude::v1::test;

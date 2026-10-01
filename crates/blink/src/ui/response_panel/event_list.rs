@@ -49,6 +49,12 @@ impl EventList {
         }
     }
 
+    /// Rows in the list after the last render, for the UI tests.
+    #[cfg(test)]
+    pub fn rows(&self) -> usize {
+        self.list.item_count()
+    }
+
     pub fn render(&mut self, events: &[SseEvent], live: bool, cx: &App) -> AnyElement {
         let colors = theme::colors(cx);
         let hidden = events.len().saturating_sub(RENDER_LIMIT);
