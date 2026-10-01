@@ -1,8 +1,8 @@
-//! Headless flow: files picked in the (simulated) open dialog are granted
-//! through the engine and sent by the request.
+//! Headless flows: files picked in the (simulated) open dialog are granted
+//! through the engine and sent by the request; Ctrl+Space completions.
 
 use blink_core::model::BodyMode;
-use gpui_kit::{Entity, TestAppContext};
+use gpui_kit::{Entity, TestAppContext, VisualTestContext};
 
 use super::RequestEditor;
 use crate::test_support::{self, Harness, Reply, serve, wait};
@@ -105,4 +105,51 @@ fn sends_a_picked_file_body_and_a_multipart_file_part(cx: &mut TestAppContext) {
     assert!(text.to_ascii_lowercase().contains("content-type: multipart/form-data; boundary="));
     assert!(text.contains("name=\"report\"; filename=\"report.csv\""), "{text}");
     assert!(test_support::find(body(&request), &content).is_some());
+}
+
+#[gpui_kit::test]
+fn ctrl_space_opens_completions_without_typing(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let id = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace
+                .global_definitions
+                .insert("host".into(), "api.example.com".into());
+            workspace.session_mut(id).unwrap().view.request_tab = "body".into();
+        });
+    });
+    let text = r#"{"url": "{{ho"#;
+    harness.edit_draft(cx, |draft| {
+        draft.method = "POST".into();
+        draft.body_mode = BodyMode::Json;
+        draft.body = text.into();
+    });
+    harness.draw(cx);
+    let editor = editor(&harness, cx);
+    let body = cx.read(|cx| editor.read(cx).body.clone());
+    harness.update(cx, |window, cx| {
+        body.update(cx, |body, cx| {
+            body.focus(window, cx);
+            body.set_selected_range(text.len()..text.len(), cx);
+        });
+    });
+    harness.draw(cx);
+    let open = |cx: &TestAppContext| cx.read(|cx| body.read(cx).completion_menu_state().open);
+    assert!(!open(cx), "moving the cursor does not open the menu");
+
+    VisualTestContext::from_window(harness.window, cx).simulate_keystrokes("ctrl-space");
+    harness.draw(cx);
+    let (labels, query) = cx.read(|cx| {
+        let menu = body.read(cx).completion_menu_state();
+        let labels: Vec<_> = menu.items.iter().map(|item| item.label.clone()).collect();
+        (labels, menu.query.clone())
+    });
+    assert!(open(cx));
+    assert_eq!(labels, ["host", "_.host"]);
+    assert_eq!(query, "ho");
+    assert_eq!(cx.read(|cx| body.read(cx).value().to_string()), text, "no text typed");
 }

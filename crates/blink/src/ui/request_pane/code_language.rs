@@ -16,13 +16,14 @@ use blink_core::token_hints::{
 };
 use gpui_kit::component::highlighter::{HighlightTheme, LanguageRegistry};
 use gpui_kit::component::input::{
-    CompletionProvider, DocumentRangeSemanticTokensProvider, HoverProvider, Rope, RopeExt as _,
+    CompletionProvider, DocumentRangeSemanticTokensProvider, EditorState, HoverProvider, Rope,
+    RopeExt as _,
 };
 use gpui_kit::*;
 use lsp_types::{
     CompletionContext, CompletionItem, CompletionItemKind, CompletionResponse, CompletionTextEdit,
-    Documentation, Hover, HoverContents, MarkedString, SemanticToken, SemanticTokenType,
-    SemanticTokens, SemanticTokensLegend, TextEdit,
+    CompletionTriggerKind, Documentation, Hover, HoverContents, MarkedString, SemanticToken,
+    SemanticTokenType, SemanticTokens, SemanticTokensLegend, TextEdit,
 };
 use serde_json::json;
 
@@ -284,6 +285,51 @@ impl CompletionProvider for BodyLanguage {
     }
 }
 
+/// Start of the word that ends at `offset`: the text the menu filters on.
+fn word_start(text: &str, offset: usize) -> usize {
+    text[..offset]
+        .char_indices()
+        .rev()
+        .take_while(|(_, c)| c.is_alphanumeric() || *c == '_')
+        .last()
+        .map_or(offset, |(at, _)| at)
+}
+
+/// Open the completion menu at the cursor without typing, as Ctrl+Space
+/// does in CodeMirror. The editor only asks its provider after typed text.
+pub fn show_completions(state: &Entity<EditorState>, window: &mut Window, cx: &mut App) {
+    let (provider, text, offset) = {
+        let state = state.read(cx);
+        let Some(provider) = state.lsp().completion_provider.clone() else {
+            return;
+        };
+        (provider, state.text().clone(), state.cursor())
+    };
+    let source = text.to_string();
+    let from = word_start(&source, offset);
+    let query = source[from..offset].to_string();
+    let trigger = CompletionContext {
+        trigger_kind: CompletionTriggerKind::INVOKED,
+        trigger_character: None,
+    };
+    let task = provider.completions(&text, offset, trigger, window, cx);
+    let state = state.downgrade();
+    window
+        .spawn(cx, async move |cx| {
+            let items = match task.await? {
+                CompletionResponse::Array(items) => items,
+                CompletionResponse::List(list) => list.items,
+            };
+            state.update_in(cx, |state, window, cx| {
+                // Skip a stale reply: the cursor moved or focus left.
+                if state.cursor() == offset && state.focus_handle(cx).is_focused(window) {
+                    state.present_completion_items(from, query, items, cx);
+                }
+            })
+        })
+        .detach_and_log_err(cx);
+}
+
 /// The token references in `text`, as semantic tokens in legend order.
 fn semantic_tokens(rope: &Rope, text: &str, tokens: Option<&InterpolationContext>) -> Vec<SemanticToken> {
     let mut data = Vec::new();
@@ -387,6 +433,14 @@ mod tests {
         let mut local = Definitions::new();
         local.insert("host".into(), "api.test".into());
         InterpolationContext::new(local, Definitions::new())
+    }
+
+    #[test]
+    fn word_start_finds_the_word_before_the_cursor() {
+        assert_eq!(word_start("{ pages { li", 12), 10);
+        assert_eq!(word_start("{ pages { ", 10), 10);
+        assert_eq!(word_start("{{_é_x", 7), 2);
+        assert_eq!(word_start("", 0), 0);
     }
 
     #[test]

@@ -26,6 +26,7 @@ actions!(
         ZoomOut,
         ZoomReset,
         FindInResponse,
+        ShowCompletions,
         Unfocus,
         Quit,
     ]
@@ -75,6 +76,8 @@ pub const COMMAND_CENTER_CONTEXT: &str = "CommandCenter";
 /// App shortcuts: not while the command center or a menu is open, as
 /// `onKey` in `App.vue` returned early for those surfaces.
 const SHORTCUTS: &str = "BlinkApp && !CommandCenter && !PopupMenu";
+/// Key context of the body and variables editors.
+pub const BODY_EDITOR_CONTEXT: &str = "BodyEditor";
 /// Undo delete and Escape unfocus: also not in text fields, which keep their
 /// own Cmd+Z and Escape (`isEditable`).
 const OUTSIDE_INPUTS: &str = "BlinkApp && !CommandCenter && !PopupMenu && !Input";
@@ -152,5 +155,7 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-z", UndoDelete, Some(OUTSIDE_INPUTS)),
         KeyBinding::new("escape", Unfocus, Some(OUTSIDE_INPUTS)),
         KeyBinding::new("secondary-q", Quit, None),
+        // CodeMirror's `startCompletion`.
+        KeyBinding::new("ctrl-space", ShowCompletions, Some(BODY_EDITOR_CONTEXT)),
     ]);
 }

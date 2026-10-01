@@ -25,12 +25,14 @@ use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::actions::SendRequest;
+use crate::actions::{BODY_EDITOR_CONTEXT, SendRequest, ShowCompletions};
 use crate::store::{Store, StoreEvent};
 use crate::theme;
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 use crate::ui::request_pane::checks::ChecksEditor;
-use crate::ui::request_pane::code_language::{BodyLanguage, apply_highlight_theme, register_graphql};
+use crate::ui::request_pane::code_language::{
+    BodyLanguage, apply_highlight_theme, register_graphql, show_completions,
+};
 use crate::ui::request_pane::common::{
     edit_draft, fill_select, help_link, replace_draft, select_button, session_context,
 };
@@ -1298,9 +1300,15 @@ fn with_features(mut state: EditorState, features: &Rc<BodyLanguage>) -> EditorS
     state
 }
 
-/// A body code editor that leaves `Cmd/Ctrl+Enter` to the app.
+/// A body code editor that leaves `Cmd/Ctrl+Enter` to the app and opens
+/// completions on `Ctrl+Space`.
 fn code_editor(state: &Entity<EditorState>, min_height: Pixels) -> impl IntoElement {
+    let completions = state.clone();
     div()
+        .key_context(BODY_EDITOR_CONTEXT)
+        .on_action(move |_: &ShowCompletions, window, cx| {
+            show_completions(&completions, window, cx);
+        })
         .flex()
         .flex_col()
         .flex_1()
