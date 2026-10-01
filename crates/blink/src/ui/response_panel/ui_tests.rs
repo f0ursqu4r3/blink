@@ -1,9 +1,10 @@
-//! Headless flows through the real response panel: saving bodies and
-//! formatting HTML.
+//! Headless flows through the real response panel: saving bodies,
+//! formatting HTML, the JSON views, and selecting body text.
 
 use core::prelude::v1::test;
 
-use gpui_kit::{Entity, TestAppContext};
+use blink_core::model::JsonView;
+use gpui_kit::{Entity, Modifiers, MouseButton, MouseDownEvent, TestAppContext, VisualTestContext};
 
 use super::ResponsePanel;
 use crate::actions::SendRequest;
@@ -159,6 +160,108 @@ fn pretty_formats_html_and_raw_shows_the_body(cx: &mut TestAppContext) {
         panel.update(cx, |panel, cx| panel.toggle_pretty(window, cx));
     });
     assert!(!harness.session(cx, |s| s.view.pretty));
+}
+
+#[gpui_kit::test]
+fn json_shows_as_a_tree_formatted_text_or_raw(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let body = r#"{"name":"blink","tags":[1,2]}"#;
+    let (base, _requests) = serve(move |_| Reply::ok("application/json", body.as_bytes().to_vec()));
+    let harness = test_support::open(cx, &engine);
+
+    send(&harness, cx, &format!("{base}/item"));
+    let panel = panel(&harness, cx);
+    let tree = |cx: &TestAppContext| cx.read(|cx| panel.read(cx).tree_shown(cx));
+    let code = |cx: &TestAppContext| {
+        cx.read(|cx| {
+            let panel = panel.read(cx);
+            panel.code.read(cx).text().to_string()
+        })
+    };
+    assert!(tree(cx), "the tree is the default pretty view");
+    assert_eq!(harness.session(cx, |s| s.view.json_view), JsonView::Tree);
+
+    let show = |view, cx: &mut TestAppContext| {
+        panel.update(cx, |panel, cx| panel.set_json_view(view, cx));
+        harness.draw(cx);
+    };
+    show(Some(JsonView::Formatted), cx);
+    assert!(!tree(cx));
+    assert!(harness.session(cx, |s| s.view.pretty));
+    assert_eq!(
+        code(cx),
+        "{\n  \"name\": \"blink\",\n  \"tags\": [\n    1,\n    2\n  ]\n}"
+    );
+
+    // Raw keeps the chosen pretty view for the next time.
+    show(None, cx);
+    assert!(!tree(cx));
+    assert!(!harness.session(cx, |s| s.view.pretty));
+    assert_eq!(
+        harness.session(cx, |s| s.view.json_view),
+        JsonView::Formatted
+    );
+    assert_eq!(code(cx), body);
+
+    show(Some(JsonView::Tree), cx);
+    assert!(tree(cx));
+}
+
+#[gpui_kit::test]
+fn the_pointer_selects_body_text_to_copy(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let (base, _requests) = serve(|request| {
+        let body = if request.starts_with(b"GET /again") {
+            "delta"
+        } else {
+            "alpha\nbeta\ngamma"
+        };
+        Reply::ok("text/plain", body.as_bytes().to_vec())
+    });
+    let harness = test_support::open(cx, &engine);
+    send(&harness, cx, &format!("{base}/text"));
+    let panel = panel(&harness, cx);
+    let code = cx.read(|cx| panel.read(cx).code.clone());
+    let at = |row, offset, cx: &TestAppContext| {
+        cx.read(|cx| code.read(cx).position_of(row, offset))
+            .expect("the row is drawn")
+    };
+    let mut visual = VisualTestContext::from_window(harness.window, cx);
+
+    // Drag from "a|lpha" to "gam|ma", then copy.
+    let (from, to) = (at(0, 1, &visual), at(2, 3, &visual));
+    visual.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+    visual.simulate_mouse_move(to, MouseButton::Left, Modifiers::none());
+    visual.simulate_mouse_up(to, MouseButton::Left, Modifiers::none());
+    visual.simulate_keystrokes("cmd-c");
+    let copied = visual.read_from_clipboard().and_then(|item| item.text());
+    assert_eq!(copied.as_deref(), Some("lpha\nbeta\ngam"));
+
+    // A double click selects a word; Select All selects every line.
+    visual.simulate_event(MouseDownEvent {
+        position: at(1, 2, &visual),
+        button: MouseButton::Left,
+        modifiers: Modifiers::none(),
+        click_count: 2,
+        first_mouse: false,
+    });
+    assert_eq!(
+        visual.read(|cx| code.read(cx).selected_text()).as_deref(),
+        Some("beta")
+    );
+    visual.simulate_keystrokes("cmd-a");
+    assert_eq!(
+        visual.read(|cx| code.read(cx).selected_text()).as_deref(),
+        Some("alpha\nbeta\ngamma")
+    );
+
+    // A new response clears the selection.
+    send(&harness, cx, &format!("{base}/again"));
+    assert_eq!(cx.read(|cx| code.read(cx).selected_text()), None);
 }
 
 #[test]

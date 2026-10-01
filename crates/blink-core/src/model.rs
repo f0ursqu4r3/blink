@@ -427,6 +427,23 @@ pub struct HistoryEntry {
     pub timing: Option<ResponseTiming>,
 }
 
+/// How the pretty view shows a JSON body.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum JsonView {
+    /// The collapsible tree.
+    #[default]
+    Tree,
+    /// The indented text.
+    Formatted,
+}
+
+impl JsonView {
+    fn is_tree(&self) -> bool {
+        *self == JsonView::Tree
+    }
+}
+
 /// Per-request editor state that survives a restart.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -436,6 +453,10 @@ pub struct RequestView {
     /// One of body, headers, tests, events.
     pub response_tab: String,
     pub pretty: bool,
+    /// The pretty view of JSON bodies. Snapshots leave out the default, so
+    /// they stay as the TypeScript app wrote them.
+    #[serde(default, skip_serializing_if = "JsonView::is_tree")]
+    pub json_view: JsonView,
     pub wrap: bool,
     pub response_scroll: f64,
 }
@@ -446,6 +467,7 @@ impl Default for RequestView {
             request_tab: "query".into(),
             response_tab: "body".into(),
             pretty: true,
+            json_view: JsonView::Tree,
             wrap: false,
             response_scroll: 0.0,
         }

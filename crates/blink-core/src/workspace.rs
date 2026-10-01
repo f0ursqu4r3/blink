@@ -411,6 +411,10 @@ fn parse_snapshot(content: &str) -> Checked<(Value, u64)> {
             str_of(view.get("responseTab")),
             "body" | "headers" | "tests" | "events"
         ))?;
+        check(matches!(
+            view.get("jsonView").map(|value| str_of(Some(value))),
+            None | Some("tree" | "formatted")
+        ))?;
         check(
             boolean(view.get("pretty"))
                 && boolean(view.get("wrap"))
@@ -811,6 +815,7 @@ mod tests {
         first.draft.body = "{\"id\":9223372036854775807}".into();
         first.view.request_tab = "body".into();
         first.view.pretty = false;
+        first.view.json_view = crate::model::JsonView::Formatted;
         first.view.wrap = true;
         first.view.response_scroll = 250.0;
         first.sent_fingerprint = draft_fingerprint(&first.draft);
@@ -932,6 +937,23 @@ mod tests {
         data["tabs"][0]["draft"]["auth"] = "none".into();
         let tab = data["tabs"][0].clone();
         data["tabs"].as_array_mut().unwrap().push(tab);
+        assert!(decode(&data).is_err());
+    }
+
+    #[test]
+    fn reads_the_json_view_and_defaults_it_to_the_tree() {
+        let session = create_session(None);
+        let mut data = parse(&one(&session));
+        data["tabs"][0]["view"]["jsonView"] = "formatted".into();
+        let view = &decode(&data).unwrap().sessions[0].view;
+        assert_eq!(view.json_view, crate::model::JsonView::Formatted);
+        // Workspaces from before the setting.
+        remove(&mut data["tabs"][0]["view"], "jsonView");
+        let view = &decode(&data).unwrap().sessions[0].view;
+        assert_eq!(view.json_view, crate::model::JsonView::Tree);
+        data["tabs"][0]["view"]["jsonView"] = "table".into();
+        assert!(decode(&data).is_err());
+        data["tabs"][0]["view"]["jsonView"] = true.into();
         assert!(decode(&data).is_err());
     }
 

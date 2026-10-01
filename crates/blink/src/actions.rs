@@ -1,6 +1,7 @@
 //! Application actions and their shortcuts. The shortcut table matches the
 //! README and the command list in `App.vue`.
 
+use gpui_kit::component::input;
 use gpui_kit::{Action, App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
 actions!(
@@ -74,6 +75,8 @@ pub const COMMAND_CENTER_CONTEXT: &str = "CommandCenter";
 /// App shortcuts: not while the command center or a menu is open, as
 /// `onKey` in `App.vue` returned early for those surfaces.
 const SHORTCUTS: &str = "BlinkApp && !CommandCenter && !PopupMenu";
+/// Key context of the read-only response body text.
+pub const CODE_VIEW_CONTEXT: &str = "CodeView";
 /// Key context of the body and variables editors.
 pub const BODY_EDITOR_CONTEXT: &str = "BodyEditor";
 /// Undo delete and Escape unfocus: also not in text fields, which keep their
@@ -82,7 +85,6 @@ const OUTSIDE_INPUTS: &str = "BlinkApp && !CommandCenter && !PopupMenu && !Input
 
 /// The macOS menu bar, as Tauri's default menu gave the Vue app.
 fn menus() -> Vec<Menu> {
-    use gpui_kit::component::input;
     vec![
         Menu::new("Blink").items([
             MenuItem::os_submenu("Services", SystemMenuType::Services),
@@ -155,5 +157,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("secondary-q", Quit, None),
         // CodeMirror's `startCompletion`.
         KeyBinding::new("ctrl-space", ShowCompletions, Some(BODY_EDITOR_CONTEXT)),
+        // The Edit menu's Copy and Select All, for the response body text.
+        KeyBinding::new("secondary-c", input::Copy, Some(CODE_VIEW_CONTEXT)),
+        KeyBinding::new("secondary-a", input::SelectAll, Some(CODE_VIEW_CONTEXT)),
     ]);
 }

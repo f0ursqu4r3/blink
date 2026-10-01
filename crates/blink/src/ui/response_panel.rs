@@ -14,7 +14,7 @@ use blink_core::find::{Finder, filter_headers, find_status};
 use blink_core::html::format_html;
 use blink_core::jq::run_jq;
 use blink_core::json::format_json;
-use blink_core::model::{ApiResponse, RequestSession, SseEvent};
+use blink_core::model::{ApiResponse, JsonView, RequestSession, RequestView, SseEvent};
 use blink_core::preferences::transport_options;
 use blink_core::request::format_bytes;
 use blink_core::response_body::{BODY_UNAVAILABLE, can_save_response, suggested_file_name};
@@ -24,7 +24,7 @@ use blink_core::sse::{is_event_stream, parse_sse};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::input::{Escape, Input, InputEvent, InputState};
-use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenuItem};
+use gpui_kit::component::menu::{ContextMenuExt as _, DropdownMenu as _, PopupMenu, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Disableable as _, Icon, Selectable as _, Sizable as _};
 use gpui_kit::prelude::FluentBuilder as _;
@@ -346,8 +346,8 @@ impl ResponsePanel {
         }
     }
 
-    fn shows_json_tree(&self, pretty: bool) -> bool {
-        pretty && self.cache.parsed.is_some()
+    fn shows_json_tree(&self, view: &RequestView) -> bool {
+        view.pretty && view.json_view == JsonView::Tree && self.cache.parsed.is_some()
     }
 
     /// Push the body, find, and filter to the body view.
@@ -371,7 +371,7 @@ impl ResponsePanel {
             (String::new(), search)
         };
         let text = self.text(view.pretty);
-        if self.shows_json_tree(view.pretty) {
+        if self.shows_json_tree(&view) {
             let content = TreeContent {
                 text,
                 filter,
@@ -399,12 +399,14 @@ impl ResponsePanel {
         }
     }
 
-    fn pretty(&self, cx: &App) -> bool {
-        self.session(cx).is_some_and(|session| session.view.pretty)
+    /// Whether the body shows as the JSON tree, not as text.
+    fn tree_shown(&self, cx: &App) -> bool {
+        self.session(cx)
+            .is_some_and(|session| self.shows_json_tree(&session.view))
     }
 
     fn finder<'a>(&self, cx: &'a App) -> &'a Finder {
-        if self.shows_json_tree(self.pretty(cx)) {
+        if self.tree_shown(cx) {
             self.tree.read(cx).finder()
         } else {
             self.code.read(cx).finder()
@@ -412,7 +414,7 @@ impl ResponsePanel {
     }
 
     fn find_step(&mut self, direction: isize, cx: &mut Context<Self>) {
-        if self.shows_json_tree(self.pretty(cx)) {
+        if self.tree_shown(cx) {
             self.tree
                 .update(cx, |tree, cx| tree.find_step(direction, cx));
         } else {
@@ -429,7 +431,7 @@ impl ResponsePanel {
                 .timer(Duration::from_millis(200))
                 .await;
             this.update(cx, |this, cx| {
-                let offset = if this.shows_json_tree(this.pretty(cx)) {
+                let offset = if this.tree_shown(cx) {
                     this.tree.read(cx).scroll_offset()
                 } else {
                     this.code.read(cx).scroll_offset()
@@ -596,6 +598,16 @@ impl ResponsePanel {
         self.update_session(cx, |session| session.view.pretty = !session.view.pretty);
     }
 
+    /// Show a JSON body as `json_view`, or raw for `None`.
+    pub fn set_json_view(&mut self, json_view: Option<JsonView>, cx: &mut Context<Self>) {
+        self.update_session(cx, |session| {
+            session.view.pretty = json_view.is_some();
+            if let Some(json_view) = json_view {
+                session.view.json_view = json_view;
+            }
+        });
+    }
+
     fn execute_jq(&mut self, cx: &mut Context<Self>) {
         let query = self.jq_input.read(cx).value().to_string();
         let Some(response) = self
@@ -696,6 +708,36 @@ fn ghost_button(id: impl Into<ElementId>, cx: &App) -> Button {
         .text_size(r(12.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(theme::colors(cx).muted_foreground)
+}
+
+/// The body view of a JSON response: a pretty view, or raw for `None`.
+fn body_view_label(view: Option<JsonView>) -> &'static str {
+    match view {
+        Some(JsonView::Tree) => "Tree",
+        Some(JsonView::Formatted) => "Formatted",
+        None => "Raw",
+    }
+}
+
+/// The JSON body views as checked menu items: the two pretty views, then raw.
+fn json_view_items(
+    menu: PopupMenu,
+    panel: &Entity<ResponsePanel>,
+    current: Option<JsonView>,
+) -> PopupMenu {
+    let item = |menu: PopupMenu, view: Option<JsonView>| {
+        let panel = panel.clone();
+        menu.item(
+            PopupMenuItem::new(body_view_label(view))
+                .checked(view == current)
+                .on_click(move |_, _, cx| {
+                    panel.update(cx, |panel, cx| panel.set_json_view(view, cx));
+                }),
+        )
+    };
+    let menu = item(menu.label("Pretty"), Some(JsonView::Tree));
+    let menu = item(menu, Some(JsonView::Formatted));
+    item(menu.separator(), None)
 }
 
 /// A 28 px ghost icon button, as the Vue `size-7` buttons.
@@ -898,11 +940,15 @@ impl ResponsePanel {
         let colors = theme::colors(cx);
         let tab = session.view.response_tab.as_str();
         let pretty = session.view.pretty;
+        let json_view = session.view.json_view;
         let wrap = session.view.wrap;
         let truncated = response.is_truncated();
         let binary = response.is_binary();
         let body_tab = tab == "body";
         let formatted = self.cache.parsed.is_some() || self.cache.markup.is_some();
+        // JSON has two pretty views, so its button opens a menu.
+        let json = self.cache.parsed.is_some() && !truncated;
+        let body_view = pretty.then_some(json_view);
         let savable = can_save_response(response);
         let show_tests = shows_tests(session);
         let tests = session.test_results.clone().unwrap_or_default();
@@ -959,23 +1005,40 @@ impl ResponsePanel {
         let tools = div()
             .flex()
             .items_center()
-            .when(body_tab && (formatted || truncated) && !binary, |this| {
+            .when(body_tab && json && !binary, |this| {
+                let menu_entity = entity.clone();
                 this.child(
-                    ghost_button("response-pretty", cx)
+                    ghost_button("response-json-view", cx)
                         .h(r(28.))
                         .px(r(10.))
-                        .label(if pretty && !truncated {
-                            "Pretty"
-                        } else {
-                            "Raw"
-                        })
-                        .disabled(truncated)
-                        .when(truncated, |this| this.tooltip(UNAVAILABLE))
-                        .on_click(
-                            cx.listener(|this, _, window, cx| this.toggle_pretty(window, cx)),
-                        ),
+                        .gap(r(4.))
+                        .label(body_view_label(body_view))
+                        .child(Icon::new(IconName::ChevronDown).size(r(12.)))
+                        .dropdown_menu(move |menu, _, _| {
+                            json_view_items(menu, &menu_entity, body_view)
+                        }),
                 )
             })
+            .when(
+                body_tab && !json && (formatted || truncated) && !binary,
+                |this| {
+                    this.child(
+                        ghost_button("response-pretty", cx)
+                            .h(r(28.))
+                            .px(r(10.))
+                            .label(if pretty && !truncated {
+                                "Pretty"
+                            } else {
+                                "Raw"
+                            })
+                            .disabled(truncated)
+                            .when(truncated, |this| this.tooltip(UNAVAILABLE))
+                            .on_click(
+                                cx.listener(|this, _, window, cx| this.toggle_pretty(window, cx)),
+                            ),
+                    )
+                },
+            )
             .when(body_tab && !binary, |this| {
                 this.child(
                     tool_button(cx, "response-wrap", IconName::TextWrap, "Wrap lines")
@@ -1055,7 +1118,9 @@ impl ResponsePanel {
                     );
                 if body_tab && !binary {
                     menu = menu.separator();
-                    if formatted {
+                    if json {
+                        menu = json_view_items(menu, &entity, body_view).separator();
+                    } else if formatted {
                         let pretty_entity = entity.clone();
                         menu = menu.item(PopupMenuItem::new("Pretty").checked(pretty).on_click(
                             move |_, window, cx| {
@@ -1320,8 +1385,7 @@ impl ResponsePanel {
                 muted_text("Empty response body.", cx).into_any_element()
             };
         }
-        let pretty = self.pretty(cx);
-        let view: AnyView = if self.shows_json_tree(pretty) {
+        let view: AnyView = if self.tree_shown(cx) {
             self.tree.clone().into()
         } else {
             self.code.clone().into()
