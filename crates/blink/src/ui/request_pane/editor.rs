@@ -1007,6 +1007,7 @@ impl RequestEditor {
             .flex_col()
             .flex_1()
             .min_h_0()
+            .overflow_hidden()
             .child(actions)
             .when(!supports_body(&draft.method), |this| {
                 this.child(
@@ -1059,11 +1060,14 @@ impl RequestEditor {
                 .child(toggle)
                 .into_any_element();
         }
+        // Fill the space the body has and clip there: a fixed minimum height
+        // pushed the variables pane over the editor footer in short panes.
         div()
             .flex()
             .flex_col()
             .flex_1()
-            .min_h(px(MIN_QUERY_HEIGHT + MIN_VARIABLES_HEIGHT + 40.))
+            .min_h_0()
+            .overflow_hidden()
             .child(
                 v_resizable(SharedString::from(format!("variables-split-{}", self.session_id)))
                     .on_resize(|state, _, cx| {

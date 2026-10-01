@@ -79,6 +79,17 @@ type MenuBuilder = Box<dyn Fn(PopupMenu, &mut Window, &mut Context<PopupMenu>) -
 /// Key context of the strip, for the tab keys.
 const CONTEXT: &str = "RequestTabs";
 
+/// The editor card's 8 px radius inside its 1 px border.
+const CARD_INNER_RADIUS: Pixels = px(7.);
+
+/// Where a corner of `radius` crosses the active tab's 2 px top bar, measured
+/// across the bar's middle row, so the bar starts inside the curve.
+fn corner_inset(radius: Pixels) -> Pixels {
+    let r = f32::from(radius);
+    let y = r - 1.;
+    px(r - (r * r - y * y).sqrt())
+}
+
 pub struct RequestTabs {
     store: Entity<Store>,
     focus_handle: FocusHandle,
@@ -204,6 +215,7 @@ impl RequestTabs {
         active: bool,
         menu: MenuBuilder,
         narrow: bool,
+        corner: Option<Pixels>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let colors = theme::colors(cx);
@@ -290,15 +302,23 @@ impl RequestTabs {
             .border_r_1()
             .border_color(colors.border)
             .text_color(colors.muted_foreground)
+            .when_some(corner, |this, radius| this.rounded_tl(radius))
             .when(active, |this| {
                 this.bg(colors.secondary).text_color(colors.foreground).child(
+                    // The 2 px top border. In the corner tab the card's curve
+                    // cuts its start, as the Vue card's `overflow-hidden`
+                    // clipped it: the curve of radius r reaches the bar's
+                    // bottom edge about r − √(r² − (r − 2)²) from the left.
                     div()
                         .absolute()
                         .top_0()
-                        .left_0()
                         .right_0()
                         .h(px(2.))
-                        .bg(colors.primary),
+                        .bg(colors.primary)
+                        .map(|this| match corner {
+                            Some(radius) => this.left(corner_inset(radius)).rounded_tl(px(2.)),
+                            None => this.left_0(),
+                        }),
                 )
             })
             .when(!active, |this| this.hover(|style| style.bg(colors.accent)))
@@ -415,7 +435,7 @@ impl RequestTabs {
                     .text_color(colors.muted_foreground)
                     .hover(|style| style.text_color(colors.foreground).bg(colors.accent))
                     .tooltip(|window, cx| {
-                        Tooltip::new("Close tab · Cmd/Ctrl+W").build(window, cx)
+                        Tooltip::new(format!("Close tab · {}", blink_core::shortcut::shortcut_label(&["mod", "w"], blink_core::shortcut::IS_MAC))).build(window, cx)
                     })
                     // A press on the close button never starts a drag.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -672,7 +692,14 @@ fn shortcut_item(label: &'static str, keys: &'static [&'static str]) -> PopupMen
 }
 
 /// A square bar button: `+` and duplicate.
-fn bar_button(id: &'static str, icon: IconName, size: f32, tooltip: &'static str, cx: &App) -> Stateful<Div> {
+fn bar_button(
+    id: &'static str,
+    icon: IconName,
+    size: f32,
+    tooltip: impl Into<SharedString>,
+    cx: &App,
+) -> Stateful<Div> {
+    let tooltip: SharedString = tooltip.into();
     let colors = theme::colors(cx);
     div()
         .id(id)
@@ -686,7 +713,7 @@ fn bar_button(id: &'static str, icon: IconName, size: f32, tooltip: &'static str
         .cursor_pointer()
         .text_color(colors.muted_foreground)
         .hover(|style| style.bg(colors.accent).text_color(colors.foreground))
-        .tooltip(move |window, cx| Tooltip::new(tooltip).build(window, cx))
+        .tooltip(move |window, cx| Tooltip::new(tooltip.clone()).build(window, cx))
         .child(Icon::new(icon).size(css(size)))
 }
 
@@ -731,9 +758,14 @@ impl Render for RequestTabs {
         let overflow = if hidden > 0 { Some(self.render_overflow(hidden, &infos, active, cx)) } else { None };
         let tabs: Vec<AnyElement> = infos
             .into_iter()
-            .map(|(tab, menu)| {
+            .enumerate()
+            .map(|(index, (tab, menu))| {
                 let selected = Some(tab.id) == active;
-                self.render_tab(tab, selected, menu, narrow, cx)
+                // The first tab sits in the card's rounded top-left corner.
+                // GPUI clips children to a rectangle, not to the card radius
+                // as the Vue `overflow-hidden` did, so round the tab itself.
+                let corner = (index == 0 && !narrow).then_some(CARD_INNER_RADIUS);
+                self.render_tab(tab, selected, menu, narrow, corner, cx)
             })
             .collect();
         let strip_menu_store = self.store.clone();
@@ -806,7 +838,7 @@ impl Render for RequestTabs {
                     "tab-new-request",
                     IconName::Plus,
                     15.,
-                    "New request · Cmd/Ctrl+T",
+                    format!("New request · {}", blink_core::shortcut::shortcut_label(&["mod", "t"], blink_core::shortcut::IS_MAC)),
                     cx,
                 )
                 .aria_label("New request")
@@ -817,7 +849,7 @@ impl Render for RequestTabs {
                     "tab-duplicate-request",
                     IconName::CopyPlus,
                     14.,
-                    "Duplicate request · Cmd/Ctrl+Shift+D",
+                    format!("Duplicate request · {}", blink_core::shortcut::shortcut_label(&["mod", "shift", "d"], blink_core::shortcut::IS_MAC)),
                     cx,
                 )
                 .aria_label("Duplicate request")

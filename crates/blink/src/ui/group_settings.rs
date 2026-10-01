@@ -25,7 +25,7 @@ use self::environment_tokens::{
 use crate::store::Store;
 use crate::theme;
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
-use crate::ui::settings_dialog::form::{
+use crate::ui::form::{
     Choice, ChoiceSelect, choice_index, dialog_footer, dialog_header, footer_button, note,
     section_heading, section_heading_with_help, selected,
 };

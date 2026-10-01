@@ -1447,7 +1447,7 @@ impl Browser {
             )
             .child(
                 header_button("browser-new-request", IconName::FilePlus, cx)
-                    .tooltip("Add request · Cmd/Ctrl+T")
+                    .tooltip(format!("Add request · {}", blink_core::shortcut::shortcut_label(&["mod", "t"], blink_core::shortcut::IS_MAC)))
                     .accessibility_label("Add request")
                     .on_click(move |_, _, cx| {
                         update(&store, cx, |workspace| {

@@ -11,7 +11,7 @@ use gpui_kit::component::{Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use super::form::{Choice, choice_index, field_label, u};
+use crate::ui::form::{Choice, choice_index, field_label, u};
 use crate::store::Store;
 use crate::theme::{self, AppTheme};
 
@@ -245,7 +245,7 @@ impl Render for ThemeSettings {
             .border_color(colors.border)
             .pt(u(12.))
             .text_size(u(12.))
-            .child(super::form::section_heading("Theme", cx))
+            .child(crate::ui::form::section_heading("Theme", cx))
             .child(
                 v_flex()
                     .gap(u(6.))

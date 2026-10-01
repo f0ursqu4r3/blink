@@ -1,5 +1,6 @@
-//! Form pieces the settings, group settings, and cookies dialogs share:
-//! the dialog frame, section headings, help triggers, and select options.
+//! Form pieces the settings window and the group settings and cookies
+//! dialogs share: the frame, section headings, help triggers, and select
+//! options.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::checkbox::Checkbox;

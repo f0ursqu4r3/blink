@@ -83,6 +83,7 @@ fn main() {
         .run(move |cx| {
             gpui_kit::init(cx);
             actions::init(cx);
+            ui::settings_window::init(cx);
             theme::init(&engine, cx);
             let mut titlebar = TitleBar::title_bar_options();
             titlebar.traffic_light_position = Some(ui::title_bar::traffic_light_position());
@@ -98,7 +99,7 @@ fn main() {
             let store = cx.new(|cx| store::Store::new(engine.clone(), cx));
             let quit_store = store.clone();
             let engine = engine.clone();
-            gpui_kit::open_window(options, cx, move |window, cx| {
+            let (main_window, _) = gpui_kit::open_window(options, cx, move |window, cx| {
                 let view = cx.new(|cx| ui::app::BlinkApp::new(store.clone(), window, cx));
                 view.focus_handle(cx).focus(window, cx);
                 // Quitting waits for the latest save; a failed save keeps the window.
@@ -115,6 +116,7 @@ fn main() {
                 view
             })
             .expect("failed to open window");
+            cx.set_global(ui::settings_window::MainWindow(main_window));
             // Cmd+Q and Blink > Quit Blink save first, as the window close
             // does. This listener runs before the one in `actions::init`.
             let action_store = quit_store.clone();

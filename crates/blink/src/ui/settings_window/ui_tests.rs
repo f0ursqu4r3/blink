@@ -1,5 +1,6 @@
-//! Headless flow: theme preview, save, cancel, and reset in Application
-//! Settings change the palette and `theme.json` in the data dir.
+//! Headless flows: Application Settings opens in its own window, and its
+//! theme preview, save, cancel, and reset change the palette and
+//! `theme.json` in the data dir.
 
 use blink_core::theme::{DEFAULT_ACCENT, ThemeSetting, ThemeState};
 use gpui_kit::component::WindowExt as _;
@@ -46,9 +47,13 @@ fn previews_saves_cancels_and_resets_the_theme(cx: &mut TestAppContext) {
     assert!(!file.exists());
     assert_eq!(cx.read(theme::theme_name), "Blink");
 
-    // The real dialog opens.
+    // The real settings window opens beside the main window; opening it
+    // again brings the same window forward.
     harness.dispatch(cx, OpenSettings);
-    assert!(harness.update(cx, |window, cx| window.has_active_dialog(cx)));
+    assert_eq!(cx.read(|cx| cx.windows().len()), 2);
+    assert!(!harness.update(cx, |window, cx| window.has_active_dialog(cx)));
+    harness.dispatch(cx, OpenSettings);
+    assert_eq!(cx.read(|cx| cx.windows().len()), 2);
     let store = harness.store.clone();
     let settings = harness.update(cx, |window, cx| cx.new(|cx| Settings::new(store, window, cx)));
 
@@ -112,7 +117,8 @@ fn dialog_bounds(harness: &Harness, cx: &mut TestAppContext) -> Bounds<Pixels> {
 }
 
 /// As Vue `top-1/2 -translate-y-1/2 max-h-[90dvh]` (`80dvh` for Cookies):
-/// each dialog is centered in the window and at most that tall.
+/// each dialog is centered in the window and at most that tall. Application
+/// Settings is a window, not a dialog.
 #[gpui_kit::test]
 fn dialogs_are_centered_and_capped(cx: &mut TestAppContext) {
     let dir = tempfile::tempdir().unwrap();
@@ -130,8 +136,7 @@ fn dialogs_are_centered_and_capped(cx: &mut TestAppContext) {
         let viewport = size(px(1280.), px(height));
         VisualTestContext::from_window(harness.window, cx).simulate_resize(viewport);
         harness.draw(cx);
-        let opens: [(&str, f32, Box<dyn Action>); 3] = [
-            ("settings", 0.9, Box::new(OpenSettings)),
+        let opens: [(&str, f32, Box<dyn Action>); 2] = [
             ("group", 0.9, Box::new(OpenGroupSettings { group_id })),
             ("cookies", 0.8, Box::new(ManageCookies)),
         ];

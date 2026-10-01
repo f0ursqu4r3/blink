@@ -67,7 +67,7 @@ unit tests next to the code they cover.
 | `ui/code_view.rs`          | `CodeView.vue`, `CodeEditor.vue`          |
 | `ui/history_view.rs`       | `HistoryView.vue`                         |
 | `ui/websocket_panel.rs`    | `WebSocketPanel.vue`                      |
-| `ui/settings_dialog.rs`    | `ApplicationSettingsDialog.vue`, `ThemeSettings.vue` |
+| `ui/settings_window.rs`    | `ApplicationSettingsDialog.vue`, `ThemeSettings.vue` (own window) |
 | `ui/group_settings.rs`     | `GroupSettingsDialog.vue`, `EnvironmentTokensEditor.vue` |
 | `ui/environment_badge.rs`  | `EnvironmentBadge.vue`                    |
 | `ui/cookies_dialog.rs`     | `CookiesDialog.vue`                       |

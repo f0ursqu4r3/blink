@@ -70,10 +70,10 @@ Only `src/dialog/dialog.rs`.
 Without `centered(true)` or an app `max_h`, every value is the upstream one,
 so upstream behavior is the default. Blink calls
 `.centered(true).max_h(relative(0.9))` (Cookies: `0.8`) in
-`crates/blink/src/ui/settings_dialog.rs`, `ui/group_settings.rs`, and
-`ui/cookies_dialog.rs`. The headless test
-`ui::settings_dialog::ui_tests::dialogs_are_centered_and_capped` measures the
-three dialogs.
+`crates/blink/src/ui/group_settings.rs` and `ui/cookies_dialog.rs`.
+Application Settings opens in its own window, not a dialog. The headless test
+`ui::settings_window::ui_tests::dialogs_are_centered_and_capped` measures the
+two dialogs.
 
 ## Updating
 

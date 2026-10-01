@@ -508,7 +508,7 @@ pub fn save_theme(setting: Option<&ThemeSetting>) -> Option<String> {
     setting.map(|setting| serde_json::to_string(setting).unwrap_or_default())
 }
 
-pub const STORAGE_FAILURE: &str = "Theme not saved: local storage is full or disabled.";
+pub const STORAGE_FAILURE: &str = "Theme not saved. Blink cannot write the theme file.";
 
 /// The app theme: the saved setting, an unsaved preview, and the tokens
 /// shown now.

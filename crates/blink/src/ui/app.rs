@@ -20,7 +20,7 @@ use crate::ui::command_center::{CommandCenter, Picked};
 use crate::ui::request_pane::RequestPane;
 use crate::ui::tabs::RequestTabs;
 use crate::ui::title_bar::{self, TitleBarProps};
-use crate::ui::{cookies_dialog, group_settings, settings_dialog, status_bar};
+use crate::ui::{cookies_dialog, group_settings, settings_window, status_bar};
 
 /// The frame gap (`gap-1.5`).
 pub const FRAME_GAP: f32 = 6.0;
@@ -266,7 +266,7 @@ impl BlinkApp {
     }
 
     fn on_open_settings(&mut self, _: &OpenSettings, window: &mut Window, cx: &mut Context<Self>) {
-        settings_dialog::open(self.store.clone(), window, cx);
+        settings_window::open(self.store.clone(), window, cx);
     }
 
     fn on_reopen(&mut self, _: &ReopenClosedTab, window: &mut Window, cx: &mut Context<Self>) {

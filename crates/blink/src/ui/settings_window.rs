@@ -1,6 +1,6 @@
-//! Application settings. Port of `ApplicationSettingsDialog.vue` and `ThemeSettings.vue`.
+//! The Application Settings window. Port of `ApplicationSettingsDialog.vue`
+//! and `ThemeSettings.vue`; the Vue app showed them in a dialog.
 
-pub(crate) mod form;
 mod theme_settings;
 
 use blink_core::definitions::{definitions_to_rows, rows_to_definitions};
@@ -9,75 +9,195 @@ use blink_core::preferences::default_preferences;
 use blink_core::transport_options::{
     TransportField, TransportFieldErrors, proxy_url_error, transport_field_errors,
 };
-use gpui_kit::component::WindowExt as _;
-use gpui_kit::component::input::{Input, InputState};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
 use gpui_kit::component::select::Select;
-use gpui_kit::component::{h_flex, v_flex};
+use gpui_kit::component::{TitleBar, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use self::form::{
-    Choice, ChoiceSelect, check, u, choice_select, dialog_footer, dialog_header, field_label,
-    footer_button, note, section_heading, section_heading_with_help, selected,
-};
 use self::theme_settings::ThemeSettings;
 use crate::store::Store;
 use crate::theme::{self, AppTheme};
+use crate::ui::form::{
+    Choice, ChoiceSelect, check, choice_select, dialog_footer, dialog_header, field_label,
+    footer_button, note, section_heading, section_heading_with_help, selected, u,
+};
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 use crate::ui::widgets::dotted;
 
-/// Open the dialog.
+actions!(settings, [CancelSettings]);
+
+const CONTEXT: &str = "SettingsWindow";
+
+pub fn init(cx: &mut App) {
+    cx.bind_keys([
+        KeyBinding::new("escape", CancelSettings, Some(CONTEXT)),
+        KeyBinding::new("secondary-w", CancelSettings, Some(CONTEXT)),
+    ]);
+}
+
+/// The main window, so the settings window can hand work back to it.
+pub struct MainWindow(pub AnyWindowHandle);
+
+impl Global for MainWindow {}
+
+/// The open settings window, if any. There is at most one.
+struct OpenWindow(Option<WindowHandle<gpui_kit::base::Root>>);
+
+impl Global for OpenWindow {}
+
+fn open_window(cx: &App) -> Option<WindowHandle<gpui_kit::base::Root>> {
+    cx.try_global::<OpenWindow>().and_then(|open| open.0)
+}
+
+/// Open the settings window, or bring it to the front when it is open.
 pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
-    // A fresh dialog starts from the saved theme.
+    if let Some(handle) = open_window(cx)
+        && handle
+            .update(cx, |_, window, _| window.activate_window())
+            .is_ok()
+    {
+        return;
+    }
+    // A fresh window starts from the saved theme.
     theme::update_theme(cx, |theme| theme.state.revert());
-    let settings = cx.new(|cx| Settings::new(store, window, cx));
-    let method = settings.read(cx).method.clone();
-    window.open_dialog(cx, move |dialog, window, cx| {
-        let confirm = settings.clone();
-        let save = settings.clone();
+    let mut titlebar = TitleBar::title_bar_options();
+    titlebar.title = Some("Application Settings".into());
+    titlebar.traffic_light_position = Some(point(px(9.0), px(13.0)));
+    let size = size(u(560.).to_pixels(window.rem_size()), px(720.));
+    let options = WindowOptions {
+        titlebar: Some(titlebar),
+        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
+            window.display(cx).map(|display| display.id()),
+            size,
+            cx,
+        ))),
+        window_min_size: Some(gpui_kit::size(px(480.), px(420.))),
+        is_minimizable: false,
+        app_id: Some("com.kyle.blink.gpui".into()),
+        ..TitleBar::window_options()
+    };
+    let opened = gpui_kit::open_window(options, cx, move |window, cx| {
+        let view = cx.new(|cx| SettingsWindow::new(store, window, cx));
+        window.on_window_should_close(cx, |_, cx| {
+            // Closing the window discards edits, as Cancel does.
+            theme::update_theme(cx, |theme| theme.state.revert());
+            cx.set_global(OpenWindow(None));
+            true
+        });
+        view
+    });
+    if let Ok((handle, _)) = opened {
+        cx.set_global(OpenWindow(handle.downcast()));
+    }
+}
+
+/// Close the settings window. `revert` drops an unsaved theme preview.
+fn close(revert: bool, window: &mut Window, cx: &mut App) {
+    if revert {
+        theme::update_theme(cx, |theme| theme.state.revert());
+    }
+    cx.set_global(OpenWindow(None));
+    window.remove_window();
+}
+
+/// The window content: the title bar, the scrolling form, and the footer.
+pub struct SettingsWindow {
+    settings: Entity<Settings>,
+    focus_handle: FocusHandle,
+    _subscriptions: Vec<Subscription>,
+}
+
+impl SettingsWindow {
+    fn new(store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+        let settings = cx.new(|cx| Settings::new(store, window, cx));
+        // Enter in a single-line field saves, as the Vue form submit did.
+        let subscriptions = vec![cx.subscribe_in(
+            &settings,
+            window,
+            |this, _, _: &SaveRequested, window, cx| this.save(window, cx),
+        )];
+        // As `open-auto-focus`: the default method takes focus.
+        let method = settings.read(cx).method.clone();
+        window.defer(cx, move |window, cx| {
+            method.update(cx, |select, cx| select.focus(window, cx));
+        });
+        SettingsWindow {
+            settings,
+            focus_handle: cx.focus_handle(),
+            _subscriptions: subscriptions,
+        }
+    }
+
+    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self
+            .settings
+            .update(cx, |settings, cx| settings.save(window, cx))
+        {
+            close(false, window, cx);
+        }
+    }
+
+    fn cancel(&mut self, _: &CancelSettings, window: &mut Window, cx: &mut Context<Self>) {
+        close(true, window, cx);
+    }
+}
+
+impl Render for SettingsWindow {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = theme::colors(cx);
-        dialog
-            // `w-[min(560px,…)]` at the current zoom; `top-1/2
-            // -translate-y-1/2` with at most `max-h-[90dvh]`.
-            .w(u(560.).to_pixels(window.rem_size()))
-            .centered(true)
-            .max_h(relative(0.9))
-            .p_0()
-            .close_button(false)
-            .overlay_closable(false)
-            .title(dialog_header("Application Settings", cx).w_full())
-            .child(div().mt(u(-8.)).child(settings.clone()))
-            .footer(
-                dialog_footer(cx)
-                    .mt(u(-8.))
+        let mac = cfg!(target_os = "macos") && !window.is_fullscreen();
+        v_flex()
+            .id("settings-window")
+            .key_context(CONTEXT)
+            .track_focus(&self.focus_handle)
+            .on_action(cx.listener(Self::cancel))
+            .size_full()
+            .bg(colors.background)
+            .text_color(colors.foreground)
+            .font_family(theme::SANS)
+            .text_size(u(theme::FONT_SIZE))
+            .child(
+                TitleBar::new()
+                    .h(px(crate::ui::title_bar::HEIGHT))
+                    .bg(colors.background)
+                    .border_color(colors.border)
                     .child(
-                        footer_button("settings-cancel", "Cancel", false).on_click(
-                            |_, window, cx| {
-                                theme::update_theme(cx, |theme| theme.state.revert());
-                                window.close_dialog(cx);
-                            },
-                        ),
+                        dialog_header("Application Settings", cx)
+                            .border_b_0()
+                            .w_full()
+                            .when(mac, |this| this.pl(px(72.))),
+                    ),
+            )
+            .child(
+                div()
+                    .id("settings-body")
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
+                    .child(self.settings.clone()),
+            )
+            .child(
+                dialog_footer(cx)
+                    .child(
+                        footer_button("settings-cancel", "Cancel", false)
+                            .on_click(|_, window, cx| close(true, window, cx)),
                     )
                     .child(footer_button("settings-save", "Save", true).on_click(
-                        move |_, window, cx| {
-                            if save.update(cx, |settings, cx| settings.save(window, cx)) {
-                                window.close_dialog(cx);
-                            }
-                        },
-                    ))
-                    .text_color(colors.foreground),
+                        cx.listener(|this, _, window, cx| this.save(window, cx)),
+                    )),
             )
-            .on_ok(move |_, window, cx| confirm.update(cx, |settings, cx| settings.save(window, cx)))
-            .on_cancel(move |_, _, cx| {
-                theme::update_theme(cx, |theme| theme.state.revert());
-                true
-            })
-    });
-    // As `open-auto-focus`: the default method takes focus.
-    window.defer(cx, move |window, cx| {
-        method.update(cx, |select, cx| select.focus(window, cx));
-    });
+    }
 }
+
+impl Focusable for SettingsWindow {
+    fn focus_handle(&self, _: &App) -> FocusHandle {
+        self.focus_handle.clone()
+    }
+}
+
+/// Enter in a single-line field asks the window to save.
+struct SaveRequested;
 
 const NUMBER_FIELDS: [(TransportField, &str, &str, Option<&str>); 4] = [
     (TransportField::TimeoutSeconds, "app-timeout", "Timeout (s)", None),
@@ -146,7 +266,7 @@ fn validated(mut next: WorkspacePreferences) -> Option<WorkspacePreferences> {
     Some(next)
 }
 
-struct Settings {
+pub struct Settings {
     store: Entity<Store>,
     /// The saved preferences the draft started from.
     base: WorkspacePreferences,
@@ -169,6 +289,8 @@ struct Settings {
     _subscriptions: Vec<Subscription>,
 }
 
+impl EventEmitter<SaveRequested> for Settings {}
+
 impl Settings {
     fn new(store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let workspace = &store.read(cx).workspace;
@@ -177,7 +299,7 @@ impl Settings {
         let methods = METHODS.iter().map(|m| Choice::same(*m)).collect();
         let method = choice_select(methods, &base.default_method, window, cx);
         let body_mode = choice_select(body_mode_choices(), base.default_body_mode.id(), window, cx);
-        let numbers = NUMBER_FIELDS
+        let numbers: Vec<(TransportField, Entity<InputState>)> = NUMBER_FIELDS
             .iter()
             .map(|(field, ..)| {
                 let value = field.get(&base.transport).to_string();
@@ -207,12 +329,23 @@ impl Settings {
                 cx,
             )
         });
-        let subscriptions = vec![cx.subscribe(&tokens, |this, _, event: &KeyValueEvent, cx| {
+        let mut subscriptions = vec![cx.subscribe(&tokens, |this, _, event: &KeyValueEvent, cx| {
             if let KeyValueEvent::Change(rows) = event {
                 this.token_rows = rows.clone();
                 cx.notify();
             }
         })];
+        let fields = numbers
+            .iter()
+            .map(|(_, input)| input.clone())
+            .chain([proxy_url.clone()]);
+        for input in fields {
+            subscriptions.push(cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
+                if let InputEvent::PressEnter { secondary: false, .. } = event {
+                    cx.emit(SaveRequested);
+                }
+            }));
+        }
         let theme = cx.new(|cx| ThemeSettings::new(store.clone(), window, cx));
         Settings {
             store,
@@ -307,12 +440,20 @@ impl Settings {
         !failed
     }
 
+    /// Close settings without saving, then show the cookie jar in the main
+    /// window, as the Vue dialog handed off to the cookies dialog.
     fn manage_cookies(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        theme::update_theme(cx, |theme| theme.state.revert());
-        window.close_dialog(cx);
-        window.defer(cx, |window, cx| {
-            window.dispatch_action(Box::new(crate::actions::ManageCookies), cx);
-        });
+        let main = cx.try_global::<MainWindow>().map(|main| main.0);
+        close(true, window, cx);
+        if let Some(main) = main {
+            cx.defer(move |cx| {
+                main.update(cx, |_, window, cx| {
+                    window.activate_window();
+                    window.dispatch_action(Box::new(crate::actions::ManageCookies), cx);
+                })
+                .ok();
+            });
+        }
     }
 
     fn render_number(
@@ -430,7 +571,7 @@ impl Render for Settings {
                     .map(|this| {
                         if proxy_error.is_empty() {
                             this.child(note(
-                                "http, https, or socks5. Empty uses the system proxy settings. Desktop only.",
+                                "http, https, or socks5. Empty uses the system proxy settings.",
                                 muted,
                             ))
                         } else {
@@ -490,7 +631,7 @@ impl Render for Settings {
                             ),
                     )
                     .child(note(
-                        "One jar for all requests, kept on this device. Desktop only.",
+                        "One jar for all requests, kept on this device.",
                         muted,
                     )),
             );

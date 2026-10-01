@@ -690,7 +690,12 @@ fn ghost_button(id: impl Into<ElementId>, cx: &App) -> Button {
 }
 
 /// A 28 px ghost icon button, as the Vue `size-7` buttons.
-fn tool_button(cx: &App, id: &'static str, icon: IconName, tooltip: &'static str) -> Button {
+fn tool_button(
+    cx: &App,
+    id: &'static str,
+    icon: IconName,
+    tooltip: impl Into<SharedString>,
+) -> Button {
     ghost_button(id, cx)
         .w(r(28.))
         .h(r(28.))
@@ -971,7 +976,7 @@ impl ResponsePanel {
                     tool_button(cx, 
                         "response-find",
                         IconName::Search,
-                        "Find and filter response · Cmd/Ctrl+F",
+                        format!("Find and filter response · {}", blink_core::shortcut::shortcut_label(&["mod", "f"], blink_core::shortcut::IS_MAC)),
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_inspector(window, cx))),
                 )
