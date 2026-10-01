@@ -210,7 +210,8 @@ fn disable_font_smoothing() {
             text: *const c_char,
             encoding: u32,
         ) -> *const c_void;
-        fn CFNumberCreate(alloc: *const c_void, kind: isize, value: *const c_void) -> *const c_void;
+        fn CFNumberCreate(alloc: *const c_void, kind: isize, value: *const c_void)
+        -> *const c_void;
         fn CFPreferencesSetAppValue(key: *const c_void, value: *const c_void, app: *const c_void);
         fn CFRelease(value: *const c_void);
     }
@@ -275,7 +276,11 @@ pub fn apply(tokens: ThemeTokens, cx: &mut App) {
         color(tokens.scrollbar_thumb_hover),
     );
     cx.set_global(Palette { tokens });
-    let mode = if dark { ThemeMode::Dark } else { ThemeMode::Light };
+    let mode = if dark {
+        ThemeMode::Dark
+    } else {
+        ThemeMode::Light
+    };
     if Theme::global(cx).mode != mode {
         Theme::change(mode, None, cx);
     }

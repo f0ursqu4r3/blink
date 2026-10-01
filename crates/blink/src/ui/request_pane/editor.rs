@@ -12,7 +12,9 @@ use blink_core::interpolation::InterpolationContext;
 use blink_core::json::{format_json, json_error_location};
 use blink_core::model::{AuthorizationConfig, BodyMode, Draft, RequestGroup};
 use blink_core::preferences::transport_options;
-use blink_core::request::{RequestContext, active_pairs, file_name, format_bytes, pair, supports_body};
+use blink_core::request::{
+    RequestContext, active_pairs, file_name, format_bytes, pair, supports_body,
+};
 use blink_core::text_location::{TextLocation, describe_location};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -102,7 +104,11 @@ fn auth_type_id(auth: &AuthorizationConfig) -> &'static str {
 }
 
 /// "Group · Bearer": the nearest group whose auth a request inherits.
-pub fn inherited_source(draft: &Draft, group_id: Option<u64>, groups: &[RequestGroup]) -> Option<String> {
+pub fn inherited_source(
+    draft: &Draft,
+    group_id: Option<u64>,
+    groups: &[RequestGroup],
+) -> Option<String> {
     if draft.local_auth.is_some() {
         return None;
     }
@@ -127,16 +133,33 @@ pub fn inherited_source(draft: &Draft, group_id: Option<u64>, groups: &[RequestG
 }
 
 /// Tab ids and labels, and each tab's count badge.
-pub fn tab_counts(draft: &Draft, effective: &AuthorizationConfig) -> [(&'static str, &'static str, usize); 5] {
+pub fn tab_counts(
+    draft: &Draft,
+    effective: &AuthorizationConfig,
+) -> [(&'static str, &'static str, usize); 5] {
     let body = usize::from(supports_body(&draft.method) && draft.body_mode != BodyMode::None);
     let auth = draft.local_auth.as_ref().unwrap_or(effective);
-    let tests = draft.assertions.iter().flatten().filter(|row| row.enabled).count()
-        + draft.captures.iter().flatten().filter(|row| row.enabled).count();
+    let tests = draft
+        .assertions
+        .iter()
+        .flatten()
+        .filter(|row| row.enabled)
+        .count()
+        + draft
+            .captures
+            .iter()
+            .flatten()
+            .filter(|row| row.enabled)
+            .count();
     [
         ("query", "Query", active_pairs(&draft.query).count()),
         ("headers", "Headers", active_pairs(&draft.headers).count()),
         ("body", "Body", body),
-        ("auth", "Auth", usize::from(*auth != AuthorizationConfig::None)),
+        (
+            "auth",
+            "Auth",
+            usize::from(*auth != AuthorizationConfig::None),
+        ),
         ("tests", "Tests", tests),
     ]
 }
@@ -167,7 +190,10 @@ pub fn format_error_text(label: &str, outcome: &str, location: Option<&TextLocat
         None => format!("{label}. {outcome}"),
         Some(location) => {
             let reason = location.reason.trim_end_matches('.');
-            format!("{label} at {}: {reason}. {outcome}", describe_location(location))
+            format!(
+                "{label} at {}: {reason}. {outcome}",
+                describe_location(location)
+            )
         }
     }
 }
@@ -230,7 +256,12 @@ pub struct RequestEditor {
 }
 
 impl RequestEditor {
-    pub fn new(store: Entity<Store>, session_id: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        store: Entity<Store>,
+        session_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let draft = store
             .read(cx)
             .workspace
@@ -246,16 +277,35 @@ impl RequestEditor {
             toggles: true,
             id: format!("{key}-{session_id}").into(),
         };
-        let labeled = |editor: KeyValueEditor, label: &'static str, cx: &mut Context<KeyValueEditor>| {
-            let mut editor = editor;
-            editor.set_row_label(label, cx);
-            editor
-        };
+        let labeled =
+            |editor: KeyValueEditor, label: &'static str, cx: &mut Context<KeyValueEditor>| {
+                let mut editor = editor;
+                editor.set_row_label(label, cx);
+                editor
+            };
         let query = cx.new(|cx| {
-            labeled(KeyValueEditor::new(draft.query.clone(), table("Query", "query", false), window, cx), "Query", cx)
+            labeled(
+                KeyValueEditor::new(
+                    draft.query.clone(),
+                    table("Query", "query", false),
+                    window,
+                    cx,
+                ),
+                "Query",
+                cx,
+            )
         });
         let headers = cx.new(|cx| {
-            labeled(KeyValueEditor::new(draft.headers.clone(), table("Header", "headers", false), window, cx), "Header", cx)
+            labeled(
+                KeyValueEditor::new(
+                    draft.headers.clone(),
+                    table("Header", "headers", false),
+                    window,
+                    cx,
+                ),
+                "Header",
+                cx,
+            )
         });
         let form = cx.new(|cx| {
             let editor = KeyValueEditor::new(
@@ -291,7 +341,11 @@ impl RequestEditor {
                 .placeholder("{\n  \"id\": \"1\"\n}")
         });
         let checks = cx.new(|cx| ChecksEditor::new(store.clone(), session_id, window, cx));
-        let token = cx.new(|cx| InputState::new(window, cx).masked(true).placeholder("Bearer token"));
+        let token = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .placeholder("Bearer token")
+        });
         let username = cx.new(|cx| {
             let mut input = TokenInput::new("", window, cx);
             input.set_size(gpui_kit::component::Size::Small, cx);
@@ -307,11 +361,17 @@ impl RequestEditor {
                 this.refresh_context(cx);
                 cx.notify();
             }),
-            cx.subscribe_in(&store, window, move |this, _, event, window, cx| match event {
-                StoreEvent::DraftReplaced(replaced) if *replaced == id => this.reload(window, cx),
-                StoreEvent::Restored => this.reload(window, cx),
-                _ => {}
-            }),
+            cx.subscribe_in(
+                &store,
+                window,
+                move |this, _, event, window, cx| match event {
+                    StoreEvent::DraftReplaced(replaced) if *replaced == id => {
+                        this.reload(window, cx)
+                    }
+                    StoreEvent::Restored => this.reload(window, cx),
+                    _ => {}
+                },
+            ),
             cx.subscribe_in(&body, window, |this, input, event, _, cx| {
                 if let InputEvent::Change = event {
                     let text = input.read(cx).value().to_string();
@@ -339,27 +399,37 @@ impl RequestEditor {
                 if let InputEvent::Change = event {
                     let token = input.read(cx).value().to_string();
                     edit_draft(&this.store, this.session_id, cx, |draft| {
-                        if let Some(AuthorizationConfig::Bearer { token: current }) = &mut draft.local_auth {
+                        if let Some(AuthorizationConfig::Bearer { token: current }) =
+                            &mut draft.local_auth
+                        {
                             *current = token;
                         }
                     });
                 }
             }),
-            cx.subscribe_in(&username, window, |this, _, event: &TokenInputEvent, _, cx| {
-                if let TokenInputEvent::Change(text) = event {
-                    let text = text.clone();
-                    edit_draft(&this.store, this.session_id, cx, |draft| {
-                        if let Some(AuthorizationConfig::Basic { username, .. }) = &mut draft.local_auth {
-                            *username = text;
-                        }
-                    });
-                }
-            }),
+            cx.subscribe_in(
+                &username,
+                window,
+                |this, _, event: &TokenInputEvent, _, cx| {
+                    if let TokenInputEvent::Change(text) = event {
+                        let text = text.clone();
+                        edit_draft(&this.store, this.session_id, cx, |draft| {
+                            if let Some(AuthorizationConfig::Basic { username, .. }) =
+                                &mut draft.local_auth
+                            {
+                                *username = text;
+                            }
+                        });
+                    }
+                },
+            ),
             cx.subscribe_in(&password, window, |this, input, event, _, cx| {
                 if let InputEvent::Change = event {
                     let text = input.read(cx).value().to_string();
                     edit_draft(&this.store, this.session_id, cx, |draft| {
-                        if let Some(AuthorizationConfig::Basic { password, .. }) = &mut draft.local_auth {
+                        if let Some(AuthorizationConfig::Basic { password, .. }) =
+                            &mut draft.local_auth
+                        {
                             *password = text;
                         }
                     });
@@ -367,8 +437,10 @@ impl RequestEditor {
             }),
         ];
         for (table, field) in [(&query, 0u8), (&headers, 1), (&form, 2)] {
-            subscriptions.push(cx.subscribe_in(table, window, move |this, editor, event, window, cx| {
-                match event {
+            subscriptions.push(cx.subscribe_in(
+                table,
+                window,
+                move |this, editor, event, window, cx| match event {
                     KeyValueEvent::Change(rows) => {
                         let rows = rows.clone();
                         edit_draft(&this.store, this.session_id, cx, |draft| match field {
@@ -377,14 +449,18 @@ impl RequestEditor {
                             _ => draft.form = Some(rows),
                         });
                     }
-                    KeyValueEvent::PickFile(row) => this.pick_form_file(editor.clone(), *row, window, cx),
-                }
-            }));
+                    KeyValueEvent::PickFile(row) => {
+                        this.pick_form_file(editor.clone(), *row, window, cx)
+                    }
+                },
+            ));
         }
 
         let clock = cx.spawn(async move |this, cx| {
             loop {
-                cx.background_executor().timer(Duration::from_secs(60)).await;
+                cx.background_executor()
+                    .timer(Duration::from_secs(60))
+                    .await;
                 if this.update(cx, |_, cx| cx.notify()).is_err() {
                     break;
                 }
@@ -435,14 +511,17 @@ impl RequestEditor {
         let Some(draft) = self.draft(cx) else {
             return;
         };
-        self.query
-            .update(cx, |editor, cx| editor.set_rows(draft.query.clone(), window, cx));
-        self.headers
-            .update(cx, |editor, cx| editor.set_rows(draft.headers.clone(), window, cx));
+        self.query.update(cx, |editor, cx| {
+            editor.set_rows(draft.query.clone(), window, cx)
+        });
+        self.headers.update(cx, |editor, cx| {
+            editor.set_rows(draft.headers.clone(), window, cx)
+        });
         self.form.update(cx, |editor, cx| {
             editor.set_rows(draft.form.clone().unwrap_or_default(), window, cx)
         });
-        self.checks.update(cx, |checks, cx| checks.reload(window, cx));
+        self.checks
+            .update(cx, |checks, cx| checks.reload(window, cx));
         self.load_text(&draft, window, cx);
         self.ensure_form_rows(&draft, cx);
         cx.notify();
@@ -470,13 +549,16 @@ impl RequestEditor {
 
     fn load_auth(&mut self, draft: &Draft, window: &mut Window, cx: &mut Context<Self>) {
         let (token, username, password) = match &draft.local_auth {
-            Some(AuthorizationConfig::Bearer { token }) => (token.clone(), String::new(), String::new()),
+            Some(AuthorizationConfig::Bearer { token }) => {
+                (token.clone(), String::new(), String::new())
+            }
             Some(AuthorizationConfig::Basic { username, password }) => {
                 (String::new(), username.clone(), password.clone())
             }
             _ => (String::new(), String::new(), String::new()),
         };
-        self.token.update(cx, |input, cx| input.set_value(token, window, cx));
+        self.token
+            .update(cx, |input, cx| input.set_value(token, window, cx));
         self.username
             .update(cx, |input, cx| input.set_value(&username, window, cx));
         self.password
@@ -526,7 +608,9 @@ impl RequestEditor {
     fn ensure_form_rows(&mut self, draft: &Draft, cx: &mut Context<Self>) {
         if matches!(draft.body_mode, BodyMode::Form | BodyMode::Multipart) && draft.form.is_none() {
             let rows = vec![pair("", "")];
-            replace_draft(&self.store, self.session_id, cx, |draft| draft.form = Some(rows));
+            replace_draft(&self.store, self.session_id, cx, |draft| {
+                draft.form = Some(rows)
+            });
         }
     }
 
@@ -543,9 +627,12 @@ impl RequestEditor {
     }
 
     pub fn set_body_mode(&mut self, mode: BodyMode, window: &mut Window, cx: &mut Context<Self>) {
-        edit_draft(&self.store, self.session_id, cx, |draft| draft.body_mode = mode);
-        self.form
-            .update(cx, |form, cx| form.set_allow_files(mode == BodyMode::Multipart, cx));
+        edit_draft(&self.store, self.session_id, cx, |draft| {
+            draft.body_mode = mode
+        });
+        self.form.update(cx, |form, cx| {
+            form.set_allow_files(mode == BodyMode::Multipart, cx)
+        });
         self.set_body_language(mode, window, cx);
         if let Some(draft) = self.draft(cx) {
             self.ensure_form_rows(&draft, cx);
@@ -583,7 +670,14 @@ impl RequestEditor {
             }
             Err(error) => {
                 let location = json_error_location(&draft.body, &error);
-                self.show_format_error("Invalid JSON", "The body was not changed.", Some(location), ErrorEditor::Body, window, cx);
+                self.show_format_error(
+                    "Invalid JSON",
+                    "The body was not changed.",
+                    Some(location),
+                    ErrorEditor::Body,
+                    window,
+                    cx,
+                );
             }
         }
     }
@@ -726,7 +820,9 @@ impl RequestEditor {
         cx.spawn_in(window, async move |_, cx| {
             let result = picking.await;
             form.update_in(cx, |form, window, cx| match result {
-                Ok(Some(picked)) if row == 0 => form.add_file_row(picked.path, &picked.name, window, cx),
+                Ok(Some(picked)) if row == 0 => {
+                    form.add_file_row(picked.path, &picked.name, window, cx)
+                }
                 Ok(Some(picked)) => form.set_row_file(row, picked.path, window, cx),
                 Ok(None) => {}
                 Err(error) => form.set_file_error(error, cx),
@@ -772,35 +868,51 @@ impl RequestEditor {
             )))
     }
 
-    fn render_tabs(&self, active: &str, draft: &Draft, effective: &AuthorizationConfig, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_tabs(
+        &self,
+        active: &str,
+        draft: &Draft,
+        effective: &AuthorizationConfig,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let colors = theme::colors(cx);
-        let tabs = tab_counts(draft, effective).into_iter().map(|(id, label, count)| {
-            let selected = id == active;
-            div()
-                .id(SharedString::from(format!("request-tab-{id}")))
-                .h(px(38.))
-                .px_3()
-                .flex()
-                .items_center()
-                .gap(px(7.))
-                .border_b_1()
-                .border_color(if selected { colors.primary } else { gpui_kit::transparent_black() })
-                .text_size(px(12.))
-                .text_color(if selected { colors.foreground } else { colors.muted_foreground })
-                .hover(|this| this.text_color(colors.foreground).bg(colors.muted))
-                .cursor_pointer()
-                .child(label)
-                .when(count > 0, |this| {
-                    this.child(
-                        div()
-                            .font_family(theme::MONO)
-                            .text_size(px(10.))
-                            .text_color(colors.muted_foreground)
-                            .child(count.to_string()),
-                    )
-                })
-                .on_click(cx.listener(move |this, _, _, cx| this.set_tab(id, cx)))
-        });
+        let tabs = tab_counts(draft, effective)
+            .into_iter()
+            .map(|(id, label, count)| {
+                let selected = id == active;
+                div()
+                    .id(SharedString::from(format!("request-tab-{id}")))
+                    .h(px(38.))
+                    .px_3()
+                    .flex()
+                    .items_center()
+                    .gap(px(7.))
+                    .border_b_1()
+                    .border_color(if selected {
+                        colors.primary
+                    } else {
+                        gpui_kit::transparent_black()
+                    })
+                    .text_size(px(12.))
+                    .text_color(if selected {
+                        colors.foreground
+                    } else {
+                        colors.muted_foreground
+                    })
+                    .hover(|this| this.text_color(colors.foreground).bg(colors.muted))
+                    .cursor_pointer()
+                    .child(label)
+                    .when(count > 0, |this| {
+                        this.child(
+                            div()
+                                .font_family(theme::MONO)
+                                .text_size(px(10.))
+                                .text_color(colors.muted_foreground)
+                                .child(count.to_string()),
+                        )
+                    })
+                    .on_click(cx.listener(move |this, _, _, cx| this.set_tab(id, cx)))
+            });
         div()
             .flex()
             .flex_none()
@@ -811,12 +923,22 @@ impl RequestEditor {
             .children(tabs)
     }
 
-    fn render_body(&mut self, draft: &Draft, ctx: &blink_core::authorization::ResolvedRequestContext, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    fn render_body(
+        &mut self,
+        draft: &Draft,
+        ctx: &blink_core::authorization::ResolvedRequestContext,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
         let colors = theme::colors(cx);
         let mode = draft.body_mode;
         let entity = cx.entity().downgrade();
         let formattable = matches!(mode, BodyMode::Json | BodyMode::Graphql);
-        let format_label = if mode == BodyMode::Graphql { "Format GraphQL" } else { "Format JSON" };
+        let format_label = if mode == BodyMode::Graphql {
+            "Format GraphQL"
+        } else {
+            "Format JSON"
+        };
         let has_body = !draft.body.is_empty();
 
         // The schema of the current URL, and its age.
@@ -830,9 +952,12 @@ impl RequestEditor {
         let cached = key.as_deref().and_then(get_cached_schema);
         self.body_features
             .set_schema(cached.as_ref().map(|schema| schema.schema.clone()));
-        let schema_status = cached
-            .as_ref()
-            .map(|schema| format!("Schema loaded · {}", format_schema_age(schema.fetched_at, now_ms())));
+        let schema_status = cached.as_ref().map(|schema| {
+            format!(
+                "Schema loaded · {}",
+                format_schema_age(schema.fetched_at, now_ms())
+            )
+        });
 
         let mode_entity = entity.clone();
         let actions = div()
@@ -850,7 +975,10 @@ impl RequestEditor {
             .child("Body")
             .child(select_button(
                 "body-mode",
-                BODY_MODES.iter().map(|(mode, label)| (*mode, SharedString::from(*label))).collect(),
+                BODY_MODES
+                    .iter()
+                    .map(|(mode, label)| (*mode, SharedString::from(*label)))
+                    .collect(),
                 mode,
                 false,
                 move |mode, window, cx| {
@@ -871,7 +999,8 @@ impl RequestEditor {
                             Some(status) => format!(
                                 "{status}. Fetch again with this request's URL, headers, and auth"
                             ),
-                            None => "Fetch schema with this request's URL, headers, and auth".to_string(),
+                            None => "Fetch schema with this request's URL, headers, and auth"
+                                .to_string(),
                         };
                         this.child(
                             div()
@@ -886,9 +1015,13 @@ impl RequestEditor {
                                             Icon::new(IconName::Network).size(px(14.))
                                         })
                                         .loading(self.schema_loading)
-                                        .disabled(self.schema_loading || draft.url.trim().is_empty())
+                                        .disabled(
+                                            self.schema_loading || draft.url.trim().is_empty(),
+                                        )
                                         .tooltip(tooltip)
-                                        .on_click(cx.listener(|this, _, _, cx| this.load_schema(cx))),
+                                        .on_click(
+                                            cx.listener(|this, _, _, cx| this.load_schema(cx)),
+                                        ),
                                 )
                                 .when(cached.is_some() && !self.schema_loading, |this| {
                                     this.child(
@@ -921,7 +1054,9 @@ impl RequestEditor {
                                 .icon(Icon::new(IconName::Braces).size(px(14.)))
                                 .disabled(!has_body)
                                 .tooltip(format_label)
-                                .on_click(cx.listener(|this, _, window, cx| this.format_body(window, cx))),
+                                .on_click(
+                                    cx.listener(|this, _, window, cx| this.format_body(window, cx)),
+                                ),
                         )
                     }),
             )
@@ -938,7 +1073,9 @@ impl RequestEditor {
                             menu.item(PopupMenuItem::new(*label).checked(value == mode).on_click(
                                 move |_, window, cx| {
                                     radio
-                                        .update(cx, |this, cx| this.set_body_mode(value, window, cx))
+                                        .update(cx, |this, cx| {
+                                            this.set_body_mode(value, window, cx)
+                                        })
                                         .ok();
                                 },
                             ))
@@ -949,14 +1086,18 @@ impl RequestEditor {
                         PopupMenuItem::new(format_label)
                             .disabled(!formattable || !has_body)
                             .on_click(move |_, window, cx| {
-                                format.update(cx, |this, cx| this.format_body(window, cx)).ok();
+                                format
+                                    .update(cx, |this, cx| this.format_body(window, cx))
+                                    .ok();
                             }),
                     )
-                    .item(PopupMenuItem::new("Clear body").disabled(!has_body).on_click(
-                        move |_, _, cx| {
-                            clear.update(cx, |this, cx| this.clear_body(cx)).ok();
-                        },
-                    ))
+                    .item(
+                        PopupMenuItem::new("Clear body")
+                            .disabled(!has_body)
+                            .on_click(move |_, _, cx| {
+                                clear.update(cx, |this, cx| this.clear_body(cx)).ok();
+                            }),
+                    )
                 }
             });
 
@@ -1013,16 +1154,22 @@ impl RequestEditor {
             .child(actions)
             .when(!supports_body(&draft.method), |this| {
                 this.child(
-                    note(format!("{} sends no body. Your draft is retained.", draft.method))
-                        .border_b_1()
-                        .border_color(colors.border),
+                    note(format!(
+                        "{} sends no body. Your draft is retained.",
+                        draft.method
+                    ))
+                    .border_b_1()
+                    .border_color(colors.border),
                 )
             })
             .child(content)
-            .when(!self.format_error.is_empty(), |this| this.child(error(self.format_error.clone())))
-            .when(!self.schema_error.is_empty() && mode == BodyMode::Graphql, |this| {
-                this.child(error(self.schema_error.clone()))
+            .when(!self.format_error.is_empty(), |this| {
+                this.child(error(self.format_error.clone()))
             })
+            .when(
+                !self.schema_error.is_empty() && mode == BodyMode::Graphql,
+                |this| this.child(error(self.schema_error.clone())),
+            )
             .into_any_element()
     }
 
@@ -1045,7 +1192,14 @@ impl RequestEditor {
             .text_color(colors.muted_foreground)
             .hover(|this| this.text_color(colors.foreground))
             .cursor_pointer()
-            .child(Icon::new(if collapsed { IconName::ChevronRight } else { IconName::ChevronDown }).size(px(12.)))
+            .child(
+                Icon::new(if collapsed {
+                    IconName::ChevronRight
+                } else {
+                    IconName::ChevronDown
+                })
+                .size(px(12.)),
+            )
             .child("Variables")
             .on_click(cx.listener(|_, _, _, cx| {
                 let pane = cx.default_global::<VariablesPane>();
@@ -1071,30 +1225,33 @@ impl RequestEditor {
             .min_h_0()
             .overflow_hidden()
             .child(
-                v_resizable(SharedString::from(format!("variables-split-{}", self.session_id)))
-                    .on_resize(|state, _, cx| {
-                        if let Some(size) = state.read(cx).sizes().get(1).copied() {
-                            cx.default_global::<VariablesPane>().height = size;
-                        }
-                    })
-                    .child(
-                        resizable_panel()
-                            .size_range(px(MIN_QUERY_HEIGHT)..Pixels::MAX)
-                            .child(code_editor(&self.body, px(MIN_QUERY_HEIGHT))),
-                    )
-                    .child(
-                        resizable_panel()
-                            .size(height)
-                            .size_range(px(MIN_VARIABLES_HEIGHT)..Pixels::MAX)
-                            .child(
-                                div()
-                                    .flex()
-                                    .flex_col()
-                                    .size_full()
-                                    .child(toggle)
-                                    .child(code_editor(&self.variables, px(0.))),
-                            ),
-                    ),
+                v_resizable(SharedString::from(format!(
+                    "variables-split-{}",
+                    self.session_id
+                )))
+                .on_resize(|state, _, cx| {
+                    if let Some(size) = state.read(cx).sizes().get(1).copied() {
+                        cx.default_global::<VariablesPane>().height = size;
+                    }
+                })
+                .child(
+                    resizable_panel()
+                        .size_range(px(MIN_QUERY_HEIGHT)..Pixels::MAX)
+                        .child(code_editor(&self.body, px(MIN_QUERY_HEIGHT))),
+                )
+                .child(
+                    resizable_panel()
+                        .size(height)
+                        .size_range(px(MIN_VARIABLES_HEIGHT)..Pixels::MAX)
+                        .child(
+                            div()
+                                .flex()
+                                .flex_col()
+                                .size_full()
+                                .child(toggle)
+                                .child(code_editor(&self.variables, px(0.))),
+                        ),
+                ),
             )
             .into_any_element()
     }
@@ -1159,7 +1316,13 @@ impl RequestEditor {
             )
     }
 
-    fn render_auth(&self, draft: &Draft, effective: &AuthorizationConfig, source: Option<String>, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_auth(
+        &self,
+        draft: &Draft,
+        effective: &AuthorizationConfig,
+        source: Option<String>,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let colors = theme::colors(cx);
         let choice = auth_choice(draft);
         let entity = cx.entity().downgrade();
@@ -1188,7 +1351,10 @@ impl RequestEditor {
             .child(
                 row().child(label("Authorization")).child(fill_select(
                     "auth-type",
-                    AUTH_CHOICES.iter().map(|(choice, label)| (*choice, SharedString::from(*label))).collect(),
+                    AUTH_CHOICES
+                        .iter()
+                        .map(|(choice, label)| (*choice, SharedString::from(*label)))
+                        .collect(),
                     choice,
                     false,
                     move |choice, window, cx| {
@@ -1206,7 +1372,10 @@ impl RequestEditor {
                         .items_center()
                         .gap_3()
                         .child(small("Effective".into()).w(px(100.)).flex_none())
-                        .child(small(format!("Effective: {}", auth_type_id(effective))).font_family(theme::MONO)),
+                        .child(
+                            small(format!("Effective: {}", auth_type_id(effective)))
+                                .font_family(theme::MONO),
+                        ),
                 )
                 .when_some(source, |this, source| {
                     this.child(
@@ -1222,11 +1391,12 @@ impl RequestEditor {
             .when(choice == AuthChoice::Bearer, |this| {
                 this.child(
                     row().child(label("Token")).child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .font_family(theme::MONO)
-                            .child(Input::new(&self.token).small().font_family(theme::MONO).text_size(px(12.))),
+                        div().flex_1().min_w_0().font_family(theme::MONO).child(
+                            Input::new(&self.token)
+                                .small()
+                                .font_family(theme::MONO)
+                                .text_size(px(12.)),
+                        ),
                     ),
                 )
             })
@@ -1242,11 +1412,12 @@ impl RequestEditor {
                 )
                 .child(
                     row().child(label("Password")).child(
-                        div()
-                            .flex_1()
-                            .min_w_0()
-                            .font_family(theme::MONO)
-                            .child(Input::new(&self.password).small().font_family(theme::MONO).text_size(px(12.))),
+                        div().flex_1().min_w_0().font_family(theme::MONO).child(
+                            Input::new(&self.password)
+                                .small()
+                                .font_family(theme::MONO)
+                                .text_size(px(12.)),
+                        ),
                     ),
                 )
             })
@@ -1254,11 +1425,15 @@ impl RequestEditor {
                 let menu = AUTH_CHOICES.iter().fold(menu, |menu, (value, label)| {
                     let entity = entity.clone();
                     let value = *value;
-                    menu.item(PopupMenuItem::new(*label).checked(value == choice).on_click(
-                        move |_, window, cx| {
-                            entity.update(cx, |this, cx| this.set_auth(value, window, cx)).ok();
-                        },
-                    ))
+                    menu.item(
+                        PopupMenuItem::new(*label)
+                            .checked(value == choice)
+                            .on_click(move |_, window, cx| {
+                                entity
+                                    .update(cx, |this, cx| this.set_auth(value, window, cx))
+                                    .ok();
+                            }),
+                    )
                 });
                 let clear = entity.clone();
                 menu.separator().item(
@@ -1266,28 +1441,26 @@ impl RequestEditor {
                         .disabled(choice == AuthChoice::Inherit)
                         .on_click(move |_, window, cx| {
                             clear
-                                .update(cx, |this, cx| this.set_auth(AuthChoice::Inherit, window, cx))
+                                .update(cx, |this, cx| {
+                                    this.set_auth(AuthChoice::Inherit, window, cx)
+                                })
                                 .ok();
                         }),
                 )
             });
-        div()
-            .flex()
-            .flex_col()
-            .child(grid)
-            .child(
-                div()
-                    .px_4()
-                    .py_3()
-                    .flex()
-                    .items_center()
-                    .gap_2()
-                    .text_size(px(11.))
-                    .line_height(relative(1.7))
-                    .text_color(colors.muted_foreground)
-                    .child(Icon::new(IconName::KeyRound).size(px(13.)))
-                    .child("Credentials are saved locally in plaintext. Copy cURL includes them."),
-            )
+        div().flex().flex_col().child(grid).child(
+            div()
+                .px_4()
+                .py_3()
+                .flex()
+                .items_center()
+                .gap_2()
+                .text_size(px(11.))
+                .line_height(relative(1.7))
+                .text_color(colors.muted_foreground)
+                .child(Icon::new(IconName::KeyRound).size(px(13.)))
+                .child("Credentials are saved locally in plaintext. Copy cURL includes them."),
+        )
     }
 }
 
@@ -1339,7 +1512,11 @@ fn code_editor(state: &Entity<EditorState>, min_height: Pixels) -> impl IntoElem
 }
 
 fn body_language(mode: BodyMode) -> &'static str {
-    if mode == BodyMode::Graphql { "graphql" } else { "json" }
+    if mode == BodyMode::Graphql {
+        "graphql"
+    } else {
+        "json"
+    }
 }
 
 fn body_placeholder(mode: BodyMode) -> &'static str {
@@ -1351,7 +1528,10 @@ fn body_placeholder(mode: BodyMode) -> &'static str {
 }
 
 /// Ask for a file, then allow requests to read it. None when canceled.
-fn pick_request_file(store: &Entity<Store>, cx: &mut App) -> Task<Result<Option<PickedFile>, String>> {
+fn pick_request_file(
+    store: &Entity<Store>,
+    cx: &mut App,
+) -> Task<Result<Option<PickedFile>, String>> {
     let engine = store.read(cx).engine.clone();
     let paths = cx.prompt_for_paths(PathPromptOptions {
         files: true,
@@ -1403,7 +1583,9 @@ impl Render for RequestEditor {
                 )))
                 .into_any_element(),
             "body" => self.render_body(draft, &ctx, window, cx),
-            "auth" => self.render_auth(draft, &effective, source, cx).into_any_element(),
+            "auth" => self
+                .render_auth(draft, &effective, source, cx)
+                .into_any_element(),
             "tests" => self.checks.clone().into_any_element(),
             _ => div()
                 .flex()
@@ -1463,16 +1645,24 @@ mod ui_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::prelude::v1::test;
     use blink_core::model::{AuthKind, CheckOperator, CheckSource};
     use blink_core::request::create_draft;
+    use core::prelude::v1::test;
 
     #[test]
     fn offers_form_multipart_and_file_bodies() {
         let labels: Vec<_> = BODY_MODES.iter().map(|(_, label)| *label).collect();
         assert_eq!(
             labels,
-            ["None", "JSON", "Text", "GraphQL", "Form URL-encoded", "Multipart form", "File"]
+            [
+                "None",
+                "JSON",
+                "Text",
+                "GraphQL",
+                "Form URL-encoded",
+                "Multipart form",
+                "File"
+            ]
         );
     }
 
@@ -1490,7 +1680,9 @@ mod tests {
         draft.token = "abc".into();
         assert_eq!(
             local_auth_for(AuthChoice::Bearer, &draft),
-            Some(AuthorizationConfig::Bearer { token: "abc".into() })
+            Some(AuthorizationConfig::Bearer {
+                token: "abc".into()
+            })
         );
         assert_eq!(local_auth_for(AuthChoice::Inherit, &draft), None);
     }
@@ -1516,7 +1708,12 @@ mod tests {
         );
         disabled.enabled = false;
         draft.assertions = Some(vec![
-            blink_core::checks::create_assertion(CheckSource::Status, CheckOperator::Equals, "200", ""),
+            blink_core::checks::create_assertion(
+                CheckSource::Status,
+                CheckOperator::Equals,
+                "200",
+                "",
+            ),
             disabled,
         ]);
         let counts = tab_counts(&draft, &AuthorizationConfig::None);
@@ -1534,30 +1731,40 @@ mod tests {
         );
         draft.auth = AuthKind::Basic;
         assert_eq!(footer_text(&draft).1, "AUTH / BASIC");
-        draft.local_auth = Some(AuthorizationConfig::Bearer { token: String::new() });
+        draft.local_auth = Some(AuthorizationConfig::Bearer {
+            token: String::new(),
+        });
         assert_eq!(footer_text(&draft).1, "AUTH / BEARER");
     }
 
     #[test]
     fn names_the_group_an_auth_is_inherited_from() {
         let draft = create_draft();
-        let group = |id: u64, parent: Option<u64>, auth: Option<AuthorizationConfig>| RequestGroup {
-            id,
-            name: format!("G{id}"),
-            parent_id: parent,
-            collapsed: false,
-            local_auth: auth,
-            local_definitions: None,
-            default_method: None,
-            default_url: None,
-            environments: None,
-            active_environment_id: None,
-        };
+        let group =
+            |id: u64, parent: Option<u64>, auth: Option<AuthorizationConfig>| RequestGroup {
+                id,
+                name: format!("G{id}"),
+                parent_id: parent,
+                collapsed: false,
+                local_auth: auth,
+                local_definitions: None,
+                default_method: None,
+                default_url: None,
+                environments: None,
+                active_environment_id: None,
+            };
         let groups = vec![
-            group(1, None, Some(AuthorizationConfig::Bearer { token: "t".into() })),
+            group(
+                1,
+                None,
+                Some(AuthorizationConfig::Bearer { token: "t".into() }),
+            ),
             group(2, Some(1), None),
         ];
-        assert_eq!(inherited_source(&draft, Some(2), &groups).as_deref(), Some("G1 · Bearer"));
+        assert_eq!(
+            inherited_source(&draft, Some(2), &groups).as_deref(),
+            Some("G1 · Bearer")
+        );
         assert_eq!(inherited_source(&draft, None, &groups), None);
     }
 

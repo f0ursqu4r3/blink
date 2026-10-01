@@ -63,16 +63,11 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
 
     let summary = workspace.active().filter(|_| !narrow).map(|active| {
         let method = display_method(active).to_string();
-        let mut row = div()
-            .flex()
-            .min_w_0()
-            .items_center()
-            .gap(css(6.))
-            .child(
-                div()
-                    .text_color(theme::method_color(&method, cx))
-                    .child(t(method)),
-            );
+        let mut row = div().flex().min_w_0().items_center().gap(css(6.)).child(
+            div()
+                .text_color(theme::method_color(&method, cx))
+                .child(t(method)),
+        );
         if active.busy {
             row = row.child(t(format!("· {:.1} s", active.elapsed / 1000.0)));
         } else if !active.error.is_empty() {
@@ -128,7 +123,9 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
             .overflow_hidden()
             .whitespace_nowrap()
             .text_ellipsis()
-            .when(state.import_failed, |this| this.text_color(colors.destructive))
+            .when(state.import_failed, |this| {
+                this.text_color(colors.destructive)
+            })
             .tooltip(move |window, cx| Tooltip::new(details.clone()).build(window, cx))
             .child(t(notice))
     });
@@ -254,7 +251,11 @@ fn notice_button(id: &'static str, label: &'static str, secondary: bool) -> Butt
         .px(css(10.))
         .font_family(theme::MONO)
         .font_weight(FontWeight::MEDIUM);
-    if secondary { button.outline() } else { button.ghost() }
+    if secondary {
+        button.outline()
+    } else {
+        button.ghost()
+    }
 }
 
 /// Local state of the storage notice: the Start fresh confirmation.
@@ -263,7 +264,11 @@ struct NoticeState {
 }
 
 /// The storage notice above the workspace: load and save failures.
-pub fn render_storage_notice(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyElement {
+pub fn render_storage_notice(
+    store: &Entity<Store>,
+    window: &mut Window,
+    cx: &mut App,
+) -> AnyElement {
     let colors = theme::colors(cx);
     let state = window.use_keyed_state("storage-notice", cx, |_, _| NoticeState {
         confirm_reset: false,
@@ -313,20 +318,12 @@ pub fn render_storage_notice(store: &Entity<Store>, window: &mut Window, cx: &mu
         .border_color(colors.border)
         .text_color(colors.destructive)
         .text_size(css(12.))
-        .child(
-            div()
-                .flex_1()
-                .min_w(css(180.))
-                .child(if ready {
-                    format!("{error} Changes are not saved.")
-                } else {
-                    error
-                }),
-        )
-        .child(
-            notice_button("storage-retry", "Retry", true)
-                .on_click(retry),
-        )
+        .child(div().flex_1().min_w(css(180.)).child(if ready {
+            format!("{error} Changes are not saved.")
+        } else {
+            error
+        }))
+        .child(notice_button("storage-retry", "Retry", true).on_click(retry))
         .when(!ready && !confirm_reset, |this| {
             this.child(
                 notice_button("storage-start-fresh", "Start fresh", false)
@@ -346,11 +343,10 @@ pub fn render_storage_notice(store: &Entity<Store>, window: &mut Window, cx: &mu
         })
         .when(exit_blocked, |this| {
             this.child(
-                notice_button("storage-quit", "Quit without saving", false)
-                    .on_click({
-                        let store = store.clone();
-                        move |_, _, cx| store.update(cx, |store, cx| store.quit_without_saving(cx))
-                    }),
+                notice_button("storage-quit", "Quit without saving", false).on_click({
+                    let store = store.clone();
+                    move |_, _, cx| store.update(cx, |store, cx| store.quit_without_saving(cx))
+                }),
             )
         })
         .into_any_element()
@@ -374,6 +370,9 @@ mod tests {
     #[test]
     fn labels_the_transport() {
         assert_eq!(transport_label(false, 30, 4), "30 s TIMEOUT · 4 MiB LIMIT");
-        assert_eq!(transport_label(true, 10, 8), "PROXY · 10 s TIMEOUT · 8 MiB LIMIT");
+        assert_eq!(
+            transport_label(true, 10, 8),
+            "PROXY · 10 s TIMEOUT · 8 MiB LIMIT"
+        );
     }
 }

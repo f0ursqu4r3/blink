@@ -1544,7 +1544,10 @@ mod tests {
         assert_eq!(labels("{ viewer { id | } }"), rest);
         assert_eq!(labels("{ viewer { |\n id } }"), rest);
         assert_eq!(labels("{ viewer { id @include(if: true) | } }"), rest);
-        assert_eq!(labels("{ viewer { friends(first: 1) { id } | } }"), ["id", "__typename"]);
+        assert_eq!(
+            labels("{ viewer { friends(first: 1) { id } | } }"),
+            ["id", "__typename"]
+        );
         assert!(labels("{ viewer { id i| } }").is_empty());
         // The word being typed is not already selected.
         assert_eq!(labels("{ viewer { i|d } }"), ["id"]);
@@ -1560,17 +1563,17 @@ mod tests {
     fn skips_arguments_already_given() {
         assert_eq!(labels("{ viewer { friends(first: 2, |) } }"), ["order"]);
         assert_eq!(labels("{ viewer { friends(|, order: ASC) } }"), ["first"]);
-        assert_eq!(labels("{ viewer @include(if: true, |) }"), Vec::<String>::new());
+        assert_eq!(
+            labels("{ viewer @include(if: true, |) }"),
+            Vec::<String>::new()
+        );
     }
 
     #[test]
     fn suggests_nothing_in_comments_and_strings() {
         assert!(labels("{ viewer { # i|").is_empty());
         assert!(labels("{ viewer { friends(order: \"A|").is_empty());
-        assert_eq!(
-            labels("{ viewer { friends(first: \"x\", |"),
-            vec!["order"]
-        );
+        assert_eq!(labels("{ viewer { friends(first: \"x\", |"), vec!["order"]);
     }
 
     #[test]

@@ -122,7 +122,13 @@ impl KeyValueEditor {
 
     /// Answer `PickFile(0)`: add a row that sends the picked file, named
     /// after the file without its extension.
-    pub fn add_file_row(&mut self, path: String, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn add_file_row(
+        &mut self,
+        path: String,
+        name: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         let key = match name.rfind('.') {
             Some(dot) => &name[..dot],
             None => name,
@@ -135,7 +141,13 @@ impl KeyValueEditor {
     }
 
     /// Answer `PickFile(id)`: the row sends the picked file.
-    pub fn set_row_file(&mut self, id: u64, path: String, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn set_row_file(
+        &mut self,
+        id: u64,
+        path: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if let Some(row) = self.rows.iter_mut().find(|row| row.id == id) {
             row.value = path;
             row.file = Some(true);
@@ -168,7 +180,9 @@ impl KeyValueEditor {
                         .update(cx, |input, cx| input.set_value(&row.value, window, cx));
                 }
                 let muted = !row.enabled;
-                inputs.value.update(cx, |input, cx| input.set_muted(muted, cx));
+                inputs
+                    .value
+                    .update(cx, |input, cx| input.set_muted(muted, cx));
                 continue;
             }
             let inputs = self.create_inputs(&row, window, cx);
@@ -176,7 +190,12 @@ impl KeyValueEditor {
         }
     }
 
-    fn create_inputs(&mut self, row: &Pair, window: &mut Window, cx: &mut Context<Self>) -> RowInputs {
+    fn create_inputs(
+        &mut self,
+        row: &Pair,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> RowInputs {
         let id = row.id;
         let key_placeholder = placeholder(&self.options.key_placeholder, "Name");
         let value_placeholder = placeholder(&self.options.value_placeholder, "Value");
@@ -199,20 +218,26 @@ impl KeyValueEditor {
             input.set_muted(muted, cx);
             input
         });
-        let name_subscription =
-            cx.subscribe_in(&name, window, move |this, input, event: &InputEvent, window, cx| {
+        let name_subscription = cx.subscribe_in(
+            &name,
+            window,
+            move |this, input, event: &InputEvent, window, cx| {
                 if let InputEvent::Change = event {
                     let key = input.read(cx).value().to_string();
                     this.update_row(id, window, cx, |row| row.key = key);
                 }
-            });
-        let value_subscription =
-            cx.subscribe_in(&value, window, move |this, _, event: &TokenInputEvent, window, cx| {
+            },
+        );
+        let value_subscription = cx.subscribe_in(
+            &value,
+            window,
+            move |this, _, event: &TokenInputEvent, window, cx| {
                 if let TokenInputEvent::Change(text) = event {
                     let text = text.clone();
                     this.update_row(id, window, cx, |row| row.value = text);
                 }
-            });
+            },
+        );
         RowInputs {
             name,
             value,
@@ -349,7 +374,8 @@ impl KeyValueEditor {
         let id = row.id;
         let key = row.key.clone();
         let value = row.value.clone();
-        let on = |entity: &WeakEntity<Self>, f: fn(&mut Self, u64, &mut Window, &mut Context<Self>)| {
+        let on = |entity: &WeakEntity<Self>,
+                  f: fn(&mut Self, u64, &mut Window, &mut Context<Self>)| {
             let entity = entity.clone();
             move |_: &ClickEvent, window: &mut Window, cx: &mut App| {
                 entity.update(cx, |this, cx| f(this, id, window, cx)).ok();
@@ -380,7 +406,9 @@ impl KeyValueEditor {
         .item(
             PopupMenuItem::new("Copy name")
                 .disabled(key.is_empty())
-                .on_click(move |_, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(key.clone()))),
+                .on_click(move |_, _, cx| {
+                    cx.write_to_clipboard(ClipboardItem::new_string(key.clone()))
+                }),
         )
         .item(
             PopupMenuItem::new("Copy value")
@@ -466,16 +494,18 @@ impl KeyValueEditor {
             .w_full()
             .when(toggles, |this| {
                 this.child(
-                    cell().w(px(SIDE_COLUMN)).flex_none().justify_center().child(
-                        check_box(
+                    cell()
+                        .w(px(SIDE_COLUMN))
+                        .flex_none()
+                        .justify_center()
+                        .child(check_box(
                             SharedString::from(format!("{prefix}-enabled-{id}")),
                             row.enabled,
                             disabled,
                             format!("Enable {label} row {}", index + 1),
                             cx.listener(move |this, _, window, cx| this.toggle_row(id, window, cx)),
                             cx,
-                        ),
-                    ),
+                        )),
                 )
             })
             .child(
@@ -539,7 +569,9 @@ impl KeyValueEditor {
                 .text_size(px(10.))
                 .font_weight(FontWeight::MEDIUM)
                 .text_color(colors.muted_foreground)
-                .when_some(text, |this, text| this.child(tracked(text.to_uppercase(), WIDEST)))
+                .when_some(text, |this, text| {
+                    this.child(tracked(text.to_uppercase(), WIDEST))
+                })
         };
         let key = placeholder(&self.options.key_label, "Name");
         let value = placeholder(&self.options.value_label, "Value");
@@ -548,13 +580,12 @@ impl KeyValueEditor {
             .flex()
             .w_full()
             .font_family(theme::SANS)
-            .when(toggles, |this| this.child(head(None).w(px(SIDE_COLUMN)).flex_none()))
-            .child(
-                head(Some(key))
-                    .flex_1()
-                    .min_w_0()
-                    .when(toggles, |this| this.border_l_1().border_color(colors.border)),
-            )
+            .when(toggles, |this| {
+                this.child(head(None).w(px(SIDE_COLUMN)).flex_none())
+            })
+            .child(head(Some(key)).flex_1().min_w_0().when(toggles, |this| {
+                this.border_l_1().border_color(colors.border)
+            }))
             .child(
                 head(Some(value))
                     .flex_1()
@@ -573,29 +604,31 @@ impl KeyValueEditor {
                 let add = entity.clone();
                 let enable = entity.clone();
                 let disable = entity.clone();
-                menu.item(
-                    PopupMenuItem::new("Add row")
-                        .disabled(disabled)
-                        .on_click(move |_, window, cx| {
-                            add.update(cx, |this, cx| this.add_row(window, cx)).ok();
-                        }),
-                )
+                menu.item(PopupMenuItem::new("Add row").disabled(disabled).on_click(
+                    move |_, window, cx| {
+                        add.update(cx, |this, cx| this.add_row(window, cx)).ok();
+                    },
+                ))
                 .when(toggles, |menu| {
                     menu.separator()
-                        .item(PopupMenuItem::new("Enable all").disabled(disabled).on_click(
-                            move |_, window, cx| {
-                                enable
-                                    .update(cx, |this, cx| this.set_all(true, window, cx))
-                                    .ok();
-                            },
-                        ))
-                        .item(PopupMenuItem::new("Disable all").disabled(disabled).on_click(
-                            move |_, window, cx| {
-                                disable
-                                    .update(cx, |this, cx| this.set_all(false, window, cx))
-                                    .ok();
-                            },
-                        ))
+                        .item(
+                            PopupMenuItem::new("Enable all")
+                                .disabled(disabled)
+                                .on_click(move |_, window, cx| {
+                                    enable
+                                        .update(cx, |this, cx| this.set_all(true, window, cx))
+                                        .ok();
+                                }),
+                        )
+                        .item(
+                            PopupMenuItem::new("Disable all")
+                                .disabled(disabled)
+                                .on_click(move |_, window, cx| {
+                                    disable
+                                        .update(cx, |this, cx| this.set_all(false, window, cx))
+                                        .ok();
+                                }),
+                        )
                 })
             })
     }
@@ -628,15 +661,16 @@ pub fn check_box(
         .rounded(px(2.5))
         .border_1()
         .when(checked, |this| {
-            this.bg(colors.primary)
-                .border_color(colors.primary)
-                .child(
-                    Icon::new(IconName::Check)
-                        .size(css(11.))
-                        .text_color(colors.primary_foreground),
-                )
+            this.bg(colors.primary).border_color(colors.primary).child(
+                Icon::new(IconName::Check)
+                    .size(css(11.))
+                    .text_color(colors.primary_foreground),
+            )
         })
-        .when(!checked, |this| this.bg(colors.muted).border_color(colors.muted_foreground.opacity(0.7)))
+        .when(!checked, |this| {
+            this.bg(colors.muted)
+                .border_color(colors.muted_foreground.opacity(0.7))
+        })
         .when(disabled, |this| this.opacity(0.5))
         .tooltip(move |window, cx| {
             gpui_kit::component::tooltip::Tooltip::new(tooltip.clone()).build(window, cx)
@@ -711,15 +745,25 @@ impl Render for KeyValueEditor {
                     .gap_1()
                     .m_2()
                     .child(
-                        ghost_button(SharedString::from(format!("{prefix}-add-row")), IconName::Plus, "Add row", cx)
-                            .disabled(self.disabled)
-                            .on_click(cx.listener(|this, _, window, cx| this.add_row(window, cx))),
+                        ghost_button(
+                            SharedString::from(format!("{prefix}-add-row")),
+                            IconName::Plus,
+                            "Add row",
+                            cx,
+                        )
+                        .disabled(self.disabled)
+                        .on_click(cx.listener(|this, _, window, cx| this.add_row(window, cx))),
                     )
                     .when(self.options.allow_files, |this| {
                         this.child(
-                            ghost_button(SharedString::from(format!("{prefix}-add-file")), IconName::FileUp, "Add file", cx)
-                                .disabled(self.disabled)
-                                .on_click(cx.listener(|this, _, _, cx| this.pick_file(0, cx))),
+                            ghost_button(
+                                SharedString::from(format!("{prefix}-add-file")),
+                                IconName::FileUp,
+                                "Add file",
+                                cx,
+                            )
+                            .disabled(self.disabled)
+                            .on_click(cx.listener(|this, _, _, cx| this.pick_file(0, cx))),
                         )
                     }),
             )
@@ -733,7 +777,10 @@ mod tests {
 
     #[test]
     fn falls_back_to_the_default_column_names() {
-        assert_eq!(placeholder(&SharedString::default(), "Name").as_ref(), "Name");
+        assert_eq!(
+            placeholder(&SharedString::default(), "Name").as_ref(),
+            "Name"
+        );
         assert_eq!(placeholder(&"Token".into(), "Name").as_ref(), "Token");
     }
 }

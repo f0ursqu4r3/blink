@@ -23,7 +23,12 @@ fn saved_display(uuid: &str, cx: &App) -> Option<std::rc::Rc<dyn PlatformDisplay
 /// a centered default on the primary display. Bounds are display-relative.
 fn window_bounds(engine: &Engine, cx: &App) -> (WindowBounds, Option<DisplayId>) {
     let default = size(px(1180.), px(780.));
-    let centered = || (WindowBounds::Windowed(Bounds::centered(None, default, cx)), None);
+    let centered = || {
+        (
+            WindowBounds::Windowed(Bounds::centered(None, default, cx)),
+            None,
+        )
+    };
     let Some(saved) = engine.load_window_state() else {
         return centered();
     };

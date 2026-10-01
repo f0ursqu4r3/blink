@@ -95,7 +95,11 @@ pub fn parse_table(
     let check: Vec<_> = used
         .iter()
         .map(|row| {
-            let base = if row.base.is_empty() { " " } else { row.base.as_str() };
+            let base = if row.base.is_empty() {
+                " "
+            } else {
+                row.base.as_str()
+            };
             pair(row.key.clone(), base)
         })
         .collect();
@@ -515,7 +519,11 @@ impl Render for EnvironmentTokens {
             let column = &self.columns[index];
             let id = column.id;
             let name = column.name.read(cx).value().to_uppercase();
-            let label = if name.is_empty() { "UNNAMED".to_string() } else { name };
+            let label = if name.is_empty() {
+                "UNNAMED".to_string()
+            } else {
+                name
+            };
             let menu = self.render_menu(column, cx);
             let color = theme::environment_color(column.color, cx);
             header = header.child(
@@ -555,7 +563,11 @@ impl Render for EnvironmentTokens {
                                             .text_size(px(10.))
                                             .font_weight(FontWeight::SEMIBOLD)
                                             .text_color(color)
-                                            .child(div().truncate().child(tracked(label.clone(), WIDEST)))
+                                            .child(
+                                                div()
+                                                    .truncate()
+                                                    .child(tracked(label.clone(), WIDEST)),
+                                            )
                                             .when(column.protected, |this| {
                                                 this.child(
                                                     div()
@@ -663,32 +675,25 @@ impl Render for EnvironmentTokens {
             )
         });
 
-        let width = px(NAME_WIDTH
-            + VALUE_MIN_WIDTH
-            + ENV_WIDTH * self.columns.len() as f32
-            + SIDE_WIDTH);
-        div()
-            .id("environment-tokens")
-            .overflow_x_scroll()
-            .child(
-                v_flex()
-                    .min_w(width)
-                    .w_full()
-                    .child(header)
-                    .children(rows)
-                    .child(
-                        div().p(px(4.)).child(
-                            Button::new("add-token")
-                                .ghost()
-                                .small()
-                                .icon(Icon::new(IconName::Plus).size(px(13.)))
-                                .label("Add value")
-                                .on_click(
-                                    cx.listener(|this, _, window, cx| this.add_row(window, cx)),
-                                ),
-                        ),
+        let width =
+            px(NAME_WIDTH + VALUE_MIN_WIDTH + ENV_WIDTH * self.columns.len() as f32 + SIDE_WIDTH);
+        div().id("environment-tokens").overflow_x_scroll().child(
+            v_flex()
+                .min_w(width)
+                .w_full()
+                .child(header)
+                .children(rows)
+                .child(
+                    div().p(px(4.)).child(
+                        Button::new("add-token")
+                            .ghost()
+                            .small()
+                            .icon(Icon::new(IconName::Plus).size(px(13.)))
+                            .label("Add value")
+                            .on_click(cx.listener(|this, _, window, cx| this.add_row(window, cx))),
                     ),
-            )
+                ),
+        )
     }
 }
 

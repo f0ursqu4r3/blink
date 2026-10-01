@@ -185,14 +185,22 @@ impl BodyLanguage {
 }
 
 /// `{{name}}` suggestions for the reference typed before `offset`.
-pub fn token_completions(text: &str, offset: usize, tokens: &InterpolationContext) -> Option<(usize, Vec<TokenSuggestion>)> {
+pub fn token_completions(
+    text: &str,
+    offset: usize,
+    tokens: &InterpolationContext,
+) -> Option<(usize, Vec<TokenSuggestion>)> {
     let query = token_query_at(text, offset)?;
     let closing = text[offset..].starts_with("}}");
     let options = match_token_options(&token_options(Some(tokens)), &query.query);
     let items = options
         .into_iter()
         .map(|option| TokenSuggestion {
-            insert: if closing { option.name.clone() } else { format!("{}}}}}", option.name) },
+            insert: if closing {
+                option.name.clone()
+            } else {
+                format!("{}}}}}", option.name)
+            },
             info: match option.scope {
                 TokenScope::Local => "Group token",
                 TokenScope::Global => "Global token",
@@ -331,7 +339,11 @@ pub fn show_completions(state: &Entity<EditorState>, window: &mut Window, cx: &m
 }
 
 /// The token references in `text`, as semantic tokens in legend order.
-fn semantic_tokens(rope: &Rope, text: &str, tokens: Option<&InterpolationContext>) -> Vec<SemanticToken> {
+fn semantic_tokens(
+    rope: &Rope,
+    text: &str,
+    tokens: Option<&InterpolationContext>,
+) -> Vec<SemanticToken> {
     let mut data = Vec::new();
     let (mut line, mut start) = (0, 0);
     for range in token_ranges(text, tokens) {
@@ -346,7 +358,11 @@ fn semantic_tokens(rope: &Rope, text: &str, tokens: Option<&InterpolationContext
             TokenState::Unresolved => 2,
         };
         let delta_line = from.line - line;
-        let delta_start = if delta_line == 0 { from.character - start } else { from.character };
+        let delta_start = if delta_line == 0 {
+            from.character - start
+        } else {
+            from.character
+        };
         data.push(SemanticToken {
             delta_line,
             delta_start,
@@ -384,7 +400,10 @@ impl DocumentRangeSemanticTokensProvider for BodyLanguage {
             Some(tokens) => semantic_tokens(rope, &rope.to_string(), Some(tokens)),
             None => Vec::new(),
         };
-        Task::ready(Ok(SemanticTokens { result_id: None, data }))
+        Task::ready(Ok(SemanticTokens {
+            result_id: None,
+            data,
+        }))
     }
 }
 
@@ -411,7 +430,10 @@ impl HoverProvider for BodyLanguage {
                     token: Some(range.token),
                 };
                 Hover {
-                    contents: HoverContents::Scalar(MarkedString::String(token_hint(&span, Some(ctx)))),
+                    contents: HoverContents::Scalar(MarkedString::String(token_hint(
+                        &span,
+                        Some(ctx),
+                    ))),
                     range: Some(lsp_types::Range::new(
                         rope.offset_to_position(range.from),
                         rope.offset_to_position(range.to),

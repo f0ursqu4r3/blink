@@ -2,17 +2,17 @@
 //! `JsonTreeView.vue`, `EventList.vue`, and `TimingCard.vue`.
 
 mod event_list;
-#[cfg(test)]
-mod ui_tests;
 mod json_tree;
 mod timing_card;
+#[cfg(test)]
+mod ui_tests;
 
 use std::path::PathBuf;
 use std::time::Duration;
 
 use blink_core::find::{Finder, filter_headers, find_status};
-use blink_core::jq::run_jq;
 use blink_core::html::format_html;
+use blink_core::jq::run_jq;
 use blink_core::json::format_json;
 use blink_core::model::{ApiResponse, RequestSession, SseEvent};
 use blink_core::preferences::transport_options;
@@ -982,10 +982,17 @@ impl ResponsePanel {
                         .on_click(cx.listener(|this, _, window, cx| this.toggle_wrap(window, cx))),
                 )
                 .child(
-                    tool_button(cx, 
+                    tool_button(
+                        cx,
                         "response-find",
                         IconName::Search,
-                        format!("Find and filter response · {}", blink_core::shortcut::shortcut_label(&["mod", "f"], blink_core::shortcut::IS_MAC)),
+                        format!(
+                            "Find and filter response · {}",
+                            blink_core::shortcut::shortcut_label(
+                                &["mod", "f"],
+                                blink_core::shortcut::IS_MAC
+                            )
+                        ),
                     )
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_inspector(window, cx))),
                 )
@@ -1004,7 +1011,8 @@ impl ResponsePanel {
                     .on_click(cx.listener(|this, _, window, cx| this.save_body(window, cx))),
             )
             .child(
-                tool_button(cx, 
+                tool_button(
+                    cx,
                     "response-copy",
                     if copied {
                         IconName::Check
@@ -1130,7 +1138,8 @@ impl ResponsePanel {
             })
             .when(!self.filter_lines, |this| {
                 this.child(
-                    find_button(cx, 
+                    find_button(
+                        cx,
                         "find-previous",
                         IconName::ChevronUp,
                         "Previous match · Shift+Enter",
@@ -1145,7 +1154,8 @@ impl ResponsePanel {
                 )
             })
             .child(
-                find_button(cx, 
+                find_button(
+                    cx,
                     "filter-lines",
                     IconName::ListFilter,
                     "Show only matching lines",
@@ -1260,7 +1270,11 @@ impl ResponsePanel {
                     .when(!enabled, |this| this.opacity(0.5))
                     // `underline decoration-dotted underline-offset-3
                     // disabled:no-underline`.
-                    .child(if enabled { dotted("Save…") } else { tracked("Save…", 0.) }),
+                    .child(if enabled {
+                        dotted("Save…")
+                    } else {
+                        tracked("Save…", 0.)
+                    }),
             )
             .child("to get the full body.")
     }

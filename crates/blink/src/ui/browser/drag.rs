@@ -49,22 +49,21 @@ impl Render for DragPreview {
                     .text_color(colors.foreground)
                     .shadow_md()
                     .when(self.folder, |this| {
-                        this.child(
-                            Icon::new(IconName::Folder)
-                                .size(css(12.))
-                                .flex_shrink_0(),
-                        )
+                        this.child(Icon::new(IconName::Folder).size(css(12.)).flex_shrink_0())
                     })
-                    .when_some(self.method.clone().filter(|_| !self.folder), |this, method| {
-                        this.child(
-                            div()
-                                .flex_shrink_0()
-                                .text_size(css(8.))
-                                .font_weight(FontWeight::BOLD)
-                                .text_color(theme::method_color(&method, cx))
-                                .child(method),
-                        )
-                    })
+                    .when_some(
+                        self.method.clone().filter(|_| !self.folder),
+                        |this, method| {
+                            this.child(
+                                div()
+                                    .flex_shrink_0()
+                                    .text_size(css(8.))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(theme::method_color(&method, cx))
+                                    .child(method),
+                            )
+                        },
+                    )
                     .child(div().min_w_0().truncate().child(self.label.clone())),
             )
     }

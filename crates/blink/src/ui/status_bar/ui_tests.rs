@@ -134,6 +134,9 @@ fn a_bad_proxy_url_fails_with_the_vue_error(cx: &mut TestAppContext) {
     for proxy in ["ftp://proxy.local", "not a url"] {
         set_transport(&harness, cx, |transport| transport.proxy_url = proxy.into());
         harness.send(cx, "http://127.0.0.1:9/");
-        assert_eq!(harness.session(cx, |s| s.error.clone()), "Invalid proxy URL.");
+        assert_eq!(
+            harness.session(cx, |s| s.error.clone()),
+            "Invalid proxy URL."
+        );
     }
 }

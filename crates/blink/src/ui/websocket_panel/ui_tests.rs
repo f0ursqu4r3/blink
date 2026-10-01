@@ -74,7 +74,10 @@ fn connects_sends_logs_clears_and_disconnects(cx: &mut TestAppContext) {
     wait(cx, "open", |cx| {
         let id = harness.store.read(cx).workspace.shown_active_id().unwrap();
         let session = harness.store.read(cx).workspace.session(id).unwrap();
-        session.socket.as_ref().is_some_and(|s| s.state == SocketState::Open)
+        session
+            .socket
+            .as_ref()
+            .is_some_and(|s| s.state == SocketState::Open)
     });
     harness.draw(cx);
     let label = harness.session(cx, |s| super::state_label(s.socket.as_ref()));
@@ -114,7 +117,10 @@ fn connects_sends_logs_clears_and_disconnects(cx: &mut TestAppContext) {
     assert_eq!(counts(&messages), (1, 1), "received, sent");
     // A sent message clears the message box.
     assert_eq!(harness.session(cx, |s| s.draft.body.clone()), "");
-    assert_eq!(cx.read(|cx| panel.read(cx).message.read(cx).value().to_string()), "");
+    assert_eq!(
+        cx.read(|cx| panel.read(cx).message.read(cx).value().to_string()),
+        ""
+    );
     assert_eq!(cx.read(|cx| panel.read(cx).shown.1), messages.len());
 
     // Clear the log.
@@ -131,7 +137,10 @@ fn connects_sends_logs_clears_and_disconnects(cx: &mut TestAppContext) {
     wait(cx, "closed", |cx| {
         let id = harness.store.read(cx).workspace.shown_active_id().unwrap();
         let session = harness.store.read(cx).workspace.session(id).unwrap();
-        session.socket.as_ref().is_some_and(|s| s.state == SocketState::Closed)
+        session
+            .socket
+            .as_ref()
+            .is_some_and(|s| s.state == SocketState::Closed)
     });
     harness.draw(cx);
     assert!(cx.read(|cx| harness.store.read(cx).sockets.is_empty()));

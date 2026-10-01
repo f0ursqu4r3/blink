@@ -58,11 +58,7 @@ pub fn open(cx: &mut TestAppContext, engine: &Engine) -> Harness {
         )
         .expect("open test window")
     });
-    let harness = Harness {
-        store,
-        window,
-        app,
-    };
+    let harness = Harness { store, window, app };
     wait(cx, "store ready", |cx| harness.store.read(cx).ready);
     harness.draw(cx);
     harness
@@ -140,7 +136,15 @@ impl Harness {
     /// Send the active draft as it is and wait for the result.
     pub fn send_draft(&self, cx: &mut TestAppContext) {
         let id = self.active_id(cx);
-        let before = cx.read(|cx| self.store.read(cx).workspace.session(id).unwrap().history.len());
+        let before = cx.read(|cx| {
+            self.store
+                .read(cx)
+                .workspace
+                .session(id)
+                .unwrap()
+                .history
+                .len()
+        });
         self.dispatch(cx, crate::actions::SendRequest);
         wait(cx, "send finished", |cx| {
             let session = self.store.read(cx).workspace.session(id).unwrap();
@@ -238,9 +242,7 @@ impl Reply {
 
 /// A server that answers every connection with `reply(request)` and reports
 /// each raw request on the returned channel. Returns its base URL.
-pub fn serve(
-    reply: impl Fn(&[u8]) -> Reply + Send + 'static,
-) -> (String, mpsc::Receiver<Vec<u8>>) {
+pub fn serve(reply: impl Fn(&[u8]) -> Reply + Send + 'static) -> (String, mpsc::Receiver<Vec<u8>>) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
     let (tx, rx) = mpsc::channel();

@@ -37,16 +37,15 @@ fn send(harness: &Harness, cx: &mut TestAppContext, url: &str) {
 }
 
 /// Start "Save…", pick `path` in the simulated save dialog, wait for the write.
-fn save_to(
-    harness: &Harness,
-    cx: &mut TestAppContext,
-    path: Option<std::path::PathBuf>,
-) -> String {
+fn save_to(harness: &Harness, cx: &mut TestAppContext, path: Option<std::path::PathBuf>) -> String {
     let panel = panel(harness, cx);
     harness.update(cx, |window, cx| {
         panel.update(cx, |panel, cx| panel.save_body(window, cx));
     });
-    assert!(cx.read(|cx| panel.read(cx).saving), "busy while the dialog is open");
+    assert!(
+        cx.read(|cx| panel.read(cx).saving),
+        "busy while the dialog is open"
+    );
     assert!(cx.did_prompt_for_new_path());
     cx.simulate_new_path_selection(move |_| path);
     wait(cx, "save done", |cx| !panel.read(cx).saving);
@@ -99,7 +98,12 @@ fn saves_the_full_stored_body_byte_for_byte(cx: &mut TestAppContext) {
     let id = harness.active_id(cx);
     harness.store.update(cx, |store, cx| {
         store.update_workspace(cx, |workspace| {
-            let response = workspace.session_mut(id).unwrap().response.as_mut().unwrap();
+            let response = workspace
+                .session_mut(id)
+                .unwrap()
+                .response
+                .as_mut()
+                .unwrap();
             response.body_id = None;
         });
     });
@@ -111,7 +115,12 @@ fn saves_the_full_stored_body_byte_for_byte(cx: &mut TestAppContext) {
     send(&harness, cx, &format!("{base}/binary"));
     harness.store.update(cx, |store, cx| {
         store.update_workspace(cx, |workspace| {
-            let response = workspace.session_mut(id).unwrap().response.as_mut().unwrap();
+            let response = workspace
+                .session_mut(id)
+                .unwrap()
+                .response
+                .as_mut()
+                .unwrap();
             response.body_id = None;
         });
     });
@@ -134,11 +143,12 @@ fn pretty_formats_html_and_raw_shows_the_body(cx: &mut TestAppContext) {
     let harness = test_support::open(cx, &engine);
 
     send(&harness, cx, &format!("{base}/missing"));
-    assert!(harness.session(cx, |s| s.view.pretty), "pretty is the default");
+    assert!(
+        harness.session(cx, |s| s.view.pretty),
+        "pretty is the default"
+    );
     let panel = panel(&harness, cx);
-    let shown = |cx: &TestAppContext, pretty| {
-        cx.read(|cx| panel.read(cx).text(pretty).to_string())
-    };
+    let shown = |cx: &TestAppContext, pretty| cx.read(|cx| panel.read(cx).text(pretty).to_string());
     assert_eq!(
         shown(cx, true),
         "<html>\n  <body>\n    <h1>Not Found</h1>\n  </body>\n</html>"
@@ -217,10 +227,17 @@ fn streams_live_events_and_cancel_keeps_them(cx: &mut TestAppContext) {
     let (busy, live_rows, streamed) = cx.read(|cx| {
         let session = harness.store.read(cx).workspace.session(id).unwrap();
         let rows = panel.read(cx).live_events.rows();
-        (session.busy, rows, session.stream.as_ref().unwrap().events.len())
+        (
+            session.busy,
+            rows,
+            session.stream.as_ref().unwrap().events.len(),
+        )
     });
     assert!(busy);
-    assert!(live_rows >= 3 && live_rows <= streamed, "{live_rows} of {streamed}");
+    assert!(
+        live_rows >= 3 && live_rows <= streamed,
+        "{live_rows} of {streamed}"
+    );
     assert!(harness.session(cx, |s| s.response.is_none()));
 
     // Cancel stops the stream and keeps the events as the response.
@@ -230,7 +247,10 @@ fn streams_live_events_and_cancel_keeps_them(cx: &mut TestAppContext) {
     });
     harness.draw(cx);
     let (tab, events, error) = harness.session(cx, |s| {
-        let response = s.response.as_ref().expect("the stream becomes the response");
+        let response = s
+            .response
+            .as_ref()
+            .expect("the stream becomes the response");
         (
             s.view.response_tab.clone(),
             blink_core::sse::parse_sse(&response.body),

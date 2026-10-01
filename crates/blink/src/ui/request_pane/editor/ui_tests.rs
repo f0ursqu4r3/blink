@@ -10,7 +10,16 @@ use crate::ui::key_value_editor::KeyValueEvent;
 
 fn editor(harness: &Harness, cx: &TestAppContext) -> Entity<RequestEditor> {
     let id = harness.active_id(cx);
-    cx.read(|cx| harness.app.read(cx).pane(id).unwrap().read(cx).editor.clone())
+    cx.read(|cx| {
+        harness
+            .app
+            .read(cx)
+            .pane(id)
+            .unwrap()
+            .read(cx)
+            .editor
+            .clone()
+    })
 }
 
 fn body(request: &[u8]) -> &[u8] {
@@ -71,7 +80,10 @@ fn sends_a_picked_file_body_and_a_multipart_file_part(cx: &mut TestAppContext) {
     });
     cx.simulate_path_prompt_response(|_| None);
     harness.draw(cx);
-    assert_eq!(harness.session(cx, |s| s.draft.body_file.clone()), Some(stored));
+    assert_eq!(
+        harness.session(cx, |s| s.draft.body_file.clone()),
+        Some(stored)
+    );
 
     // Multipart: pick a file for a new part, plus a text part, send.
     harness.edit_draft(cx, |draft| {
@@ -95,15 +107,24 @@ fn sends_a_picked_file_body_and_a_multipart_file_part(cx: &mut TestAppContext) {
             .is_some_and(|rows| rows.iter().any(|row| row.file == Some(true)))
     });
     let row = harness.session(cx, |s| s.draft.form.clone().unwrap()[0].clone());
-    assert_eq!(row.key, "report", "named after the file without its extension");
+    assert_eq!(
+        row.key, "report",
+        "named after the file without its extension"
+    );
     assert_eq!(std::fs::canonicalize(&row.value).unwrap(), canonical);
     harness.send_draft(cx);
     assert_eq!(harness.session(cx, |s| s.error.clone()), "");
     let request = requests.recv().unwrap();
     let text = String::from_utf8_lossy(&request);
     assert!(text.starts_with("POST /multipart"));
-    assert!(text.to_ascii_lowercase().contains("content-type: multipart/form-data; boundary="));
-    assert!(text.contains("name=\"report\"; filename=\"report.csv\""), "{text}");
+    assert!(
+        text.to_ascii_lowercase()
+            .contains("content-type: multipart/form-data; boundary=")
+    );
+    assert!(
+        text.contains("name=\"report\"; filename=\"report.csv\""),
+        "{text}"
+    );
     assert!(test_support::find(body(&request), &content).is_some());
 }
 
@@ -151,5 +172,9 @@ fn ctrl_space_opens_completions_without_typing(cx: &mut TestAppContext) {
     assert!(open(cx));
     assert_eq!(labels, ["host", "_.host"]);
     assert_eq!(query, "ho");
-    assert_eq!(cx.read(|cx| body.read(cx).value().to_string()), text, "no text typed");
+    assert_eq!(
+        cx.read(|cx| body.read(cx).value().to_string()),
+        text,
+        "no text typed"
+    );
 }

@@ -53,7 +53,12 @@ pub struct ChecksEditor {
 }
 
 impl ChecksEditor {
-    pub fn new(store: Entity<Store>, session_id: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        store: Entity<Store>,
+        session_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let mut editor = ChecksEditor {
             store,
             session_id,
@@ -80,12 +85,27 @@ impl ChecksEditor {
     fn sync_inputs(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let mut wanted = Vec::new();
         for row in &self.assertions {
-            wanted.push((row.id, Field::AssertionPath, row.path.clone(), path_placeholder(row.source)));
-            wanted.push((row.id, Field::AssertionExpected, row.expected.clone(), "Value"));
+            wanted.push((
+                row.id,
+                Field::AssertionPath,
+                row.path.clone(),
+                path_placeholder(row.source),
+            ));
+            wanted.push((
+                row.id,
+                Field::AssertionExpected,
+                row.expected.clone(),
+                "Value",
+            ));
         }
         for row in &self.captures {
             wanted.push((row.id, Field::CaptureName, row.name.clone(), "name"));
-            wanted.push((row.id, Field::CapturePath, row.path.clone(), path_placeholder(row.source)));
+            wanted.push((
+                row.id,
+                Field::CapturePath,
+                row.path.clone(),
+                path_placeholder(row.source),
+            ));
         }
         let keys: Vec<(u64, u8)> = wanted
             .iter()
@@ -95,7 +115,9 @@ impl ChecksEditor {
         for (id, field, text, placeholder) in wanted {
             let key = (id, field_key(&field));
             if let Some((input, _)) = self.inputs.get(&key) {
-                input.update(cx, |input, cx| input.set_placeholder(placeholder, window, cx));
+                input.update(cx, |input, cx| {
+                    input.set_placeholder(placeholder, window, cx)
+                });
                 continue;
             }
             let input = cx.new(|cx| {
@@ -148,7 +170,13 @@ impl ChecksEditor {
         cx.notify();
     }
 
-    fn update_assertion(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>, change: impl FnOnce(&mut Assertion)) {
+    fn update_assertion(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut Assertion),
+    ) {
         if let Some(row) = self.assertions.iter_mut().find(|row| row.id == id) {
             change(row);
         }
@@ -156,7 +184,13 @@ impl ChecksEditor {
         self.save(cx);
     }
 
-    fn update_capture(&mut self, id: u64, window: &mut Window, cx: &mut Context<Self>, change: impl FnOnce(&mut Capture)) {
+    fn update_capture(
+        &mut self,
+        id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+        change: impl FnOnce(&mut Capture),
+    ) {
         if let Some(row) = self.captures.iter_mut().find(|row| row.id == id) {
             change(row);
         }
@@ -165,7 +199,9 @@ impl ChecksEditor {
     }
 
     fn input(&self, id: u64, field: Field) -> Option<Entity<InputState>> {
-        self.inputs.get(&(id, field_key(&field))).map(|(input, _)| input.clone())
+        self.inputs
+            .get(&(id, field_key(&field)))
+            .map(|(input, _)| input.clone())
     }
 
     fn render_assertions(&self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -203,16 +239,23 @@ impl ChecksEditor {
                             move |source, window, cx| {
                                 source_entity
                                     .update(cx, |this, cx| {
-                                        this.update_assertion(id, window, cx, |row| row.source = source)
+                                        this.update_assertion(id, window, cx, |row| {
+                                            row.source = source
+                                        })
                                     })
                                     .ok();
                             },
                             cx,
                         )),
                     )
-                    .child(cell(cx).flex_1().min_w_0().when(row.source.takes_path(), |this| {
-                        this.when_some(path, |this, input| this.child(text_input(&input)))
-                    }))
+                    .child(
+                        cell(cx)
+                            .flex_1()
+                            .min_w_0()
+                            .when(row.source.takes_path(), |this| {
+                                this.when_some(path, |this, input| this.child(text_input(&input)))
+                            }),
+                    )
                     .child(
                         cell(cx).w(relative(0.22)).flex_none().child(cell_select(
                             SharedString::from(format!("assertion-operator-{id}")),
@@ -225,16 +268,25 @@ impl ChecksEditor {
                             move |operator, window, cx| {
                                 operator_entity
                                     .update(cx, |this, cx| {
-                                        this.update_assertion(id, window, cx, |row| row.operator = operator)
+                                        this.update_assertion(id, window, cx, |row| {
+                                            row.operator = operator
+                                        })
                                     })
                                     .ok();
                             },
                             cx,
                         )),
                     )
-                    .child(cell(cx).flex_1().min_w_0().when(!row.operator.is_unary(), |this| {
-                        this.when_some(expected, |this, input| this.child(text_input(&input)))
-                    }))
+                    .child(
+                        cell(cx)
+                            .flex_1()
+                            .min_w_0()
+                            .when(!row.operator.is_unary(), |this| {
+                                this.when_some(expected, |this, input| {
+                                    this.child(text_input(&input))
+                                })
+                            }),
+                    )
                     .child(remove_cell(
                         SharedString::from(format!("assertion-remove-{id}")),
                         format!("Remove assertion {}", index + 1),
@@ -336,16 +388,23 @@ impl ChecksEditor {
                             move |source, window, cx| {
                                 source_entity
                                     .update(cx, |this, cx| {
-                                        this.update_capture(id, window, cx, |row| row.source = source)
+                                        this.update_capture(id, window, cx, |row| {
+                                            row.source = source
+                                        })
                                     })
                                     .ok();
                             },
                             cx,
                         )),
                     )
-                    .child(cell(cx).flex_1().min_w_0().when(row.source.takes_path(), |this| {
-                        this.when_some(path, |this, input| this.child(text_input(&input)))
-                    }))
+                    .child(
+                        cell(cx)
+                            .flex_1()
+                            .min_w_0()
+                            .when(row.source.takes_path(), |this| {
+                                this.when_some(path, |this, input| this.child(text_input(&input)))
+                            }),
+                    )
                     .child(remove_cell(
                         SharedString::from(format!("capture-remove-{id}")),
                         format!("Remove capture {}", index + 1),
@@ -402,7 +461,12 @@ fn field_key(field: &Field) -> u8 {
     }
 }
 
-fn section_heading(title: &'static str, id: &'static str, help: &'static str, cx: &App) -> impl IntoElement {
+fn section_heading(
+    title: &'static str,
+    id: &'static str,
+    help: &'static str,
+    cx: &App,
+) -> impl IntoElement {
     let colors = theme::colors(cx);
     div()
         .h(px(32.))
@@ -429,7 +493,9 @@ fn head(text: Option<&'static str>, cx: &App) -> Div {
         .text_size(px(10.))
         .font_weight(FontWeight::MEDIUM)
         .text_color(colors.muted_foreground)
-        .when_some(text, |this, text| this.child(tracked(text.to_uppercase(), WIDEST)))
+        .when_some(text, |this, text| {
+            this.child(tracked(text.to_uppercase(), WIDEST))
+        })
 }
 
 fn table_row(cx: &App) -> Div {
@@ -476,7 +542,14 @@ fn enabled_cell(
         .justify_center()
         .border_b_1()
         .border_color(colors.border)
-        .child(check_box(id, checked, false, label, move |_, window, cx| on_click(&!checked, window, cx), cx))
+        .child(check_box(
+            id,
+            checked,
+            false,
+            label,
+            move |_, window, cx| on_click(&!checked, window, cx),
+            cx,
+        ))
 }
 
 fn remove_cell(
@@ -485,14 +558,18 @@ fn remove_cell(
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> impl IntoElement {
-    cell(cx).w(px(SIDE_COLUMN)).flex_none().justify_center().child(
-        Button::new(id)
-            .ghost()
-            .small()
-            .icon(Icon::new(IconName::X).size(px(13.)))
-            .tooltip(label)
-            .on_click(on_click),
-    )
+    cell(cx)
+        .w(px(SIDE_COLUMN))
+        .flex_none()
+        .justify_center()
+        .child(
+            Button::new(id)
+                .ghost()
+                .small()
+                .icon(Icon::new(IconName::X).size(px(13.)))
+                .tooltip(label)
+                .on_click(on_click),
+        )
 }
 
 impl Render for ChecksEditor {
@@ -515,7 +592,12 @@ mod tests {
     fn captures_never_read_time_or_size() {
         assert_eq!(
             capture_sources(),
-            [CheckSource::Status, CheckSource::Header, CheckSource::Json, CheckSource::Body]
+            [
+                CheckSource::Status,
+                CheckSource::Header,
+                CheckSource::Json,
+                CheckSource::Body
+            ]
         );
     }
 

@@ -34,7 +34,9 @@ pub fn render(timing: Option<&ResponseTiming>, duration_ms: f64, cx: &App) -> An
     let trigger = div()
         .id("response-duration")
         .cursor_default()
-        .child(tracked(format!("{} ", js_number_string(duration_ms)), 0.).dotted_underline(underline))
+        .child(
+            tracked(format!("{} ", js_number_string(duration_ms)), 0.).dotted_underline(underline),
+        )
         .child(
             div()
                 .text_size(r(9.))

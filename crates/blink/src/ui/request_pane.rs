@@ -34,7 +34,11 @@ use common::{css, edit_draft, replace_draft, session_context};
 use editor::RequestEditor;
 
 /// The shortcut modifier as the Vue app shows it.
-const MOD: &str = if cfg!(target_os = "macos") { "⌘" } else { "Ctrl" };
+const MOD: &str = if cfg!(target_os = "macos") {
+    "⌘"
+} else {
+    "Ctrl"
+};
 
 /// The notice after a cURL paste.
 pub fn import_notice(ignored: &[String]) -> String {
@@ -105,13 +109,21 @@ impl RequestPane {
                 this.refresh_url_context(cx);
                 cx.notify();
             }),
-            cx.subscribe_in(&store, window, move |this, _, event, window, cx| match event {
-                StoreEvent::DraftReplaced(replaced) if *replaced == id => this.reload(window, cx),
-                StoreEvent::Restored => this.reload(window, cx),
-                _ => {}
-            }),
-            cx.subscribe_in(&url, window, |this, _, event: &TokenInputEvent, window, cx| {
-                match event {
+            cx.subscribe_in(
+                &store,
+                window,
+                move |this, _, event, window, cx| match event {
+                    StoreEvent::DraftReplaced(replaced) if *replaced == id => {
+                        this.reload(window, cx)
+                    }
+                    StoreEvent::Restored => this.reload(window, cx),
+                    _ => {}
+                },
+            ),
+            cx.subscribe_in(
+                &url,
+                window,
+                |this, _, event: &TokenInputEvent, window, cx| match event {
                     TokenInputEvent::Change(text) => {
                         let text = text.clone();
                         this.import_error.clear();
@@ -119,33 +131,41 @@ impl RequestPane {
                     }
                     TokenInputEvent::PressEnter => this.primary(window, cx),
                     TokenInputEvent::Blur => {}
-                }
-            }),
+                },
+            ),
             cx.subscribe_in(&url, window, |this, _, paste: &TokenPaste, _, cx| {
                 this.import_curl(&paste.0, cx);
             }),
-            cx.subscribe_in(&method, window, |this, input, event, window, cx| match event {
-                InputEvent::Change => {
-                    let raw = input.read(cx).value().to_string();
-                    let method = normalize_method(&raw);
-                    if raw != raw.to_uppercase() {
-                        let shown = raw.to_uppercase();
-                        input.update(cx, |input, cx| input.set_value(shown, window, cx));
+            cx.subscribe_in(
+                &method,
+                window,
+                |this, input, event, window, cx| match event {
+                    InputEvent::Change => {
+                        let raw = input.read(cx).value().to_string();
+                        let method = normalize_method(&raw);
+                        if raw != raw.to_uppercase() {
+                            let shown = raw.to_uppercase();
+                            input.update(cx, |input, cx| input.set_value(shown, window, cx));
+                        }
+                        edit_draft(&this.store, this.session_id, cx, |draft| {
+                            draft.method = method
+                        });
                     }
-                    edit_draft(&this.store, this.session_id, cx, |draft| draft.method = method);
-                }
-                InputEvent::Focus => {
-                    this.method_focused = true;
-                    input.update(cx, |input, cx| input.select_all(window, cx));
-                    cx.notify();
-                }
-                InputEvent::Blur => {
-                    this.method_focused = false;
-                    cx.notify();
-                }
-                InputEvent::PressEnter { secondary: false, .. } => this.primary(window, cx),
-                InputEvent::PressEnter { .. } => {}
-            }),
+                    InputEvent::Focus => {
+                        this.method_focused = true;
+                        input.update(cx, |input, cx| input.select_all(window, cx));
+                        cx.notify();
+                    }
+                    InputEvent::Blur => {
+                        this.method_focused = false;
+                        cx.notify();
+                    }
+                    InputEvent::PressEnter {
+                        secondary: false, ..
+                    } => this.primary(window, cx),
+                    InputEvent::PressEnter { .. } => {}
+                },
+            ),
             cx.subscribe(&code, |this, _, _: &CloseCode, cx| {
                 this.show_code = false;
                 cx.notify();
@@ -183,7 +203,8 @@ impl RequestPane {
 
     /// Focus the URL field and select its text (`Cmd/Ctrl+L`).
     pub fn focus_url(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        self.url.update(cx, |url, cx| url.focus_and_select(window, cx));
+        self.url
+            .update(cx, |url, cx| url.focus_and_select(window, cx));
     }
 
     /// Show or hide the code panel.
@@ -243,7 +264,8 @@ impl RequestPane {
     /// Send, or connect or disconnect a WebSocket.
     fn primary(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let id = self.session_id;
-        self.store.update(cx, |store, cx| store.send(id, window, cx));
+        self.store
+            .update(cx, |store, cx| store.send(id, window, cx));
     }
 
     /// Pasting a cURL command into the URL field replaces the draft with it.
@@ -267,7 +289,9 @@ impl RequestPane {
         let method = method.to_string();
         self.method
             .update(cx, |input, cx| input.set_value(method.clone(), window, cx));
-        edit_draft(&self.store, self.session_id, cx, |draft| draft.method = method);
+        edit_draft(&self.store, self.session_id, cx, |draft| {
+            draft.method = method
+        });
         self.method_focused = false;
         self.url.update(cx, |url, cx| url.focus(window, cx));
         cx.notify();
@@ -317,7 +341,14 @@ impl RequestPane {
         .with_priority(1)
     }
 
-    fn render_bar(&self, prepared: &PreparedSend, busy: bool, socket_live: bool, window: &Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render_bar(
+        &self,
+        prepared: &PreparedSend,
+        busy: bool,
+        socket_live: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
         let colors = theme::colors(cx);
         let websocket = prepared.websocket;
         let can_build = prepared.http.request().is_some();
@@ -400,10 +431,21 @@ impl RequestPane {
                 Button::new("connect")
                     .when(socket_live, |this| this.secondary())
                     .when(!socket_live, |this| this.primary()),
-                if socket_live { colors.input } else { colors.primary },
+                if socket_live {
+                    colors.input
+                } else {
+                    colors.primary
+                },
             )
             .disabled(!socket_live && prepared.socket.is_err())
-            .icon(Icon::new(if socket_live { IconName::Unplug } else { IconName::Plug }).size(css(14.)))
+            .icon(
+                Icon::new(if socket_live {
+                    IconName::Unplug
+                } else {
+                    IconName::Plug
+                })
+                .size(css(14.)),
+            )
             .child(label(if socket_live { "Disconnect" } else { "Connect" }))
             .child(kbd(format!("{MOD} ↵")))
             .on_click(cx.listener(|this, _, window, cx| this.primary(window, cx)))
@@ -451,7 +493,9 @@ impl RequestPane {
                     .border_color(colors.input)
                     .rounded(px(4.))
                     .bg(colors.background)
-                    .when(self.focused_in_bar(window, cx), |this| this.border_color(colors.primary))
+                    .when(self.focused_in_bar(window, cx), |this| {
+                        this.border_color(colors.primary)
+                    })
                     .child(method_field)
                     .child(
                         div()
@@ -484,50 +528,72 @@ impl RequestPane {
                 })
                 .menu("Focus URL", Box::new(FocusUrl))
                 .separator()
-                .item(PopupMenuItem::new("Copy URL").disabled(copy_url.is_empty()).on_click(
-                    move |_, _, cx| {
-                        let text = copy_url.clone();
-                        url_store.update(cx, |store, cx| store.copy(text, cx));
-                    },
-                ))
-                .item(PopupMenuItem::new("Copy as cURL").disabled(copy_curl.is_empty()).on_click(
-                    move |_, _, cx| {
-                        let text = copy_curl.clone();
-                        curl_store.update(cx, |store, cx| store.copy(text, cx));
-                    },
-                ))
+                .item(
+                    PopupMenuItem::new("Copy URL")
+                        .disabled(copy_url.is_empty())
+                        .on_click(move |_, _, cx| {
+                            let text = copy_url.clone();
+                            url_store.update(cx, |store, cx| store.copy(text, cx));
+                        }),
+                )
+                .item(
+                    PopupMenuItem::new("Copy as cURL")
+                        .disabled(copy_curl.is_empty())
+                        .on_click(move |_, _, cx| {
+                            let text = copy_curl.clone();
+                            curl_store.update(cx, |store, cx| store.copy(text, cx));
+                        }),
+                )
                 .when(can_build, |menu| {
                     menu.submenu("Copy as", window, cx, move |menu, _, _| {
                         CodeTarget::ALL.into_iter().fold(menu, |menu, target| {
                             let entity = code_entity.clone();
                             let store = code_store.clone();
-                            menu.item(PopupMenuItem::new(target.label()).on_click(move |_, _, cx| {
-                                let code = entity
-                                    .upgrade()
-                                    .map(|pane| pane.read(cx).code_for(target, cx))
-                                    .unwrap_or_default();
-                                store.update(cx, |store, cx| store.copy(code, cx));
-                            }))
+                            menu.item(PopupMenuItem::new(target.label()).on_click(
+                                move |_, _, cx| {
+                                    let code = entity
+                                        .upgrade()
+                                        .map(|pane| pane.read(cx).code_for(target, cx))
+                                        .unwrap_or_default();
+                                    store.update(cx, |store, cx| store.copy(code, cx));
+                                },
+                            ))
                         })
                     })
                 })
-                .when(!can_build, |menu| menu.item(PopupMenuItem::new("Copy as").disabled(true)))
-                .item(PopupMenuItem::new("Show code").checked(show_code).on_click(
-                    move |_, window, cx| {
-                        toggle
-                            .update(cx, |this, cx| this.toggle_code(window, cx))
-                            .ok();
-                    },
-                ))
+                .when(!can_build, |menu| {
+                    menu.item(PopupMenuItem::new("Copy as").disabled(true))
+                })
+                .item(
+                    PopupMenuItem::new("Show code").checked(show_code).on_click(
+                        move |_, window, cx| {
+                            toggle
+                                .update(cx, |this, cx| this.toggle_code(window, cx))
+                                .ok();
+                        },
+                    ),
+                )
             })
     }
 
     /// The URL bar border turns amber while its fields have focus.
     fn focused_in_bar(&self, window: &Window, cx: &App) -> bool {
-        self.method_focused || self.url.read(cx).state().read(cx).focus_handle(cx).is_focused(window)
+        self.method_focused
+            || self
+                .url
+                .read(cx)
+                .state()
+                .read(cx)
+                .focus_handle(cx)
+                .is_focused(window)
     }
 
-    fn render_notices(&self, prepared: &PreparedSend, websocket: bool, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    fn render_notices(
+        &self,
+        prepared: &PreparedSend,
+        websocket: bool,
+        cx: &mut Context<Self>,
+    ) -> Vec<AnyElement> {
         let colors = theme::colors(cx);
         let store = self.store.read(cx);
         let mut notices = Vec::new();
@@ -570,19 +636,28 @@ impl RequestPane {
                             )
                             .child(format!(" is protected. {verb} to {}?", environment.name)),
                     )
-                    .child(Button::new("confirm-cancel").ghost().small().label("Cancel").on_click(
-                        cx.listener(|this, _, _, cx| {
-                            let id = this.session_id;
-                            this.store.update(cx, |store, cx| store.dismiss_confirm(id, cx));
-                        }),
-                    ))
-                    .child(Button::new("confirm-environment").primary().small().label(verb).on_click(
-                        cx.listener(|this, _, window, cx| {
-                            let id = this.session_id;
-                            this.store
-                                .update(cx, |store, cx| store.confirm_and_send(id, window, cx));
-                        }),
-                    ))
+                    .child(
+                        Button::new("confirm-cancel")
+                            .ghost()
+                            .small()
+                            .label("Cancel")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let id = this.session_id;
+                                this.store
+                                    .update(cx, |store, cx| store.dismiss_confirm(id, cx));
+                            })),
+                    )
+                    .child(
+                        Button::new("confirm-environment")
+                            .primary()
+                            .small()
+                            .label(verb)
+                            .on_click(cx.listener(|this, _, window, cx| {
+                                let id = this.session_id;
+                                this.store
+                                    .update(cx, |store, cx| store.confirm_and_send(id, window, cx));
+                            })),
+                    )
                     .into_any_element(),
             );
         }
@@ -665,7 +740,11 @@ impl Render for RequestPane {
         } else {
             self.response.clone().into_any_element()
         };
-        let split_id = format!("request-split-{}-{}", self.session_id, if stacked { "v" } else { "h" });
+        let split_id = format!(
+            "request-split-{}-{}",
+            self.session_id,
+            if stacked { "v" } else { "h" }
+        );
         let panels = if stacked {
             v_resizable(SharedString::from(split_id))
                 .child(
@@ -696,7 +775,10 @@ impl Render for RequestPane {
         let notices = self.render_notices(&prepared, websocket, cx);
         let show_code = self.show_code && !websocket;
         div()
-            .id(SharedString::from(format!("request-pane-{}", self.session_id)))
+            .id(SharedString::from(format!(
+                "request-pane-{}",
+                self.session_id
+            )))
             .flex()
             .flex_col()
             .flex_1()

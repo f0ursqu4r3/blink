@@ -137,11 +137,21 @@ enum Item {
     /// Index into `tree`.
     Tree(usize),
     /// The new child group form below a group row.
-    CreateForm { group_id: u64, level: usize },
+    CreateForm {
+        group_id: u64,
+        level: usize,
+    },
     /// The delete confirmation below the request row `id`, for `ids`.
-    ConfirmDeleteRequests { id: u64, ids: Vec<u64>, level: usize },
+    ConfirmDeleteRequests {
+        id: u64,
+        ids: Vec<u64>,
+        level: usize,
+    },
     /// The delete confirmation below a group row and its child form.
-    ConfirmDeleteGroup { id: u64, level: usize },
+    ConfirmDeleteGroup {
+        id: u64,
+        level: usize,
+    },
     RootEnd,
 }
 
@@ -204,11 +214,15 @@ impl Browser {
         let name_input = cx.new(|cx| InputState::new(window, cx));
         let _subscriptions = vec![
             cx.observe(&store, |_, _, cx| cx.notify()),
-            cx.subscribe_in(&name_input, window, |this, _, event: &InputEvent, window, cx| {
-                if let InputEvent::PressEnter { .. } = event {
-                    this.submit_form(window, cx);
-                }
-            }),
+            cx.subscribe_in(
+                &name_input,
+                window,
+                |this, _, event: &InputEvent, window, cx| {
+                    if let InputEvent::PressEnter { .. } = event {
+                        this.submit_form(window, cx);
+                    }
+                },
+            ),
             // Escape cancels a drag. Before the drag starts, Escape belongs
             // to the page.
             cx.intercept_keystrokes(|event, window, cx| {
@@ -348,7 +362,13 @@ impl Browser {
     }
 
     fn draft_name(&self, cx: &App) -> String {
-        self.name_input.read(cx).value().trim().chars().take(80).collect()
+        self.name_input
+            .read(cx)
+            .value()
+            .trim()
+            .chars()
+            .take(80)
+            .collect()
     }
 
     fn submit_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -380,7 +400,9 @@ impl Browser {
         if name.is_empty() {
             return;
         }
-        update(&self.store, cx, |workspace| workspace.rename_group(id, &name));
+        update(&self.store, cx, |workspace| {
+            workspace.rename_group(id, &name)
+        });
         self.editing_id = None;
         self.clear_draft(window, cx);
     }
@@ -442,15 +464,18 @@ impl Browser {
     fn step_selection(&mut self, id: u64, direction: i32, cx: &mut Context<Self>) {
         let moved = update(&self.store, cx, |workspace| {
             let ids = Self::drag_ids(workspace, id);
-            let sessions: Vec<GroupedSession> =
-                workspace.sessions.iter().map(GroupedSession::from).collect();
+            let sessions: Vec<GroupedSession> = workspace
+                .sessions
+                .iter()
+                .map(GroupedSession::from)
+                .collect();
             let Some(step) = step_requests(&sessions, &ids, direction) else {
                 return false;
             };
             if let Some(focus) = rows::focused_group(workspace).map(|group| group.id)
-                && step
-                    .group_id
-                    .is_none_or(|group_id| !group_subtree(&workspace.groups, focus).contains(&group_id))
+                && step.group_id.is_none_or(|group_id| {
+                    !group_subtree(&workspace.groups, focus).contains(&group_id)
+                })
             {
                 return false;
             }
@@ -480,7 +505,11 @@ impl Browser {
         let inside = list.contains(&position);
         let speed = if inside {
             let zoom = window.rem_size().as_f32() / 16.;
-            edge_speed(list.top().as_f32(), list.bottom().as_f32(), position.y.as_f32()) * zoom
+            edge_speed(
+                list.top().as_f32(),
+                list.bottom().as_f32(),
+                position.y.as_f32(),
+            ) * zoom
         } else {
             0.
         };
@@ -535,7 +564,11 @@ impl Browser {
             ),
         };
         let tree = Tree {
-            sessions: workspace.sessions.iter().map(GroupedSession::from).collect(),
+            sessions: workspace
+                .sessions
+                .iter()
+                .map(GroupedSession::from)
+                .collect(),
             groups: workspace.groups.clone(),
         };
         let drop = resolve_tree_drop(payload, target, zone, &tree)?;
@@ -779,9 +812,7 @@ impl Browser {
                     }
                     TreeRow::Group { id, level } => self.render_group(index, id, level, window, cx),
                 },
-                Item::CreateForm { group_id, level } => {
-                    self.render_child_form(group_id, level, cx)
-                }
+                Item::CreateForm { group_id, level } => self.render_child_form(group_id, level, cx),
                 Item::ConfirmDeleteRequests { .. } | Item::ConfirmDeleteGroup { .. } => {
                     self.render_confirm(&item, window, cx)
                 }
@@ -797,11 +828,13 @@ impl Browser {
     fn drop_recorder(&self, target: TreeTarget, kind: RowKind) -> impl IntoElement {
         let rows = self.drop_rows.clone();
         canvas(
-            move |bounds, _, _| rows.borrow_mut().push(DropRow {
-                target,
-                kind,
-                bounds,
-            }),
+            move |bounds, _, _| {
+                rows.borrow_mut().push(DropRow {
+                    target,
+                    kind,
+                    bounds,
+                })
+            },
             |_, _, _, _| {},
         )
         .absolute()
@@ -869,7 +902,9 @@ impl Browser {
                     .on_click({
                         let store = self.store.clone();
                         move |_, _, cx| {
-                            update(&store, cx, |workspace| rows::move_selection(workspace, None))
+                            update(&store, cx, |workspace| {
+                                rows::move_selection(workspace, None)
+                            })
                         }
                     }),
             )
@@ -901,7 +936,8 @@ impl Browser {
         let active = workspace.shown_active_id() == Some(id);
         let selected = workspace.selected_ids.contains(&id);
         let key = format!("request-{id}");
-        let dragged = matches!(&self.drag_payload, Some(DragPayload::Requests(ids)) if ids.contains(&id));
+        let dragged =
+            matches!(&self.drag_payload, Some(DragPayload::Requests(ids)) if ids.contains(&id));
         let inside = self.inside_hit(&key);
         let zone = self.zone_for(&key);
         let locked = resolve_authorization(
@@ -939,7 +975,9 @@ impl Browser {
             .track_focus(&handle)
             .tab_index(0)
             .when(inside, |this| this.bg(colors.accent.opacity(0.4)))
-            .when(active, |this| this.bg(colors.accent).text_color(colors.foreground))
+            .when(active, |this| {
+                this.bg(colors.accent).text_color(colors.foreground)
+            })
             .hover(|style| style.bg(colors.accent).text_color(colors.foreground))
             .focus_visible(|style| style.bg(colors.foreground.opacity(0.1)))
             .when(dragged, |this| this.opacity(0.4))
@@ -956,8 +994,20 @@ impl Browser {
                 )
             })
             .children(drop_line(zone, level, colors.primary))
-            .children(guide.map(|guide| tree_guides(&guide, level, rows::indent(level) - 2., colors.muted_foreground)))
-            .child(method_label(&method, 8., cx).w(css(34.)).flex_shrink_0().text_size(css(8.)))
+            .children(guide.map(|guide| {
+                tree_guides(
+                    &guide,
+                    level,
+                    rows::indent(level) - 2.,
+                    colors.muted_foreground,
+                )
+            }))
+            .child(
+                method_label(&method, 8., cx)
+                    .w(css(34.))
+                    .flex_shrink_0()
+                    .text_size(css(8.)),
+            )
             .child(
                 div()
                     .min_w_0()
@@ -1019,7 +1069,11 @@ impl Browser {
                     })
                 },
             )
-            .context_menu(menus::request_menu(self.store.clone(), cx.entity().downgrade(), id))
+            .context_menu(menus::request_menu(
+                self.store.clone(),
+                cx.entity().downgrade(),
+                id,
+            ))
             .into_any_element()
     }
 
@@ -1058,13 +1112,21 @@ impl Browser {
         let inside = self.inside_hit(&key);
         let zone = self.zone_for(&key);
         let editing = self.editing_id == Some(id);
-        let locked = resolve_authorization(group.local_auth.as_ref(), group.parent_id, &workspace.groups)
-            .kind()
+        let locked = resolve_authorization(
+            group.local_auth.as_ref(),
+            group.parent_id,
+            &workspace.groups,
+        )
+        .kind()
             != AuthKind::None;
         let environment = (group.parent_id.is_none()
-            && group.environments.as_ref().is_some_and(|list| !list.is_empty()))
+            && group
+                .environments
+                .as_ref()
+                .is_some_and(|list| !list.is_empty()))
         .then(|| {
-            active_environment(Some(group)).map(|environment| (environment.name.clone(), environment.color))
+            active_environment(Some(group))
+                .map(|environment| (environment.name.clone(), environment.color))
         });
         let guide = self.guides[index].clone();
         let store = self.store.clone();
@@ -1095,7 +1157,9 @@ impl Browser {
                     group.name
                 ))
                 .when(focused, |this| this.disabled(true).opacity(1.))
-                .on_click(move |_, _, cx| update(&store, cx, |workspace| workspace.toggle_group(id)))
+                .on_click(move |_, _, cx| {
+                    update(&store, cx, |workspace| workspace.toggle_group(id))
+                })
         };
 
         let title = if editing {
@@ -1108,23 +1172,27 @@ impl Browser {
                 .items_center()
                 .gap(css(5.))
                 .child(self.render_input())
-                .child(text_button(("browser-rename-save", id), "Save", cx).on_click(
-                    move |_, window, cx| {
-                        browser
-                            .update(cx, |this, cx| this.submit_rename(id, window, cx))
-                            .ok();
-                    },
-                ))
-                .child(text_button(("browser-rename-cancel", id), "Cancel", cx).on_click(
-                    move |_, window, cx| {
-                        browser2
-                            .update(cx, |this, cx| {
-                                this.editing_id = None;
-                                this.clear_draft(window, cx);
-                            })
-                            .ok();
-                    },
-                ))
+                .child(
+                    text_button(("browser-rename-save", id), "Save", cx).on_click(
+                        move |_, window, cx| {
+                            browser
+                                .update(cx, |this, cx| this.submit_rename(id, window, cx))
+                                .ok();
+                        },
+                    ),
+                )
+                .child(
+                    text_button(("browser-rename-cancel", id), "Cancel", cx).on_click(
+                        move |_, window, cx| {
+                            browser2
+                                .update(cx, |this, cx| {
+                                    this.editing_id = None;
+                                    this.clear_draft(window, cx);
+                                })
+                                .ok();
+                        },
+                    ),
+                )
                 .into_any_element()
         } else {
             div()
@@ -1220,7 +1288,14 @@ impl Browser {
             .when(dragged, |this| this.opacity(0.4))
             .child(self.drop_recorder(TreeTarget::Group(id), RowKind::Group))
             .children(drop_line(zone, level, colors.primary))
-            .children(guide.map(|guide| tree_guides(&guide, level, rows::indent(level) - 1., colors.muted_foreground)))
+            .children(guide.map(|guide| {
+                tree_guides(
+                    &guide,
+                    level,
+                    rows::indent(level) - 1.,
+                    colors.muted_foreground,
+                )
+            }))
             .child(toggle)
             .child(title)
             .children(actions)
@@ -1316,14 +1391,22 @@ impl Browser {
             .bg(colors.secondary)
             .child(self.render_input())
             .child(
-                text_button(SharedString::from(format!("browser-form-add-{label}")), "Add", cx)
-                    .accessibility_label(label.to_string())
-                    .on_click(cx.listener(|this, _, window, cx| this.submit_create(window, cx))),
+                text_button(
+                    SharedString::from(format!("browser-form-add-{label}")),
+                    "Add",
+                    cx,
+                )
+                .accessibility_label(label.to_string())
+                .on_click(cx.listener(|this, _, window, cx| this.submit_create(window, cx))),
             )
             .child(
-                text_button(SharedString::from(format!("browser-form-cancel-{label}")), "Cancel", cx)
-                    .accessibility_label("Cancel group creation")
-                    .on_click(cx.listener(|this, _, window, cx| this.cancel_form(window, cx))),
+                text_button(
+                    SharedString::from(format!("browser-form-cancel-{label}")),
+                    "Cancel",
+                    cx,
+                )
+                .accessibility_label("Cancel group creation")
+                .on_click(cx.listener(|this, _, window, cx| this.cancel_form(window, cx))),
             )
     }
 
@@ -1447,7 +1530,13 @@ impl Browser {
             )
             .child(
                 header_button("browser-new-request", IconName::FilePlus, cx)
-                    .tooltip(format!("Add request · {}", blink_core::shortcut::shortcut_label(&["mod", "t"], blink_core::shortcut::IS_MAC)))
+                    .tooltip(format!(
+                        "Add request · {}",
+                        blink_core::shortcut::shortcut_label(
+                            &["mod", "t"],
+                            blink_core::shortcut::IS_MAC
+                        )
+                    ))
                     .accessibility_label("Add request")
                     .on_click(move |_, _, cx| {
                         update(&store, cx, |workspace| {
@@ -1610,13 +1699,25 @@ impl Render for Browser {
                     .on_drag_move(cx.listener(
                         |this, event: &DragMoveEvent<DraggedRequests>, window, cx| {
                             let payload = DragPayload::Requests(event.drag(cx).ids.clone());
-                            this.drag_moved(payload, event.event.position, event.bounds, window, cx);
+                            this.drag_moved(
+                                payload,
+                                event.event.position,
+                                event.bounds,
+                                window,
+                                cx,
+                            );
                         },
                     ))
                     .on_drag_move(cx.listener(
                         |this, event: &DragMoveEvent<DraggedGroup>, window, cx| {
                             let payload = DragPayload::Group(event.drag(cx).id);
-                            this.drag_moved(payload, event.event.position, event.bounds, window, cx);
+                            this.drag_moved(
+                                payload,
+                                event.event.position,
+                                event.bounds,
+                                window,
+                                cx,
+                            );
                         },
                     ))
                     .on_drop(cx.listener(|this, _: &DraggedRequests, _, cx| this.drop_commit(cx)))
@@ -1678,7 +1779,11 @@ fn into_ring(color: Hsla) -> impl IntoElement {
 }
 
 /// The before or after drop line.
-fn drop_line(zone: Option<DropZone>, level: usize, color: Hsla) -> Option<impl IntoElement + use<>> {
+fn drop_line(
+    zone: Option<DropZone>,
+    level: usize,
+    color: Hsla,
+) -> Option<impl IntoElement + use<>> {
     let zone = zone.filter(|zone| *zone != DropZone::Into)?;
     Some(
         div()

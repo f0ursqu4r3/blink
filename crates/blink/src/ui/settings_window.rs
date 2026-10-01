@@ -183,9 +183,10 @@ impl Render for SettingsWindow {
                         footer_button("settings-cancel", "Cancel", false)
                             .on_click(|_, window, cx| close(true, window, cx)),
                     )
-                    .child(footer_button("settings-save", "Save", true).on_click(
-                        cx.listener(|this, _, window, cx| this.save(window, cx)),
-                    )),
+                    .child(
+                        footer_button("settings-save", "Save", true)
+                            .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
+                    ),
             )
     }
 }
@@ -200,14 +201,24 @@ impl Focusable for SettingsWindow {
 struct SaveRequested;
 
 const NUMBER_FIELDS: [(TransportField, &str, &str, Option<&str>); 4] = [
-    (TransportField::TimeoutSeconds, "app-timeout", "Timeout (s)", None),
+    (
+        TransportField::TimeoutSeconds,
+        "app-timeout",
+        "Timeout (s)",
+        None,
+    ),
     (
         TransportField::ConnectTimeoutSeconds,
         "app-connect-timeout",
         "Connect timeout (s)",
         None,
     ),
-    (TransportField::MaxRedirects, "app-max-redirects", "Max redirects", None),
+    (
+        TransportField::MaxRedirects,
+        "app-max-redirects",
+        "Max redirects",
+        None,
+    ),
     (
         TransportField::InspectionLimitMiB,
         "app-inspection-limit",
@@ -329,19 +340,23 @@ impl Settings {
                 cx,
             )
         });
-        let mut subscriptions = vec![cx.subscribe(&tokens, |this, _, event: &KeyValueEvent, cx| {
-            if let KeyValueEvent::Change(rows) = event {
-                this.token_rows = rows.clone();
-                cx.notify();
-            }
-        })];
+        let mut subscriptions =
+            vec![cx.subscribe(&tokens, |this, _, event: &KeyValueEvent, cx| {
+                if let KeyValueEvent::Change(rows) = event {
+                    this.token_rows = rows.clone();
+                    cx.notify();
+                }
+            })];
         let fields = numbers
             .iter()
             .map(|(_, input)| input.clone())
             .chain([proxy_url.clone()]);
         for input in fields {
             subscriptions.push(cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
-                if let InputEvent::PressEnter { secondary: false, .. } = event {
+                if let InputEvent::PressEnter {
+                    secondary: false, ..
+                } = event
+                {
                     cx.emit(SaveRequested);
                 }
             }));
@@ -376,8 +391,8 @@ impl Settings {
         if next.default_method.is_empty() {
             next.default_method = self.base.default_method.clone();
         }
-        next.default_body_mode =
-            BodyMode::from_id(&selected(&self.body_mode, cx)).unwrap_or(self.base.default_body_mode);
+        next.default_body_mode = BodyMode::from_id(&selected(&self.body_mode, cx))
+            .unwrap_or(self.base.default_body_mode);
         next.pretty = self.pretty;
         next.wrap = self.wrap;
         next.confirm_close_drafts = self.confirm_close_drafts;
@@ -475,7 +490,9 @@ impl Settings {
                     .font_family(theme::MONO)
                     .text_size(u(12.))
                     .disabled(disabled)
-                    .when(error.is_some(), |this| this.border_color(colors.destructive)),
+                    .when(error.is_some(), |this| {
+                        this.border_color(colors.destructive)
+                    }),
             )
             .map(|this| match (error, help) {
                 (Some(error), _) => this.child(note(error, colors.destructive).text_size(u(12.))),

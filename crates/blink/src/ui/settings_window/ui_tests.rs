@@ -55,7 +55,9 @@ fn previews_saves_cancels_and_resets_the_theme(cx: &mut TestAppContext) {
     harness.dispatch(cx, OpenSettings);
     assert_eq!(cx.read(|cx| cx.windows().len()), 2);
     let store = harness.store.clone();
-    let settings = harness.update(cx, |window, cx| cx.new(|cx| Settings::new(store, window, cx)));
+    let settings = harness.update(cx, |window, cx| {
+        cx.new(|cx| Settings::new(store, window, cx))
+    });
 
     // Preview: the palette changes at once; nothing is written.
     preview(cx, Some(paper()));
@@ -72,7 +74,10 @@ fn previews_saves_cancels_and_resets_the_theme(cx: &mut TestAppContext) {
     assert!(save(&harness, cx, &settings));
     let stored = std::fs::read_to_string(&file).expect("theme.json is written");
     assert_eq!(
-        ThemeState::new(Some(&stored)).draft.as_ref().map(|d| d.name.as_str()),
+        ThemeState::new(Some(&stored))
+            .draft
+            .as_ref()
+            .map(|d| d.name.as_str()),
         Some("Paper")
     );
     assert_eq!(cx.read(theme::theme_name), "Paper");
@@ -113,7 +118,9 @@ fn dialog_bounds(harness: &Harness, cx: &mut TestAppContext) -> Bounds<Pixels> {
     harness.draw(cx);
     harness.draw(cx);
     let mut visual = VisualTestContext::from_window(harness.window, cx);
-    visual.debug_bounds("dialog-0").expect("the dialog is painted")
+    visual
+        .debug_bounds("dialog-0")
+        .expect("the dialog is painted")
 }
 
 /// As Vue `top-1/2 -translate-y-1/2 max-h-[90dvh]` (`80dvh` for Cookies):
@@ -142,7 +149,10 @@ fn dialogs_are_centered_and_capped(cx: &mut TestAppContext) {
         ];
         for (name, cap, action) in opens {
             harness.update(cx, |window, cx| window.dispatch_action(action, cx));
-            assert!(harness.update(cx, |window, cx| window.has_active_dialog(cx)), "{name}");
+            assert!(
+                harness.update(cx, |window, cx| window.has_active_dialog(cx)),
+                "{name}"
+            );
             let bounds = dialog_bounds(&harness, cx);
             let middle = bounds.origin.y + bounds.size.height / 2.;
             assert!(

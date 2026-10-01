@@ -19,16 +19,14 @@ use gpui_kit::component::{Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use self::environment_tokens::{
-    EnvironmentTokens, EnvironmentTokensEvent, parse_table, to_rows,
-};
+use self::environment_tokens::{EnvironmentTokens, EnvironmentTokensEvent, parse_table, to_rows};
 use crate::store::Store;
 use crate::theme;
-use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 use crate::ui::form::{
     Choice, ChoiceSelect, choice_index, dialog_footer, dialog_header, footer_button, note,
     section_heading, section_heading_with_help, selected,
 };
+use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 
 /// Open the dialog.
 pub fn open(store: Entity<Store>, group_id: u64, window: &mut Window, cx: &mut App) {
@@ -207,7 +205,12 @@ struct GroupForm {
 }
 
 impl GroupForm {
-    fn new(store: Entity<Store>, group_id: u64, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    fn new(
+        store: Entity<Store>,
+        group_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let workspace = &store.read(cx).workspace;
         let group = workspace.group(group_id).cloned().expect("group exists");
         let groups = workspace.groups.clone();
@@ -230,15 +233,24 @@ impl GroupForm {
         let (auth_mode, token, user, pass) = match &group.local_auth {
             None => (AuthMode::Inherit, "", "", ""),
             Some(AuthorizationConfig::None) => (AuthMode::None, "", "", ""),
-            Some(AuthorizationConfig::Bearer { token }) => (AuthMode::Bearer, token.as_str(), "", ""),
+            Some(AuthorizationConfig::Bearer { token }) => {
+                (AuthMode::Bearer, token.as_str(), "", "")
+            }
             Some(AuthorizationConfig::Basic { username, password }) => {
                 (AuthMode::Basic, "", username.as_str(), password.as_str())
             }
         };
-        let bearer = cx.new(|cx| InputState::new(window, cx).masked(true).default_value(token.to_string()));
+        let bearer = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .default_value(token.to_string())
+        });
         let username = text_input(user, window, cx);
-        let password =
-            cx.new(|cx| InputState::new(window, cx).masked(true).default_value(pass.to_string()));
+        let password = cx.new(|cx| {
+            InputState::new(window, cx)
+                .masked(true)
+                .default_value(pass.to_string())
+        });
 
         let inherited = resolve_new_request_defaults(&groups, group.parent_id, &preferences);
         let method = {
@@ -302,8 +314,12 @@ impl GroupForm {
                     cx.notify();
                 }
             }),
-            cx.subscribe(&environments, |_, _, _: &EnvironmentTokensEvent, cx| cx.notify()),
-            cx.subscribe(&method, |_, _, _: &SelectEvent<Vec<Choice>>, cx| cx.notify()),
+            cx.subscribe(&environments, |_, _, _: &EnvironmentTokensEvent, cx| {
+                cx.notify()
+            }),
+            cx.subscribe(&method, |_, _, _: &SelectEvent<Vec<Choice>>, cx| {
+                cx.notify()
+            }),
         ];
         let watch_name = cx.subscribe(&name, |_, _, event: &InputEvent, cx| {
             if let InputEvent::Change = event {
@@ -344,7 +360,11 @@ impl GroupForm {
         if was_root != self.is_root() {
             if self.is_root() {
                 let rows = self.local_tokens.read(cx).rows().to_vec();
-                let rows = if self.local_rows.is_empty() { rows } else { self.local_rows.clone() };
+                let rows = if self.local_rows.is_empty() {
+                    rows
+                } else {
+                    self.local_rows.clone()
+                };
                 let table = to_rows(&base_definitions(&rows), &[]);
                 self.environments
                     .update(cx, |editor, cx| editor.set_rows(table, window, cx));
@@ -452,7 +472,9 @@ impl GroupForm {
         };
         let group_id = self.group_id;
         self.store.update(cx, |store, cx| {
-            store.update_workspace(cx, |workspace| workspace.save_group_settings(group_id, changes))
+            store.update_workspace(cx, |workspace| {
+                workspace.save_group_settings(group_id, changes)
+            })
         });
         true
     }
@@ -476,7 +498,13 @@ fn field_row(label: &'static str, control: impl IntoElement, cx: &App) -> Div {
                 .text_color(theme::colors(cx).muted_foreground)
                 .child(label),
         )
-        .child(div().flex_1().min_w_0().font_family(theme::MONO).child(control))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .font_family(theme::MONO)
+                .child(control),
+        )
 }
 
 fn small_input(state: &Entity<InputState>) -> Input {
@@ -629,8 +657,8 @@ impl Render for GroupForm {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::prelude::v1::test;
     use blink_core::groups::create_group;
+    use core::prelude::v1::test;
 
     fn group(id: u64, name: &str, parent_id: Option<u64>) -> RequestGroup {
         RequestGroup {

@@ -124,7 +124,11 @@ pub fn footer_button(id: &'static str, label: &'static str, primary: bool) -> Bu
         .h(u(30.))
         .px(u(14.))
         .font_family(theme::MONO);
-    if primary { button.primary() } else { button.outline() }
+    if primary {
+        button.primary()
+    } else {
+        button.outline()
+    }
 }
 
 /// Uppercase section heading: `text-xs font-semibold uppercase

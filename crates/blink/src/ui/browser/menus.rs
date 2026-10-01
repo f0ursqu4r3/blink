@@ -34,7 +34,12 @@ fn destructive(label: impl Into<SharedString>) -> PopupMenuItem {
 }
 
 /// A move target: the current location is a checked, disabled item.
-fn target(label: impl Into<SharedString>, current: bool, id: Option<u64>, pick: &Pick) -> PopupMenuItem {
+fn target(
+    label: impl Into<SharedString>,
+    current: bool,
+    id: Option<u64>,
+    pick: &Pick,
+) -> PopupMenuItem {
     let pick = pick.clone();
     PopupMenuItem::new(label)
         .checked(current)
@@ -74,7 +79,12 @@ pub fn group_menu_tree(
     for group in children(parent.flatten()) {
         let is_current = current == Some(Some(group.id));
         if children(Some(group.id)).is_empty() {
-            menu = menu.item(target(group.name.clone(), is_current, Some(group.id), &pick));
+            menu = menu.item(target(
+                group.name.clone(),
+                is_current,
+                Some(group.id),
+                &pick,
+            ));
             continue;
         }
         let groups = groups.clone();
@@ -83,7 +93,12 @@ pub fn group_menu_tree(
         let id = group.id;
         menu = menu.submenu(group.name.clone(), window, cx, move |menu, window, cx| {
             let menu = menu
-                .item(target(format!("Move into {name}"), is_current, Some(id), &pick))
+                .item(target(
+                    format!("Move into {name}"),
+                    is_current,
+                    Some(id),
+                    &pick,
+                ))
                 .separator();
             group_menu_tree(
                 menu,
@@ -257,20 +272,24 @@ pub fn group_menu(
                     workspace.create(Some(Some(group_id)));
                 });
             }))
-            .item(PopupMenuItem::new("New group").on_click(move |_, window, cx| {
-                b.update(cx, |this, cx| {
-                    this.start_creating(Some(group_id), None, window, cx)
-                })
-                .ok();
-            }))
+            .item(
+                PopupMenuItem::new("New group").on_click(move |_, window, cx| {
+                    b.update(cx, |this, cx| {
+                        this.start_creating(Some(group_id), None, window, cx)
+                    })
+                    .ok();
+                }),
+            )
             .separator()
             .item(PopupMenuItem::new("Rename").on_click(move |_, window, cx| {
                 b2.update(cx, |this, cx| this.start_rename(group_id, window, cx))
                     .ok();
             }))
-            .item(PopupMenuItem::new("Settings…").on_click(move |_, window, cx| {
-                window.dispatch_action(Box::new(OpenGroupSettings { group_id }), cx);
-            }))
+            .item(
+                PopupMenuItem::new("Settings…").on_click(move |_, window, cx| {
+                    window.dispatch_action(Box::new(OpenGroupSettings { group_id }), cx);
+                }),
+            )
             .separator();
         {
             let s = store.clone();
@@ -393,10 +412,12 @@ pub fn blank_menu(
                 workspace.create(Some(top));
             });
         }))
-        .item(PopupMenuItem::new("New group").on_click(move |_, window, cx| {
-            b.update(cx, |this, cx| this.start_creating(top, None, window, cx))
-                .ok();
-        }))
+        .item(
+            PopupMenuItem::new("New group").on_click(move |_, window, cx| {
+                b.update(cx, |this, cx| this.start_creating(top, None, window, cx))
+                    .ok();
+            }),
+        )
         .item({
             let s = store.clone();
             PopupMenuItem::new("Collapse all")
@@ -444,12 +465,7 @@ pub fn environment_menu(
                                 .rounded_full()
                                 .bg(theme::environment_color(color, cx)),
                         )
-                        .child(
-                            div()
-                                .flex_1()
-                                .font_family(theme::MONO)
-                                .child(name.clone()),
-                        )
+                        .child(div().flex_1().font_family(theme::MONO).child(name.clone()))
                         .when(protected, |this| {
                             this.child(
                                 div()
@@ -485,7 +501,9 @@ pub fn environment_menu(
                     })
             })
             .on_click(move |_, _, cx| {
-                update(&s, cx, |workspace| workspace.switch_environment(group_id, None));
+                update(&s, cx, |workspace| {
+                    workspace.switch_environment(group_id, None)
+                });
             }),
         )
         .separator()

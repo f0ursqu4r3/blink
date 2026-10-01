@@ -72,7 +72,11 @@ impl EventEmitter<TokenInputEvent> for TokenInput {}
 impl EventEmitter<TokenPaste> for TokenInput {}
 
 impl TokenInput {
-    pub fn new(placeholder: impl Into<SharedString>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub fn new(
+        placeholder: impl Into<SharedString>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
         let placeholder = placeholder.into();
         let input = cx.new(|cx| InputState::new(window, cx).placeholder(placeholder));
         let _subscriptions = vec![
@@ -127,7 +131,8 @@ impl TokenInput {
     /// Focus the field and select its text.
     pub fn focus_and_select(&self, window: &mut Window, cx: &mut App) {
         self.focus(window, cx);
-        self.input.update(cx, |input, cx| input.select_all(window, cx));
+        self.input
+            .update(cx, |input, cx| input.select_all(window, cx));
     }
 
     /// The input state, for owners that need its focus handle.
@@ -511,8 +516,8 @@ fn token_ranges(raw: &str, ctx: Option<&InterpolationContext>) -> Vec<(Range<usi
             } else {
                 text.clone()
             };
-            let token = InlineToken::new(format!("{}:{}", state_id(state), text), text)
-                .with_label(label);
+            let token =
+                InlineToken::new(format!("{}:{}", state_id(state), text), text).with_label(label);
             Some((segment.raw_from..segment.raw_to, token))
         })
         .collect()
@@ -520,12 +525,13 @@ fn token_ranges(raw: &str, ctx: Option<&InterpolationContext>) -> Vec<(Range<usi
 
 /// The raw text with its references as tokens.
 fn token_content(raw: &str, ctx: Option<&InterpolationContext>) -> InputContent {
-    token_ranges(raw, ctx)
-        .into_iter()
-        .fold(InputContent::new(raw.to_string()), |content, (range, token)| {
+    token_ranges(raw, ctx).into_iter().fold(
+        InputContent::new(raw.to_string()),
+        |content, (range, token)| {
             let fallback = content.clone();
             content.with_token(range, token).unwrap_or(fallback)
-        })
+        },
+    )
 }
 
 /// One token as the input draws it: a value on a tint, or a warning.
@@ -551,14 +557,12 @@ fn render_token(
         .overflow_hidden()
         .whitespace_nowrap()
         .map(|this| match state {
-            "resolved" => this
-                .text_color(colors.keyword)
-                .child(
-                    div()
-                        .rounded(px(2.))
-                        .bg(colors.keyword.opacity(0.15))
-                        .child(token.token().label().clone()),
-                ),
+            "resolved" => this.text_color(colors.keyword).child(
+                div()
+                    .rounded(px(2.))
+                    .bg(colors.keyword.opacity(0.15))
+                    .child(token.token().label().clone()),
+            ),
             "env" => this
                 .text_color(colors.warning)
                 .child(token.token().label().clone()),
@@ -638,8 +642,8 @@ impl Render for TokenInput {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use core::prelude::v1::test;
     use blink_core::model::Definitions;
+    use core::prelude::v1::test;
 
     fn ctx() -> InterpolationContext {
         let defs = |entries: &[(&str, &str)]| -> Definitions {
@@ -648,7 +652,10 @@ mod tests {
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect()
         };
-        InterpolationContext::new(defs(&[("endpoint", "users")]), defs(&[("host", "api.test")]))
+        InterpolationContext::new(
+            defs(&[("endpoint", "users")]),
+            defs(&[("host", "api.test")]),
+        )
     }
 
     #[test]
@@ -677,7 +684,11 @@ mod tests {
 
     #[test]
     fn has_no_tokens_for_text_without_references() {
-        assert!(token_content("https://example.com", Some(&ctx())).tokens().is_empty());
+        assert!(
+            token_content("https://example.com", Some(&ctx()))
+                .tokens()
+                .is_empty()
+        );
     }
 
     #[test]

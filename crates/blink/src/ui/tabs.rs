@@ -8,7 +8,9 @@ use blink_core::drag_drop::{
 };
 use blink_core::model::{RequestSession, SocketState};
 use blink_core::preferences::transport_options;
-use blink_core::session::{LabelTokens, display_method, session_host, session_label, session_status};
+use blink_core::session::{
+    LabelTokens, display_method, session_host, session_label, session_status,
+};
 use blink_core::session_curl::session_curl;
 use blink_core::shortcut::{IS_MAC, shortcut_label};
 use blink_core::workspace_state::Workspace;
@@ -23,8 +25,8 @@ use gpui_kit::*;
 use crate::actions::{DuplicateRequest, NewRequest};
 use crate::store::Store;
 use crate::theme;
-use crate::ui::browser::DragPreview;
 use crate::ui::app::NARROW_WIDTH;
+use crate::ui::browser::DragPreview;
 use crate::ui::status_bar::css;
 use crate::ui::widgets::tracked;
 
@@ -192,7 +194,12 @@ impl RequestTabs {
                 resolve_tab_drop(&payload, Some(target_id), zone, &open_ids)
             }
             // Past the last tab (over the buttons or empty bar) appends.
-            None => resolve_tab_drop(&payload, open_ids.last().copied(), DropZone::After, &open_ids),
+            None => resolve_tab_drop(
+                &payload,
+                open_ids.last().copied(),
+                DropZone::After,
+                &open_ids,
+            ),
         };
         if self.drop != drop || self.dragging != ids {
             self.drop = drop;
@@ -204,7 +211,9 @@ impl RequestTabs {
     fn commit_drop(&mut self, cx: &mut Context<Self>) {
         self.dragging.clear();
         if let Some(drop) = self.drop.take() {
-            self.update_workspace(cx, |workspace| workspace.place_tabs(&drop.ids, drop.before_id));
+            self.update_workspace(cx, |workspace| {
+                workspace.place_tabs(&drop.ids, drop.before_id)
+            });
         }
         cx.notify();
     }
@@ -304,40 +313,47 @@ impl RequestTabs {
             .text_color(colors.muted_foreground)
             .when_some(corner, |this, radius| this.rounded_tl(radius))
             .when(active, |this| {
-                this.bg(colors.secondary).text_color(colors.foreground).child(
-                    // The 2 px top border. In the corner tab the card's curve
-                    // cuts its start, as the Vue card's `overflow-hidden`
-                    // clipped it: the curve of radius r reaches the bar's
-                    // bottom edge about r − √(r² − (r − 2)²) from the left.
-                    div()
-                        .absolute()
-                        .top_0()
-                        .right_0()
-                        .h(px(2.))
-                        .bg(colors.primary)
-                        .map(|this| match corner {
-                            Some(radius) => this.left(corner_inset(radius)).rounded_tl(px(2.)),
-                            None => this.left_0(),
-                        }),
-                )
+                this.bg(colors.secondary)
+                    .text_color(colors.foreground)
+                    .child(
+                        // The 2 px top border. In the corner tab the card's curve
+                        // cuts its start, as the Vue card's `overflow-hidden`
+                        // clipped it: the curve of radius r reaches the bar's
+                        // bottom edge about r − √(r² − (r − 2)²) from the left.
+                        div()
+                            .absolute()
+                            .top_0()
+                            .right_0()
+                            .h(px(2.))
+                            .bg(colors.primary)
+                            .map(|this| match corner {
+                                Some(radius) => this.left(corner_inset(radius)).rounded_tl(px(2.)),
+                                None => this.left_0(),
+                            }),
+                    )
             })
             .when(!active, |this| this.hover(|style| style.bg(colors.accent)))
             .when(dragged, |this| this.opacity(0.4))
             // The same chip as a Browser drag (`DragPreview.vue`).
-            .on_drag(DraggedRequests { ids: vec![id] }, move |_, offset, _, cx| {
-                cx.new(|_| DragPreview {
-                    label: preview_label.clone(),
-                    method: Some(preview_method.clone()),
-                    folder: false,
-                    offset,
-                })
-            })
-            .on_drag_move(cx.listener(move |this, event: &DragMoveEvent<DraggedRequests>, _, cx| {
-                if event.bounds.contains(&event.event.position) {
-                    let ids = event.drag(cx).ids.clone();
-                    this.hover_drop(&ids, Some((id, event.bounds)), event.event.position, cx);
-                }
-            }))
+            .on_drag(
+                DraggedRequests { ids: vec![id] },
+                move |_, offset, _, cx| {
+                    cx.new(|_| DragPreview {
+                        label: preview_label.clone(),
+                        method: Some(preview_method.clone()),
+                        folder: false,
+                        offset,
+                    })
+                },
+            )
+            .on_drag_move(cx.listener(
+                move |this, event: &DragMoveEvent<DraggedRequests>, _, cx| {
+                    if event.bounds.contains(&event.event.position) {
+                        let ids = event.drag(cx).ids.clone();
+                        this.hover_drop(&ids, Some((id, event.bounds)), event.event.position, cx);
+                    }
+                },
+            ))
             .when_some(drop_zone, |this, zone| {
                 this.child(
                     div()
@@ -435,7 +451,14 @@ impl RequestTabs {
                     .text_color(colors.muted_foreground)
                     .hover(|style| style.text_color(colors.foreground).bg(colors.accent))
                     .tooltip(|window, cx| {
-                        Tooltip::new(format!("Close tab · {}", blink_core::shortcut::shortcut_label(&["mod", "w"], blink_core::shortcut::IS_MAC))).build(window, cx)
+                        Tooltip::new(format!(
+                            "Close tab · {}",
+                            blink_core::shortcut::shortcut_label(
+                                &["mod", "w"],
+                                blink_core::shortcut::IS_MAC
+                            )
+                        ))
+                        .build(window, cx)
                     })
                     // A press on the close button never starts a drag.
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
@@ -741,7 +764,12 @@ impl Render for RequestTabs {
         let infos: Vec<(TabInfo, MenuBuilder)> = workspace
             .open_sessions()
             .into_iter()
-            .map(|session| (TabInfo::new(session, tokens), self.tab_menu(session.id, workspace)))
+            .map(|session| {
+                (
+                    TabInfo::new(session, tokens),
+                    self.tab_menu(session.id, workspace),
+                )
+            })
             .collect();
         let all = workspace.visible_ids();
         // Scroll the active tab into view when it changes, once the strip
@@ -755,7 +783,11 @@ impl Render for RequestTabs {
             }
         }
         let (fade_left, fade_right, hidden) = self.overflow(infos.len());
-        let overflow = if hidden > 0 { Some(self.render_overflow(hidden, &infos, active, cx)) } else { None };
+        let overflow = if hidden > 0 {
+            Some(self.render_overflow(hidden, &infos, active, cx))
+        } else {
+            None
+        };
         let tabs: Vec<AnyElement> = infos
             .into_iter()
             .enumerate()
@@ -795,24 +827,28 @@ impl Render for RequestTabs {
             .bg(colors.muted)
             .border_b_1()
             .border_color(colors.border)
-            .on_drag_move(cx.listener(|this, event: &DragMoveEvent<DraggedRequests>, _, cx| {
-                let position = event.event.position;
-                if !event.bounds.contains(&position) {
-                    if this.drop.is_some() {
-                        this.drop = None;
-                        cx.notify();
+            .on_drag_move(
+                cx.listener(|this, event: &DragMoveEvent<DraggedRequests>, _, cx| {
+                    let position = event.event.position;
+                    if !event.bounds.contains(&position) {
+                        if this.drop.is_some() {
+                            this.drop = None;
+                            cx.notify();
+                        }
+                        return;
                     }
-                    return;
-                }
-                // Over a tab, the tab resolves the drop.
-                let over_tab = (0..this.open_ids(cx).len())
-                    .filter_map(|ix| this.scroll.bounds_for_item(ix))
-                    .any(|cell| cell.contains(&position) && this.scroll.bounds().contains(&position));
-                if !over_tab {
-                    let ids = event.drag(cx).ids.clone();
-                    this.hover_drop(&ids, None, position, cx);
-                }
-            }))
+                    // Over a tab, the tab resolves the drop.
+                    let over_tab = (0..this.open_ids(cx).len())
+                        .filter_map(|ix| this.scroll.bounds_for_item(ix))
+                        .any(|cell| {
+                            cell.contains(&position) && this.scroll.bounds().contains(&position)
+                        });
+                    if !over_tab {
+                        let ids = event.drag(cx).ids.clone();
+                        this.hover_drop(&ids, None, position, cx);
+                    }
+                }),
+            )
             .on_drop(cx.listener(|this, _: &DraggedRequests, _, cx| this.commit_drop(cx)))
             .child(
                 div()
@@ -838,7 +874,13 @@ impl Render for RequestTabs {
                     "tab-new-request",
                     IconName::Plus,
                     15.,
-                    format!("New request · {}", blink_core::shortcut::shortcut_label(&["mod", "t"], blink_core::shortcut::IS_MAC)),
+                    format!(
+                        "New request · {}",
+                        blink_core::shortcut::shortcut_label(
+                            &["mod", "t"],
+                            blink_core::shortcut::IS_MAC
+                        )
+                    ),
                     cx,
                 )
                 .aria_label("New request")
@@ -849,13 +891,17 @@ impl Render for RequestTabs {
                     "tab-duplicate-request",
                     IconName::CopyPlus,
                     14.,
-                    format!("Duplicate request · {}", blink_core::shortcut::shortcut_label(&["mod", "shift", "d"], blink_core::shortcut::IS_MAC)),
+                    format!(
+                        "Duplicate request · {}",
+                        blink_core::shortcut::shortcut_label(
+                            &["mod", "shift", "d"],
+                            blink_core::shortcut::IS_MAC
+                        )
+                    ),
                     cx,
                 )
                 .aria_label("Duplicate request")
-                .on_click(|_, window, cx| {
-                    window.dispatch_action(Box::new(DuplicateRequest), cx)
-                }),
+                .on_click(|_, window, cx| window.dispatch_action(Box::new(DuplicateRequest), cx)),
             )
             .child(
                 div()
@@ -865,11 +911,9 @@ impl Render for RequestTabs {
                     .context_menu(move |menu, _, _| {
                         let store = strip_menu_store.clone();
                         let all = all.clone();
-                        menu.item(
-                            shortcut_item("New request", &["mod", "t"]).on_click(|_, window, cx| {
-                                window.dispatch_action(Box::new(NewRequest), cx)
-                            }),
-                        )
+                        menu.item(shortcut_item("New request", &["mod", "t"]).on_click(
+                            |_, window, cx| window.dispatch_action(Box::new(NewRequest), cx),
+                        ))
                         .item(
                             PopupMenuItem::new("Close all")
                                 .disabled(all.is_empty())
@@ -893,8 +937,16 @@ mod tests {
     #[test]
     fn converts_bounds_for_the_drop_rules() {
         let bounds = Bounds::new(point(px(10.), px(0.)), size(px(200.), px(36.)));
-        let before = hit_zone(drop_box(bounds), drop_point(point(px(20.), px(5.))), RowKind::Tab);
-        let after = hit_zone(drop_box(bounds), drop_point(point(px(150.), px(5.))), RowKind::Tab);
+        let before = hit_zone(
+            drop_box(bounds),
+            drop_point(point(px(20.), px(5.))),
+            RowKind::Tab,
+        );
+        let after = hit_zone(
+            drop_box(bounds),
+            drop_point(point(px(150.), px(5.))),
+            RowKind::Tab,
+        );
         assert_eq!(before, DropZone::Before);
         assert_eq!(after, DropZone::After);
     }

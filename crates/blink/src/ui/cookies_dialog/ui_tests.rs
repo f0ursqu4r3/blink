@@ -42,7 +42,10 @@ fn keeps_sends_persists_and_manages_cookies(cx: &mut TestAppContext) {
     assert_eq!(cookie_header(&requests.recv().unwrap()), None);
     harness.send(cx, &format!("{base}/me"));
     let sent = cookie_header(&requests.recv().unwrap()).expect("the next request sends cookies");
-    assert!(sent.contains("session=abc123") && sent.contains("theme=dark"), "{sent}");
+    assert!(
+        sent.contains("session=abc123") && sent.contains("theme=dark"),
+        "{sent}"
+    );
     assert!(dir.path().join("cookies.json").is_file());
 
     // A restart on the same data dir keeps them.
@@ -64,10 +67,17 @@ fn keeps_sends_persists_and_manages_cookies(cx: &mut TestAppContext) {
 
     // The dialog lists them; delete one, then clear all.
     let store = second.store.clone();
-    let jar = second.update(cx, |window, cx| cx.new(|cx| CookieJar::new(store, window, cx)));
+    let jar = second.update(cx, |window, cx| {
+        cx.new(|cx| CookieJar::new(store, window, cx))
+    });
     let listed = |cx: &TestAppContext| {
         cx.read(|cx| {
-            let mut names: Vec<_> = jar.read(cx).cookies.iter().map(|c| c.name.clone()).collect();
+            let mut names: Vec<_> = jar
+                .read(cx)
+                .cookies
+                .iter()
+                .map(|c| c.name.clone())
+                .collect();
             names.sort();
             names
         })

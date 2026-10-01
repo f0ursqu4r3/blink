@@ -47,7 +47,13 @@ impl CodePanel {
     }
 
     /// Show `code` in `target`. No-op when it is already shown.
-    pub fn show(&mut self, target: CodeTarget, code: &str, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn show(
+        &mut self,
+        target: CodeTarget,
+        code: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self
             .shown
             .as_ref()
@@ -55,7 +61,10 @@ impl CodePanel {
         {
             return;
         }
-        let language_changed = self.shown.as_ref().is_none_or(|(shown, _)| *shown != target);
+        let language_changed = self
+            .shown
+            .as_ref()
+            .is_none_or(|(shown, _)| *shown != target);
         let text = code.to_string();
         self.editor.update(cx, |editor, cx| {
             if language_changed {
@@ -82,7 +91,11 @@ impl CodePanel {
     }
 
     fn copy(&mut self, cx: &mut Context<Self>) {
-        let code = self.shown.as_ref().map(|(_, code)| code.clone()).unwrap_or_default();
+        let code = self
+            .shown
+            .as_ref()
+            .map(|(_, code)| code.clone())
+            .unwrap_or_default();
         self.store.update(cx, |store, cx| store.copy(code, cx));
     }
 }
@@ -101,7 +114,10 @@ impl Render for CodePanel {
         let targets = CodeTarget::ALL.into_iter().map(|option| {
             let pressed = option == target;
             div()
-                .id(SharedString::from(format!("code-target-{}", option.label())))
+                .id(SharedString::from(format!(
+                    "code-target-{}",
+                    option.label()
+                )))
                 .h(px(24.))
                 .px_2()
                 .flex()
@@ -149,7 +165,9 @@ impl Render for CodePanel {
                         Button::new("copy-code")
                             .ghost()
                             .small()
-                            .when(copied, |this| this.icon(Icon::new(IconName::Check).size(px(13.))))
+                            .when(copied, |this| {
+                                this.icon(Icon::new(IconName::Check).size(px(13.)))
+                            })
                             .label(if copied { "Copied" } else { "Copy" })
                             .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
                     ),
@@ -190,11 +208,13 @@ impl Render for CodePanel {
             .context_menu(move |menu, _, _| {
                 let copy = entity.clone();
                 let close = entity.clone();
-                menu.item(PopupMenuItem::new(format!("Copy {}", target.label())).on_click(
-                    move |_, _, cx| {
-                        copy.update(cx, |this, cx| this.copy(cx)).ok();
-                    },
-                ))
+                menu.item(
+                    PopupMenuItem::new(format!("Copy {}", target.label())).on_click(
+                        move |_, _, cx| {
+                            copy.update(cx, |this, cx| this.copy(cx)).ok();
+                        },
+                    ),
+                )
                 .separator()
                 .item(PopupMenuItem::new("Close").on_click(move |_, _, cx| {
                     close.update(cx, |_, cx| cx.emit(CloseCode)).ok();

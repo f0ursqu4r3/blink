@@ -8,8 +8,8 @@ use blink_core::engine::{SocketEvent, StreamMessage};
 use blink_core::environments::request_environment;
 use blink_core::runner::{
     PrimaryAction, SendTicket, apply_socket_event, apply_stream_message, begin_send,
-    can_send_socket, connect_socket, disconnect_socket, finish_send, orphaned_body,
-    prepare_send, primary_action, socket_active, socket_sent, tick,
+    can_send_socket, connect_socket, disconnect_socket, finish_send, orphaned_body, prepare_send,
+    primary_action, socket_active, socket_sent, tick,
 };
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::{FutureExt as _, StreamExt as _, select_biased};
@@ -57,7 +57,12 @@ impl Store {
     }
 
     /// The user confirmed the protected environment: remember it, then run.
-    pub fn confirm_and_send(&mut self, session_id: u64, window: &mut Window, cx: &mut Context<Self>) {
+    pub fn confirm_and_send(
+        &mut self,
+        session_id: u64,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.confirming.remove(&session_id);
         let environment_id = self.workspace.session(session_id).and_then(|session| {
             request_environment(session.group_id, &self.workspace.groups).map(|env| env.id)
@@ -246,10 +251,12 @@ impl Store {
             return;
         }
         let connection_id = self.engine.next_id("socket");
-        match self
-            .engine
-            .ws_connect(connection_id.clone(), &request.url, request.headers.clone(), timeout)
-        {
+        match self.engine.ws_connect(
+            connection_id.clone(),
+            &request.url,
+            request.headers.clone(),
+            timeout,
+        ) {
             Ok(mut events) => {
                 let task = cx.spawn(async move |this, cx| {
                     while let Some(event) = events.next().await {
@@ -270,7 +277,12 @@ impl Store {
     }
 
     /// A socket event. True when the connection ended.
-    fn apply_socket(&mut self, session_id: u64, event: SocketEvent, cx: &mut Context<Self>) -> bool {
+    fn apply_socket(
+        &mut self,
+        session_id: u64,
+        event: SocketEvent,
+        cx: &mut Context<Self>,
+    ) -> bool {
         let ended = self
             .workspace
             .session_mut(session_id)

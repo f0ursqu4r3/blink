@@ -48,7 +48,11 @@ fn response_tab_and_scroll_survive_a_restart(cx: &mut TestAppContext) {
     let base_id = SESSIONS.next() + 10_000;
     let mut restarted = saved.clone();
     for session in &mut restarted.sessions {
-        session.id = if session.id == a { base_id } else { base_id + 1 };
+        session.id = if session.id == a {
+            base_id
+        } else {
+            base_id + 1
+        };
     }
     restarted.open_ids = vec![base_id, base_id + 1];
     restarted.active_id = Some(base_id);
@@ -80,7 +84,10 @@ fn response_tab_and_scroll_survive_a_restart(cx: &mut TestAppContext) {
     })
     .unwrap();
     assert!(!cx.read(|cx| store.read(cx).ready));
-    assert!(cx.read(|cx| app.read(cx).panes.is_empty()), "placeholder id {placeholder}");
+    assert!(
+        cx.read(|cx| app.read(cx).panes.is_empty()),
+        "placeholder id {placeholder}"
+    );
 
     wait(cx, "restored", |cx| store.read(cx).ready);
     cx.update_window(window, |_, window, cx| {

@@ -1,9 +1,7 @@
 //! Application actions and their shortcuts. The shortcut table matches the
 //! README and the command list in `App.vue`.
 
-use gpui_kit::{
-    Action, App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions,
-};
+use gpui_kit::{Action, App, KeyBinding, Menu, MenuItem, OsAction, SystemMenuType, actions};
 
 actions!(
     blink,

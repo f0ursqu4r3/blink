@@ -95,7 +95,13 @@ pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> AnyElement {
                                 icon_button(
                                     "title-settings",
                                     IconName::Settings,
-                                    format!("Application settings · {}", blink_core::shortcut::shortcut_label(&["mod", ","], blink_core::shortcut::IS_MAC)),
+                                    format!(
+                                        "Application settings · {}",
+                                        blink_core::shortcut::shortcut_label(
+                                            &["mod", ","],
+                                            blink_core::shortcut::IS_MAC
+                                        )
+                                    ),
                                 )
                                 .on_click(move |_, window, cx| on_settings(window, cx)),
                             ),

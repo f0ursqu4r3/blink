@@ -8,10 +8,10 @@ use blink_core::model::{Draft, RequestSession};
 use blink_core::runner::{refresh_stale, request_context};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::store::Store;
@@ -42,7 +42,9 @@ pub fn replace_draft(
     change: impl FnOnce(&mut Draft),
 ) {
     edit_draft(store, id, cx, change);
-    store.update(cx, |_, cx| cx.emit(crate::store::StoreEvent::DraftReplaced(id)));
+    store.update(cx, |_, cx| {
+        cx.emit(crate::store::StoreEvent::DraftReplaced(id))
+    });
 }
 
 /// The session and its resolved context, read from the store.
@@ -86,7 +88,15 @@ pub fn select_button<T: Copy + PartialEq + 'static>(
     on_select: impl Fn(T, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> impl IntoElement {
-    select(id, options, current, disabled, on_select, cx, SelectLook::Native)
+    select(
+        id,
+        options,
+        current,
+        disabled,
+        on_select,
+        cx,
+        SelectLook::Native,
+    )
 }
 
 /// A native-looking select that fills its container (a grid column).
@@ -98,7 +108,15 @@ pub fn fill_select<T: Copy + PartialEq + 'static>(
     on_select: impl Fn(T, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> impl IntoElement {
-    select(id, options, current, disabled, on_select, cx, SelectLook::Fill)
+    select(
+        id,
+        options,
+        current,
+        disabled,
+        on_select,
+        cx,
+        SelectLook::Fill,
+    )
 }
 
 /// A select that fills a table cell without a border
@@ -111,7 +129,15 @@ pub fn cell_select<T: Copy + PartialEq + 'static>(
     on_select: impl Fn(T, &mut Window, &mut App) + 'static,
     cx: &App,
 ) -> impl IntoElement {
-    select(id, options, current, disabled, on_select, cx, SelectLook::Cell)
+    select(
+        id,
+        options,
+        current,
+        disabled,
+        on_select,
+        cx,
+        SelectLook::Cell,
+    )
 }
 
 fn select<T: Copy + PartialEq + 'static>(
@@ -155,7 +181,14 @@ fn select<T: Copy + PartialEq + 'static>(
                 .when(look == SelectLook::Native, |this| this.w(css(width)))
                 .when(look == SelectLook::Fill, |this| this.w_full()),
         })
-        .child(div().flex_1().min_w_0().text_left().overflow_hidden().child(label))
+        .child(
+            div()
+                .flex_1()
+                .min_w_0()
+                .text_left()
+                .overflow_hidden()
+                .child(label),
+        )
         .child(Icon::new(IconName::ChevronDown).size(css(14.)))
         .dropdown_menu(move |menu, _, _| {
             options.iter().fold(menu, |menu, (value, label)| {

@@ -124,9 +124,8 @@ struct CookieJar {
 
 impl CookieJar {
     fn new(store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
-        let filter = cx.new(|cx| {
-            InputState::new(window, cx).placeholder("Filter by domain, name, or value")
-        });
+        let filter = cx
+            .new(|cx| InputState::new(window, cx).placeholder("Filter by domain, name, or value"));
         let subscriptions = vec![cx.subscribe(&filter, |_, _, event: &InputEvent, cx| {
             if let InputEvent::Change = event {
                 cx.notify();
@@ -173,7 +172,13 @@ impl CookieJar {
     /// table scrolls.
     fn render_header(&self, _jar: Entity<Self>, cx: &App) -> Div {
         let colors = theme::colors(cx);
-        let enabled = self.store.read(cx).workspace.preferences.transport.store_cookies;
+        let enabled = self
+            .store
+            .read(cx)
+            .workspace
+            .preferences
+            .transport
+            .store_cookies;
         v_flex()
             .child(
                 h_flex()
@@ -270,24 +275,18 @@ impl Render for CookieJar {
                 .items_start()
                 .border_b_1()
                 .border_color(colors.border)
-                .child(
-                    cell()
-                        .w(relative(0.24))
-                        .flex_none()
-                        .child(
-                            div()
-                                .flex()
-                                .flex_wrap()
-                                .child(cookie.domain.clone())
-                                .when(cookie.path != "/", |this| {
-                                    this.child(
-                                        div()
-                                            .text_color(colors.muted_foreground)
-                                            .child(cookie.path.clone()),
-                                    )
-                                }),
-                        ),
-                )
+                .child(cell().w(relative(0.24)).flex_none().child(
+                    div().flex().flex_wrap().child(cookie.domain.clone()).when(
+                        cookie.path != "/",
+                        |this| {
+                            this.child(
+                                div()
+                                    .text_color(colors.muted_foreground)
+                                    .child(cookie.path.clone()),
+                            )
+                        },
+                    ),
+                ))
                 .child(
                     cell()
                         .w(relative(0.18))

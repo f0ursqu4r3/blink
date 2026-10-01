@@ -53,17 +53,24 @@ impl BlinkApp {
             }),
             // Save the window layout on blur too, so it survives a killed process.
             // Opening a request from the narrow overlay closes it, as `select` did.
-            cx.subscribe(&browser, |this, _, _: &crate::ui::browser::BrowserEvent, cx| {
-                this.mobile_browser_open = false;
-                cx.notify();
-            }),
+            cx.subscribe(
+                &browser,
+                |this, _, _: &crate::ui::browser::BrowserEvent, cx| {
+                    this.mobile_browser_open = false;
+                    cx.notify();
+                },
+            ),
             // A search pick closes the narrow overlay and focuses its tab
             // (`selectFromSearch`).
-            cx.subscribe_in(&command_center, window, |this, _, _: &Picked, window, cx| {
-                this.mobile_browser_open = false;
-                this.focus_tabs(window, cx);
-                cx.notify();
-            }),
+            cx.subscribe_in(
+                &command_center,
+                window,
+                |this, _, _: &Picked, window, cx| {
+                    this.mobile_browser_open = false;
+                    this.focus_tabs(window, cx);
+                    cx.notify();
+                },
+            ),
             cx.observe_window_activation(window, |this, window, cx| {
                 if !window.is_window_active() {
                     crate::save_window_state(&this.store.read(cx).engine, window, cx);
@@ -103,7 +110,11 @@ impl BlinkApp {
         }
         let workspace = &self.store.read(cx).workspace;
         let active_id = workspace.shown_active_id();
-        let ids: Vec<u64> = workspace.sessions.iter().map(|session| session.id).collect();
+        let ids: Vec<u64> = workspace
+            .sessions
+            .iter()
+            .map(|session| session.id)
+            .collect();
         self.panes.retain(|id, _| ids.contains(id));
         for id in ids {
             if !self.panes.contains_key(&id) {
@@ -169,7 +180,12 @@ impl BlinkApp {
 
     // ── Actions ─────────────────────────────────────────────────────────────
 
-    fn on_toggle_browser(&mut self, _: &ToggleBrowser, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_toggle_browser(
+        &mut self,
+        _: &ToggleBrowser,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if Self::narrow(window) {
             self.mobile_browser_open = !self.mobile_browser_open;
             self.sidebar_collapsed = false;
@@ -270,7 +286,10 @@ impl BlinkApp {
     }
 
     fn on_reopen(&mut self, _: &ReopenClosedTab, window: &mut Window, cx: &mut Context<Self>) {
-        if self.update_workspace(cx, |workspace| workspace.reopen_tab()).is_some() {
+        if self
+            .update_workspace(cx, |workspace| workspace.reopen_tab())
+            .is_some()
+        {
             self.focus_tabs(window, cx);
         }
     }
@@ -321,7 +340,12 @@ impl BlinkApp {
         group_settings::open(self.store.clone(), action.group_id, window, cx);
     }
 
-    fn on_manage_cookies(&mut self, _: &ManageCookies, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_manage_cookies(
+        &mut self,
+        _: &ManageCookies,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         cookies_dialog::open(self.store.clone(), window, cx);
     }
 
@@ -331,7 +355,12 @@ impl BlinkApp {
         group_settings::open(self.store.clone(), group_id, window, cx);
     }
 
-    fn on_collapse_groups(&mut self, _: &CollapseAllGroups, _: &mut Window, cx: &mut Context<Self>) {
+    fn on_collapse_groups(
+        &mut self,
+        _: &CollapseAllGroups,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.update_workspace(cx, |workspace| workspace.collapse_all_groups());
     }
 
@@ -377,7 +406,8 @@ impl BlinkApp {
                 let imported = result.is_ok();
                 store.update(cx, |store, cx| match result {
                     Ok(result) => {
-                        let notice = store.update_workspace(cx, |workspace| workspace.import(&result));
+                        let notice =
+                            store.update_workspace(cx, |workspace| workspace.import(&result));
                         store.notify_import(notice.message, false, notice.details, cx);
                     }
                     Err(error) => {
@@ -395,7 +425,12 @@ impl BlinkApp {
         .detach();
     }
 
-    fn on_run_command_id(&mut self, action: &RunCommandId, window: &mut Window, cx: &mut Context<Self>) {
+    fn on_run_command_id(
+        &mut self,
+        action: &RunCommandId,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         self.run_command(&action.id, window, cx);
     }
 
@@ -403,7 +438,8 @@ impl BlinkApp {
         self.show_browser(window);
         let id = action.id;
         self.update_workspace(cx, |workspace| workspace.reveal(id));
-        self.browser.update(cx, |browser, cx| browser.reveal(id, cx));
+        self.browser
+            .update(cx, |browser, cx| browser.reveal(id, cx));
     }
 
     /// Save first; a failed save blocks quitting (`beforeExit`).
@@ -444,7 +480,12 @@ impl BlinkApp {
                 &["mod", "\\"],
                 false,
             ),
-            command("toggle-browser", format!("View: {browser_label}"), &[], false),
+            command(
+                "toggle-browser",
+                format!("View: {browser_label}"),
+                &[],
+                false,
+            ),
             command("zoom-in", "View: Zoom in".into(), &["mod", "="], false),
             command("zoom-out", "View: Zoom out".into(), &["mod", "-"], false),
             command(
@@ -453,21 +494,45 @@ impl BlinkApp {
                 &["mod", "0"],
                 zoom == 1.0,
             ),
-            command("next-tab", "View: Next tab".into(), &["ctrl", "tab"], visible < 2),
+            command(
+                "next-tab",
+                "View: Next tab".into(),
+                &["ctrl", "tab"],
+                visible < 2,
+            ),
             command(
                 "previous-tab",
                 "View: Previous tab".into(),
                 &["ctrl", "shift", "tab"],
                 visible < 2,
             ),
-            command("new-request", "Request: New request".into(), &["mod", "t"], false),
+            command(
+                "new-request",
+                "Request: New request".into(),
+                &["mod", "t"],
+                false,
+            ),
             command(
                 "send",
-                if busy { "Request: Cancel request" } else { "Request: Send" }.into(),
-                if busy { &["mod", "."] } else { &["mod", "enter"] },
+                if busy {
+                    "Request: Cancel request"
+                } else {
+                    "Request: Send"
+                }
+                .into(),
+                if busy {
+                    &["mod", "."]
+                } else {
+                    &["mod", "enter"]
+                },
                 none,
             ),
-            command("focus-url", "Request: Focus URL".into(), &["mod", "l"], none),
+            command(
+                "focus-url",
+                "Request: Focus URL".into(),
+                &["mod", "l"],
+                none,
+            ),
             command("show-code", "Request: Show code".into(), &[], none),
         ];
         for target in CodeTarget::ALL {
@@ -486,10 +551,25 @@ impl BlinkApp {
                 none,
             ),
             command("reveal", "Request: Reveal in Browser".into(), &[], none),
-            command("delete-request", "Request: Delete request".into(), &[], none || busy),
+            command(
+                "delete-request",
+                "Request: Delete request".into(),
+                &[],
+                none || busy,
+            ),
             command("close-tab", "Tabs: Close tab".into(), &["mod", "w"], none),
-            command("close-other-tabs", "Tabs: Close other tabs".into(), &[], visible < 2),
-            command("close-all-tabs", "Tabs: Close all tabs".into(), &[], visible == 0),
+            command(
+                "close-other-tabs",
+                "Tabs: Close other tabs".into(),
+                &[],
+                visible < 2,
+            ),
+            command(
+                "close-all-tabs",
+                "Tabs: Close all tabs".into(),
+                &[],
+                visible == 0,
+            ),
             command(
                 "reopen-tab",
                 "Tabs: Reopen closed tab".into(),
@@ -502,9 +582,24 @@ impl BlinkApp {
                 &["mod", "f"],
                 response.is_none_or(|response| response.is_binary()),
             ),
-            command("copy-response", "Response: Copy".into(), &[], response.is_none()),
-            command("toggle-history", "Response: Toggle history".into(), &[], none),
-            command("save-response", "Response: Save body…".into(), &[], response.is_none()),
+            command(
+                "copy-response",
+                "Response: Copy".into(),
+                &[],
+                response.is_none(),
+            ),
+            command(
+                "toggle-history",
+                "Response: Toggle history".into(),
+                &[],
+                none,
+            ),
+            command(
+                "save-response",
+                "Response: Save body…".into(),
+                &[],
+                response.is_none(),
+            ),
             command(
                 "toggle-wrap",
                 "Response: Toggle line wrap".into(),
@@ -552,9 +647,24 @@ impl BlinkApp {
                 &[],
                 workspace.focused_group_id().is_none(),
             ),
-            command("import", "File: Import OpenAPI, Postman, or .http file…".into(), &[], false),
-            command("manage-cookies", "Cookies: Manage cookies".into(), &[], false),
-            command("clear-cookies", "Cookies: Clear all cookies".into(), &[], false),
+            command(
+                "import",
+                "File: Import OpenAPI, Postman, or .http file…".into(),
+                &[],
+                false,
+            ),
+            command(
+                "manage-cookies",
+                "Cookies: Manage cookies".into(),
+                &[],
+                false,
+            ),
+            command(
+                "clear-cookies",
+                "Cookies: Clear all cookies".into(),
+                &[],
+                false,
+            ),
             command(
                 "collapse-groups",
                 "Browser: Collapse all groups".into(),
@@ -663,7 +773,9 @@ impl BlinkApp {
             }
             "environment-none" => {
                 if let Some(root_id) = root_id {
-                    self.update_workspace(cx, |workspace| workspace.switch_environment(root_id, None));
+                    self.update_workspace(cx, |workspace| {
+                        workspace.switch_environment(root_id, None)
+                    });
                 }
             }
             "edit-environments" => {
@@ -761,8 +873,7 @@ impl Render for BlinkApp {
         let colors = theme::colors(cx);
         let ready = self.store.read(cx).ready;
         let closing = self.store.read(cx).closing;
-        let stacked =
-            self.store.read(cx).workspace.preferences.pane_layout == PaneLayout::Vertical;
+        let stacked = self.store.read(cx).workspace.preferences.pane_layout == PaneLayout::Vertical;
         let narrow = Self::narrow(window);
         let browser_visible = self.browser_visible(window);
         // Keep the open command list current, as the Vue computed list was.

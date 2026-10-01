@@ -155,7 +155,12 @@ pub fn clock_time(epoch_ms: f64, hour12: bool) -> String {
             if pm { "PM" } else { "AM" }
         )
     } else {
-        format!("{:02}:{:02}:{:02}", time.hour(), time.minute(), time.second())
+        format!(
+            "{:02}:{:02}:{:02}",
+            time.hour(),
+            time.minute(),
+            time.second()
+        )
     }
 }
 

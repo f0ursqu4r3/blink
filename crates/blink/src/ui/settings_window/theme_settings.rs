@@ -11,9 +11,9 @@ use gpui_kit::component::{Disableable as _, Sizable as _, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::ui::form::{Choice, choice_index, field_label, u};
 use crate::store::Store;
 use crate::theme::{self, AppTheme};
+use crate::ui::form::{Choice, choice_index, field_label, u};
 
 const PLACEHOLDER: &str = "background = #1e1e1e\nforeground = #d4d4d4\npalette = 3=#dcdcaa";
 const DEFAULT_LABEL: &str = "Blink (default)";

@@ -52,7 +52,10 @@ pub fn tree_rows(workspace: &Workspace) -> Vec<TreeRow> {
     }
     let mut sessions: HashMap<Option<u64>, Vec<u64>> = HashMap::new();
     for session in &workspace.sessions {
-        sessions.entry(session.group_id).or_default().push(session.id);
+        sessions
+            .entry(session.group_id)
+            .or_default()
+            .push(session.id);
     }
     let mut items = Vec::new();
     if focus.is_none() {
@@ -155,7 +158,11 @@ pub fn click_selection(
     }
     if toggle {
         let ids = if selected.contains(&id) {
-            selected.iter().copied().filter(|item| *item != id).collect()
+            selected
+                .iter()
+                .copied()
+                .filter(|item| *item != id)
+                .collect()
         } else {
             selected.iter().copied().chain([id]).collect()
         };

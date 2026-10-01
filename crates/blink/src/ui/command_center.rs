@@ -12,9 +12,9 @@ use blink_core::command_center::{
 };
 use blink_core::shortcut::{IS_MAC, shortcut_label};
 use gpui_kit::assets::IconName;
+use gpui_kit::component::Icon;
 use gpui_kit::component::input::{Enter, Escape, Input, InputEvent, InputState, MoveDown, MoveUp};
 use gpui_kit::component::tooltip::Tooltip;
-use gpui_kit::component::Icon;
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
@@ -110,8 +110,9 @@ impl CommandCenter {
         } else {
             format!("Search requests by name, URL, or group. Type {COMMAND_PREFIX} for commands")
         };
-        self.input
-            .update(cx, |input, cx| input.set_placeholder(placeholder, window, cx));
+        self.input.update(cx, |input, cx| {
+            input.set_placeholder(placeholder, window, cx)
+        });
     }
 
     /// Close and return focus to where it was.
@@ -498,11 +499,7 @@ impl Render for CommandCenter {
             .when(self.open, |this| {
                 this.child(
                     deferred(
-                        anchored().child(
-                            div()
-                                .pt(css(13.))
-                                .child(self.render_popover(width, cx)),
-                        ),
+                        anchored().child(div().pt(css(13.)).child(self.render_popover(width, cx))),
                     )
                     .with_priority(1),
                 )
