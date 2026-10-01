@@ -16,5 +16,6 @@ pub mod status_bar;
 pub mod tabs;
 pub mod title_bar;
 pub mod token_input;
+pub mod update_notice;
 pub mod websocket_panel;
 pub mod widgets;

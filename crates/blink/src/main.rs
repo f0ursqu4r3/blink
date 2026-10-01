@@ -7,6 +7,7 @@ mod store;
 mod test_support;
 mod theme;
 mod ui;
+mod updater;
 
 use blink_core::engine::{Engine, WindowBounds as SavedBounds};
 use gpui_kit::component::TitleBar;
@@ -75,6 +76,8 @@ pub(crate) fn save_window_state(engine: &Engine, window: &Window, cx: &App) {
 }
 
 fn main() {
+    // First: an install or update can run this binary to finish its work.
+    velopack::VelopackApp::build().run();
     let engine = match Engine::open() {
         Ok(engine) => engine,
         Err(error) => {

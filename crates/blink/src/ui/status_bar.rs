@@ -242,7 +242,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
 
 /// A `Button.vue` button: `h-7 px-2.5 font-mono text-xs font-medium`,
 /// secondary (bordered) or ghost.
-fn notice_button(id: &'static str, label: &'static str, secondary: bool) -> Button {
+pub(crate) fn notice_button(id: &'static str, label: &'static str, secondary: bool) -> Button {
     // XSmall sets the label to `text-xs`; the label ignores `text_size`.
     let button = Button::new(id)
         .label(label)

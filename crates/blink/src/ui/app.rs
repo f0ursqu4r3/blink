@@ -21,7 +21,8 @@ use crate::ui::command_center::{CommandCenter, Picked};
 use crate::ui::request_pane::RequestPane;
 use crate::ui::tabs::RequestTabs;
 use crate::ui::title_bar::{self, TitleBarProps};
-use crate::ui::{cookies_dialog, group_settings, settings_window, status_bar};
+use crate::ui::{cookies_dialog, group_settings, settings_window, status_bar, update_notice};
+use crate::updater::{QuitToInstall, Updater};
 
 /// The frame gap (`gap-1.5`).
 pub const FRAME_GAP: f32 = 6.0;
@@ -90,6 +91,7 @@ pub struct BlinkApp {
     /// Browser width in CSS pixels at zoom 1.
     browser_width: f32,
     slide: Slide,
+    updater: Entity<Updater>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -98,6 +100,8 @@ impl BlinkApp {
         let browser = cx.new(|cx| Browser::new(store.clone(), window, cx));
         let tabs = cx.new(|cx| RequestTabs::new(store.clone(), window, cx));
         let command_center = cx.new(|cx| CommandCenter::new(store.clone(), window, cx));
+        let engine = store.read(cx).engine.clone();
+        let updater = cx.new(|cx| Updater::installed(engine, cx));
         let _subscriptions = vec![
             cx.observe_in(&store, window, |this, _, window, cx| {
                 this.sync_panes(window, cx);
@@ -135,8 +139,18 @@ impl BlinkApp {
                     this.sync_panes(window, cx);
                 }
             }),
+            // Quit as Cmd+Q does, so the workspace saves before the update.
+            cx.subscribe_in(
+                &updater,
+                window,
+                |this, _, _: &QuitToInstall, window, cx| {
+                    this.on_quit(&Quit, window, cx);
+                },
+            ),
+            cx.observe(&updater, |_, _, cx| cx.notify()),
         ];
         let mut app = BlinkApp {
+            updater,
             focus_handle: cx.focus_handle(),
             store,
             browser,
@@ -564,6 +578,16 @@ impl BlinkApp {
     }
 
     /// Save first; a failed save blocks quitting (`beforeExit`).
+    fn on_check_for_updates(
+        &mut self,
+        _: &CheckForUpdates,
+        _: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.updater
+            .update(cx, |updater, cx| updater.check(true, cx));
+    }
+
     fn on_quit(&mut self, _: &Quit, window: &mut Window, cx: &mut Context<Self>) {
         crate::save_window_state(&self.store.read(cx).engine, window, cx);
         self.store.update(cx, |store, cx| store.quit(cx));
@@ -804,6 +828,12 @@ impl BlinkApp {
                 &["mod", ","],
                 false,
             ),
+            command(
+                "check-for-updates",
+                "Blink: Check for updates".into(),
+                &[],
+                false,
+            ),
         ]);
         commands
     }
@@ -916,6 +946,7 @@ impl BlinkApp {
             "collapse-groups" => self.on_collapse_groups(&CollapseAllGroups, window, cx),
             "undo-delete" => self.on_undo(&UndoDelete, window, cx),
             "open-settings" => self.on_open_settings(&OpenSettings, window, cx),
+            "check-for-updates" => self.on_check_for_updates(&CheckForUpdates, window, cx),
             _ => {
                 if let Some(target) = id.strip_prefix("copy-as-") {
                     if let (Some(pane), Some(target)) =
@@ -1028,6 +1059,7 @@ impl Render for BlinkApp {
             cx,
         );
         let notice = status_bar::render_storage_notice(&self.store, window, cx);
+        let update = update_notice::render(&self.updater, cx);
         let status = status_bar::render(&self.store, window, cx);
         div()
             .id("blink")
@@ -1061,6 +1093,7 @@ impl Render for BlinkApp {
             .on_action(cx.listener(Self::on_run_command_id))
             .on_action(cx.listener(Self::on_reveal))
             .on_action(cx.listener(Self::on_quit))
+            .on_action(cx.listener(Self::on_check_for_updates))
             .flex()
             .flex_col()
             .size_full()
@@ -1071,6 +1104,7 @@ impl Render for BlinkApp {
             .when(closing, |this| this.opacity(0.6))
             .child(title)
             .child(notice)
+            .child(update)
             .when(ready, |this| {
                 this.child(
                     div()

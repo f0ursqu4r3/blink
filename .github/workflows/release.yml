@@ -1,0 +1,82 @@
+# Publish a GitHub Release for a version tag. Push `vX.Y.Z` where X.Y.Z is
+# the workspace version in Cargo.toml. Velopack packages the app; installed
+# copies find the release and update themselves (crates/blink/src/updater.rs).
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  macos:
+    runs-on: macos-14
+    env:
+      GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      REPO_URL: https://github.com/${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The notes list the commits since the previous tag.
+          fetch-depth: 0
+
+      - name: Check that the tag is the crate version
+        run: |
+          version=$(cargo pkgid -p blink | sed 's/.*[#@]//')
+          if [ "v$version" != "$GITHUB_REF_NAME" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match the crate version $version." >&2
+            exit 1
+          fi
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+
+      - name: Install the Rust targets
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Build the app bundle
+        run: BLINK_UNIVERSAL=1 script/bundle-macos
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Install vpk
+        run: dotnet tool install -g vpk
+
+      - name: Write the release notes
+        run: |
+          previous=$(git describe --tags --abbrev=0 "$GITHUB_REF_NAME^" 2>/dev/null || true)
+          git log --no-merges --pretty='- %s' "${previous:+$previous..}$GITHUB_REF_NAME" > notes.md
+
+      # The previous release lets vpk make a small delta package. The first
+      # release has none.
+      - name: Download the previous release
+        run: vpk download github --repoUrl "$REPO_URL" --token "$GITHUB_TOKEN" --outputDir releases || true
+
+      - name: Package
+        run: >
+          vpk pack
+          --packId Blink
+          --packVersion "$VERSION"
+          --packDir target/release/Blink.app
+          --mainExe blink
+          --packTitle Blink
+          --packAuthors "Kyle Dougan"
+          --releaseNotes notes.md
+          --outputDir releases
+
+      - name: Publish
+        run: >
+          vpk upload github
+          --repoUrl "$REPO_URL"
+          --token "$GITHUB_TOKEN"
+          --outputDir releases
+          --publish
+          --releaseName "Blink $VERSION"
+          --tag "$GITHUB_REF_NAME"

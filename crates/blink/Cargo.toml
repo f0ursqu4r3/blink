@@ -21,6 +21,7 @@ gpui-kit = { version = "0.7.0", features = [
 ] }
 lsp-types = { version = "0.97.0", features = ["proposed"] }
 serde_json = "1"
+velopack = "1.2.161"
 
 [dev-dependencies]
 # Headless UI integration tests: real views, simulated input, no window on screen.

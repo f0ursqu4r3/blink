@@ -13,6 +13,7 @@ pub mod request_files;
 pub mod response_store;
 pub mod storage;
 pub mod timing;
+pub mod update_state;
 pub mod websocket;
 pub mod window_state;
 
@@ -31,6 +32,7 @@ pub use cookies::StoredCookie;
 pub use http::{CANCELED, StreamMessage};
 pub use paths::Paths;
 pub use request_files::PickedFile;
+pub use update_state::UpdateChoices;
 pub use websocket::SocketEvent;
 pub use window_state::WindowBounds;
 
@@ -51,6 +53,7 @@ struct Inner {
     cookies: Arc<cookies::Cookies>,
     store: Arc<response_store::ResponseStore>,
     window_state: window_state::WindowState,
+    update_state: update_state::UpdateState,
     sequence: AtomicU64,
 }
 
@@ -85,6 +88,7 @@ impl Engine {
             cookies: Arc::new(cookies::Cookies::load(paths.cookies())),
             store: Arc::new(response_store::ResponseStore::new(paths.responses())),
             window_state: window_state::WindowState::new(paths.window_state()),
+            update_state: update_state::UpdateState::new(paths.update_state()),
             sequence: AtomicU64::new(0),
             paths,
         })))
@@ -313,5 +317,13 @@ impl Engine {
 
     pub fn save_window_state(&self, bounds: &WindowBounds) -> Result<(), String> {
         self.0.window_state.save(bounds)
+    }
+
+    pub fn load_update_choices(&self) -> UpdateChoices {
+        self.0.update_state.load()
+    }
+
+    pub fn save_update_choices(&self, choices: &UpdateChoices) -> Result<(), String> {
+        self.0.update_state.save(choices)
     }
 }

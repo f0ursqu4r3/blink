@@ -40,6 +40,7 @@ actions!(
         ImportFile,
         ManageCookies,
         NewGroup,
+        CheckForUpdates,
         CollapseAllGroups,
     ]
 );
@@ -87,6 +88,8 @@ const OUTSIDE_INPUTS: &str = "BlinkApp && !CommandCenter && !PopupMenu && !Input
 fn menus() -> Vec<Menu> {
     vec![
         Menu::new("Blink").items([
+            MenuItem::action("Check for Updates…", CheckForUpdates),
+            MenuItem::separator(),
             MenuItem::os_submenu("Services", SystemMenuType::Services),
             MenuItem::separator(),
             MenuItem::action("Hide Blink", Hide),
