@@ -50,9 +50,11 @@ pub(super) fn css(value: f32) -> Rems {
     rems(value / 16.0)
 }
 
-/// Browser card width (`w-61`) and its minimum (`min-w-47`).
-const WIDTH: f32 = 244.;
-const MIN_WIDTH: f32 = 188.;
+/// Browser card width (`w-61`) and its minimum (`min-w-47`). The user can
+/// drag the width between the minimum and the maximum.
+pub const WIDTH: f32 = 244.;
+pub const MIN_WIDTH: f32 = 188.;
+pub const MAX_WIDTH: f32 = 480.;
 /// At or below this window width the Browser is an overlay without rounding.
 const NARROW_WIDTH: f32 = 760.;
 
@@ -1672,9 +1674,8 @@ impl Render for Browser {
             .flex()
             .flex_col()
             .overflow_hidden()
-            .w(css(WIDTH))
-            .min_w(css(MIN_WIDTH))
-            .h_full()
+            // The shell sets the width.
+            .size_full()
             .border_1()
             .border_color(colors.border)
             .bg(colors.muted)

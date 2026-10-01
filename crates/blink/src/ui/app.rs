@@ -1,6 +1,7 @@
 //! The window shell. Port of `App.vue`.
 
 use std::collections::HashMap;
+use std::time::{Duration, Instant};
 
 use blink_core::command_center::Command;
 use blink_core::environments::{active_environment, root_group};
@@ -15,7 +16,7 @@ use gpui_kit::*;
 use crate::actions::*;
 use crate::store::{Store, StoreEvent};
 use crate::theme;
-use crate::ui::browser::Browser;
+use crate::ui::browser::{self, Browser, css};
 use crate::ui::command_center::{CommandCenter, Picked};
 use crate::ui::request_pane::RequestPane;
 use crate::ui::tabs::RequestTabs;
@@ -26,6 +27,55 @@ use crate::ui::{cookies_dialog, group_settings, settings_window, status_bar};
 pub const FRAME_GAP: f32 = 6.0;
 /// At or below this width the Browser opens as an overlay (`max-[760px]`).
 pub const NARROW_WIDTH: f32 = 760.0;
+/// How long the Browser takes to slide open or closed.
+const SLIDE: Duration = Duration::from_millis(160);
+
+/// The Browser slide: how much of it shows as visibility changes.
+#[derive(Default)]
+struct Slide {
+    /// Visibility at the last frame, to start a slide when it changes.
+    visible: Option<bool>,
+    /// When the slide toward the current visibility started.
+    start: Option<Instant>,
+}
+
+impl Slide {
+    /// How much of the Browser shows at `now`, from 0 (closed) to 1 (open),
+    /// and whether it is still sliding. A change during a slide reverses it
+    /// from where it is.
+    fn shown(&mut self, visible: bool, now: Instant) -> (f32, bool) {
+        if self
+            .visible
+            .replace(visible)
+            .is_some_and(|was| was != visible)
+        {
+            let elapsed = self
+                .start
+                .map_or(SLIDE, |start| now.duration_since(start).min(SLIDE));
+            self.start = Some(now.checked_sub(SLIDE - elapsed).unwrap_or(now));
+        }
+        let progress = match self.start {
+            Some(start) if now.duration_since(start) < SLIDE => {
+                ease_in_out(now.duration_since(start).as_secs_f32() / SLIDE.as_secs_f32())
+            }
+            _ => {
+                self.start = None;
+                1.
+            }
+        };
+        let shown = if visible { progress } else { 1. - progress };
+        (shown, self.start.is_some())
+    }
+}
+
+/// The drag payload of the Browser resize handle.
+struct BrowserResize;
+
+impl Render for BrowserResize {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        Empty
+    }
+}
 
 pub struct BlinkApp {
     focus_handle: FocusHandle,
@@ -37,6 +87,9 @@ pub struct BlinkApp {
     panes: HashMap<u64, Entity<RequestPane>>,
     sidebar_collapsed: bool,
     mobile_browser_open: bool,
+    /// Browser width in CSS pixels at zoom 1.
+    browser_width: f32,
+    slide: Slide,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -92,6 +145,8 @@ impl BlinkApp {
             panes: HashMap::new(),
             sidebar_collapsed: false,
             mobile_browser_open: false,
+            browser_width: browser::WIDTH,
+            slide: Slide::default(),
             _subscriptions,
         };
         app.sync_panes(window, cx);
@@ -143,6 +198,72 @@ impl BlinkApp {
         } else {
             !self.sidebar_collapsed
         }
+    }
+
+    /// Set the Browser width from the resize handle at `x`, a window
+    /// position. `left` is the left edge of the Browser.
+    fn resize_browser(&mut self, x: Pixels, left: Pixels, window: &Window, cx: &mut Context<Self>) {
+        let zoom = window.rem_size().as_f32() / 16.;
+        // The handle is the gap after the Browser; the pointer is its middle.
+        let width = (x - left - px(FRAME_GAP / 2.)).as_f32() / zoom;
+        let width = width.clamp(browser::MIN_WIDTH, browser::MAX_WIDTH);
+        if width != self.browser_width {
+            self.browser_width = width;
+            cx.notify();
+        }
+    }
+
+    /// The Browser in a box `shown` of its width wide, with the gap after
+    /// it and the resize handle in the gap. Narrow windows have no gap and
+    /// no handle.
+    fn render_browser(
+        &self,
+        shown: f32,
+        narrow: bool,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> impl IntoElement {
+        let colors = theme::colors(cx);
+        let width = css(self.browser_width).to_pixels(window.rem_size());
+        let gap = px(if narrow { 0. } else { FRAME_GAP });
+        div()
+            .relative()
+            .flex_shrink_0()
+            .h_full()
+            .w((width + gap) * shown)
+            .overflow_hidden()
+            .debug_selector(|| "browser-box".into())
+            .child(div().w(width).h_full().child(self.browser.clone()))
+            .when(!narrow && shown == 1., |this| {
+                this.child(
+                    div()
+                        .id("browser-resize")
+                        .debug_selector(|| "browser-resize".into())
+                        .group("browser-resize")
+                        .absolute()
+                        .top_0()
+                        .bottom_0()
+                        .left(width)
+                        .w(gap)
+                        .flex()
+                        .justify_center()
+                        .cursor_col_resize()
+                        .child(
+                            div()
+                                .w(px(2.))
+                                .h_full()
+                                .group_hover("browser-resize", |this| this.bg(colors.border)),
+                        )
+                        .on_drag(BrowserResize, |_, _, _, cx| cx.new(|_| BrowserResize))
+                        .on_click(cx.listener(|this, event: &ClickEvent, _, cx| {
+                            // A double click restores the default width.
+                            if event.click_count() == 2 {
+                                this.browser_width = browser::WIDTH;
+                                cx.notify();
+                            }
+                        })),
+                )
+            })
     }
 
     /// Show the Browser, as import, reveal, and new group do.
@@ -876,6 +997,10 @@ impl Render for BlinkApp {
         let stacked = self.store.read(cx).workspace.preferences.pane_layout == PaneLayout::Vertical;
         let narrow = Self::narrow(window);
         let browser_visible = self.browser_visible(window);
+        let (shown, sliding) = self.slide.shown(browser_visible, Instant::now());
+        if sliding {
+            window.request_animation_frame();
+        }
         // Keep the open command list current, as the Vue computed list was.
         let commands = self.commands(window, cx);
         self.command_center
@@ -954,19 +1079,24 @@ impl Render for BlinkApp {
                         .flex_1()
                         .min_w_0()
                         .min_h_0()
-                        .gap(px(if narrow { 0. } else { FRAME_GAP }))
                         .px(px(if narrow { 0. } else { FRAME_GAP }))
-                        .when(browser_visible && !narrow, |this| {
-                            this.child(self.browser.clone())
+                        .on_drag_move(cx.listener(
+                            |this, event: &DragMoveEvent<BrowserResize>, window, cx| {
+                                let left = event.bounds.left() + px(FRAME_GAP);
+                                this.resize_browser(event.event.position.x, left, window, cx);
+                            },
+                        ))
+                        .when(shown > 0. && !narrow, |this| {
+                            this.child(self.render_browser(shown, narrow, window, cx))
                         })
                         .child(self.render_editor(narrow, cx))
-                        .when(browser_visible && narrow, |this| {
+                        .when(shown > 0. && narrow, |this| {
                             this.child(
                                 div()
                                     .id("browser-overlay")
                                     .absolute()
                                     .inset_0()
-                                    .bg(black().opacity(0.5))
+                                    .bg(black().opacity(0.5 * shown))
                                     .on_click(cx.listener(|this, _, _, cx| {
                                         this.mobile_browser_open = false;
                                         cx.notify();
@@ -979,13 +1109,41 @@ impl Render for BlinkApp {
                                     .bottom_0()
                                     .left_0()
                                     .flex()
-                                    .child(self.browser.clone()),
+                                    .child(self.render_browser(shown, narrow, window, cx)),
                             )
                         }),
                 )
             })
             .when(!ready, |this| this.child(div().flex_1()))
             .child(status)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Instant;
+
+    use super::{SLIDE, Slide};
+
+    #[test]
+    fn the_browser_slides_and_reverses_from_where_it_is() {
+        let start = Instant::now();
+        let mut slide = Slide::default();
+        // The first frame does not slide.
+        assert_eq!(slide.shown(true, start), (1., false));
+
+        // Closing: from open to closed over the slide.
+        assert_eq!(slide.shown(false, start), (1., true));
+        assert_eq!(slide.shown(false, start + SLIDE / 2), (0.5, true));
+        assert_eq!(slide.shown(false, start + SLIDE), (0., false));
+
+        // Opening, then closing at a quarter: the Browser goes back from there.
+        let open = start + SLIDE * 2;
+        assert_eq!(slide.shown(true, open), (0., true));
+        let (quarter, _) = slide.shown(true, open + SLIDE / 4);
+        assert!(0. < quarter && quarter < 0.5);
+        assert_eq!(slide.shown(false, open + SLIDE / 4), (quarter, true));
+        assert_eq!(slide.shown(false, open + SLIDE / 2), (0., false));
     }
 }
 

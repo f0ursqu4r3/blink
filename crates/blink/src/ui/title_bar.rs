@@ -29,10 +29,11 @@ pub struct TitleBarProps {
 
 pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> AnyElement {
     let colors = theme::colors(cx);
-    let browser_label = if props.browser_visible {
-        "Hide request browser"
+    // The icon shows what a click does, as the label does.
+    let (browser_icon, browser_label) = if props.browser_visible {
+        (IconName::PanelLeftClose, "Hide request browser")
     } else {
-        "Show request browser"
+        (IconName::PanelLeftOpen, "Show request browser")
     };
     let layout_label = layout_toggle_label(props.stacked);
     let mac = cfg!(target_os = "macos") && !window.is_fullscreen();
@@ -61,7 +62,7 @@ pub fn render(props: TitleBarProps, window: &Window, cx: &App) -> AnyElement {
                             // Leave room for the traffic lights.
                             .when(mac, |this| this.pl(px(72.)))
                             .child(
-                                icon_button("title-browser", IconName::PanelLeft, browser_label)
+                                icon_button("title-browser", browser_icon, browser_label)
                                     .on_click(move |_, window, cx| on_toggle_browser(window, cx)),
                             ),
                     ),

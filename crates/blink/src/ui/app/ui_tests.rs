@@ -1,13 +1,17 @@
-//! Headless flow: the response tab and scroll position survive a restart.
+//! Headless flows: the response tab and scroll position survive a restart;
+//! the Browser slides open and closed and resizes.
 
 use blink_core::ids::SESSIONS;
 use gpui_kit::{
-    AppContext as _, Bounds, Point, TestAppContext, WindowBounds, WindowOptions, px, size,
+    AppContext as _, Bounds, Modifiers, MouseButton, Pixels, Point, TestAppContext,
+    VisualTestContext, WindowBounds, WindowOptions, point, px, size,
 };
 
-use super::BlinkApp;
+use super::{BlinkApp, FRAME_GAP};
+use crate::actions::ToggleBrowser;
 use crate::store::Store;
 use crate::test_support::{self, Reply, serve, wait};
+use crate::ui::browser;
 
 const SCROLL: f64 = 360.0;
 
@@ -129,4 +133,62 @@ fn response_tab_and_scroll_survive_a_restart(cx: &mut TestAppContext) {
     let mut panes: Vec<u64> = cx.read(|cx| app.read(cx).panes.keys().copied().collect());
     panes.sort();
     assert_eq!(panes, [base_id, base_id + 1]);
+}
+
+/// The Browser box after the frames that run until the app is idle.
+fn browser_box(harness: &test_support::Harness, cx: &mut TestAppContext) -> Option<Bounds<Pixels>> {
+    harness.draw(cx);
+    VisualTestContext::from_window(harness.window, cx).debug_bounds("browser-box")
+}
+
+#[gpui_kit::test]
+fn the_browser_slides_closed_and_open(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let open = px(browser::WIDTH + FRAME_GAP);
+    assert_eq!(browser_box(&harness, cx).unwrap().size.width, open);
+
+    // The test platform draws the slide frames until the slide ends.
+    harness.dispatch(cx, ToggleBrowser);
+    assert_eq!(browser_box(&harness, cx), None);
+    harness.dispatch(cx, ToggleBrowser);
+    assert_eq!(browser_box(&harness, cx).unwrap().size.width, open);
+}
+
+#[gpui_kit::test]
+fn dragging_the_handle_resizes_the_browser_within_limits(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let width = |cx: &mut TestAppContext| cx.read(|cx| harness.app.read(cx).browser_width);
+
+    let drag = |to: f32, cx: &mut TestAppContext| {
+        harness.draw(cx);
+        let mut visual = VisualTestContext::from_window(harness.window, cx);
+        let handle = visual
+            .debug_bounds("browser-resize")
+            .expect("the handle is painted");
+        let from = handle.center();
+        visual.simulate_mouse_down(from, MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_move(
+            point(from.x + px(4.), from.y),
+            MouseButton::Left,
+            Modifiers::none(),
+        );
+        visual.simulate_mouse_move(point(px(to), from.y), MouseButton::Left, Modifiers::none());
+        visual.simulate_mouse_up(point(px(to), from.y), MouseButton::Left, Modifiers::none());
+    };
+
+    // The pointer holds the middle of the gap after the Browser.
+    drag(FRAME_GAP + 300. + FRAME_GAP / 2., cx);
+    assert_eq!(width(cx), 300.);
+    drag(1200., cx);
+    assert_eq!(width(cx), browser::MAX_WIDTH);
+    drag(20., cx);
+    assert_eq!(width(cx), browser::MIN_WIDTH);
+    let shown = browser_box(&harness, cx).unwrap().size.width;
+    assert_eq!(shown, px(browser::MIN_WIDTH + FRAME_GAP));
 }
