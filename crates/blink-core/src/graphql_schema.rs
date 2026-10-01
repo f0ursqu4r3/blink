@@ -728,6 +728,8 @@ enum Expect {
 struct Walker<'a> {
     schema: &'a GraphqlSchema,
     stack: Vec<Frame>,
+    /// For each frame: the field or argument names it already has.
+    present: Vec<Vec<String>>,
     /// Root type for the next `{` at the top level.
     pending_root: Option<String>,
     /// Type condition waiting for its `{`.
@@ -782,6 +784,11 @@ impl<'a> Walker<'a> {
                         self.expect = Expect::TypeCondition;
                     }
                     _ => {
+                        if self.names_field_or_argument(words, index, top.as_ref())
+                            && let Some(present) = self.present.last_mut()
+                        {
+                            present.push(name.clone());
+                        }
                         if let Some(Frame::Selection(Some(type_name))) = &top {
                             // A field; `alias: name` replaces the alias.
                             if words.get(index + 1) != Some(&Word::Punct(':')) {
@@ -821,10 +828,12 @@ impl<'a> Walker<'a> {
                         Frame::Value
                     };
                     self.stack.push(next);
+                    self.present.push(Vec::new());
                     self.expect = Expect::Name;
                 }
                 Word::Punct('}') => {
                     self.stack.pop();
+                    self.present.pop();
                     self.last_field = None;
                     self.expect = if self.stack.is_empty() {
                         Expect::Definition
@@ -841,10 +850,12 @@ impl<'a> Walker<'a> {
                         Frame::Parens
                     };
                     self.stack.push(frame);
+                    self.present.push(Vec::new());
                     self.expect = Expect::Name;
                 }
                 Word::Punct(')') => {
                     self.stack.pop();
+                    self.present.pop();
                     self.expect = Expect::Other;
                     if matches!(self.stack.last(), Some(Frame::Selection(_))) {
                         self.expect = Expect::Name;
@@ -852,9 +863,11 @@ impl<'a> Walker<'a> {
                 }
                 Word::Punct('[') => {
                     self.stack.push(Frame::Value);
+                    self.present.push(Vec::new());
                 }
                 Word::Punct(']') => {
                     self.stack.pop();
+                    self.present.pop();
                     self.expect = Expect::Name;
                 }
                 Word::Punct(':') => {
@@ -875,6 +888,20 @@ impl<'a> Walker<'a> {
             }
             index += 1;
         }
+    }
+
+    /// Whether the name at `index` selects a field without an alias, or
+    /// names an argument.
+    fn names_field_or_argument(&self, words: &[Word], index: usize, top: Option<&Frame>) -> bool {
+        let aliased = index.checked_sub(1).map(|at| &words[at]) == Some(&Word::Punct(':'));
+        let colon_next = words.get(index + 1) == Some(&Word::Punct(':'));
+        self.expect == Expect::Name
+            && !aliased
+            && match top {
+                Some(Frame::Selection(_)) => !colon_next,
+                Some(Frame::Arguments(..)) => colon_next,
+                _ => false,
+            }
     }
 
     fn argument(
@@ -940,6 +967,39 @@ fn argument_item(arg: &InputValue) -> CompletionItem {
     }
 }
 
+/// The fields selected without an alias, or the argument names, in the
+/// selection set or argument list that `words` continue, up to its end.
+fn present_after(words: &[Word], arguments: bool) -> Vec<String> {
+    let mut depth = 0;
+    let mut names = Vec::new();
+    for (index, word) in words.iter().enumerate() {
+        let previous = index.checked_sub(1).map(|at| &words[at]);
+        match word {
+            Word::Punct('{' | '(' | '[') => depth += 1,
+            Word::Punct('}' | ')' | ']') if depth == 0 => break,
+            Word::Punct('}' | ')' | ']') => depth -= 1,
+            Word::Name(name) if depth == 0 => {
+                let colon_next = words.get(index + 1) == Some(&Word::Punct(':'));
+                let named = if arguments {
+                    colon_next && previous != Some(&Word::Punct(':'))
+                } else {
+                    // Not an alias, aliased field, directive, fragment
+                    // spread, or inline fragment type condition.
+                    let condition = matches!(previous, Some(Word::Name(on)) if on == "on");
+                    !colon_next
+                        && !condition
+                        && !matches!(previous, Some(Word::Punct(':' | '@') | Word::Spread))
+                };
+                if named {
+                    names.push(name.clone());
+                }
+            }
+            _ => {}
+        }
+    }
+    names
+}
+
 /// Suggestions for the GraphQL document `text` with the cursor at `offset`.
 pub fn graphql_completions(schema: &GraphqlSchema, text: &str, offset: usize) -> Completions {
     let mut offset = offset.min(text.len());
@@ -957,6 +1017,7 @@ pub fn graphql_completions(schema: &GraphqlSchema, text: &str, offset: usize) ->
     let mut walker = Walker {
         schema,
         stack: Vec::new(),
+        present: Vec::new(),
         pending_root: None,
         pending_condition: None,
         last_field: None,
@@ -1039,6 +1100,23 @@ pub fn graphql_completions(schema: &GraphqlSchema, text: &str, offset: usize) ->
                 _ => {}
             },
         }
+    }
+    // Skip the fields already selected and the arguments already given,
+    // before and after the cursor. After `alias:`, any field may follow.
+    let arguments = matches!(walker.stack.last(), Some(Frame::Arguments(..)));
+    if words.last() != Some(&Word::Punct(':')) || arguments {
+        let end = offset
+            + text[offset..]
+                .find(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+                .unwrap_or(text.len() - offset);
+        let mut present: HashSet<String> = present_after(&scan(&text[end..]).0, arguments)
+            .into_iter()
+            .collect();
+        present.extend(walker.present.last().into_iter().flatten().cloned());
+        items.retain(|item| {
+            !matches!(item.kind, CompletionKind::Field | CompletionKind::Argument)
+                || !present.contains(&item.label)
+        });
     }
     let lower = prefix.to_ascii_lowercase();
     items.retain(|item| item.label.to_ascii_lowercase().starts_with(&lower));
@@ -1437,7 +1515,7 @@ mod tests {
         assert_eq!(labels("{ me: viewer { f|"), vec!["friends"]);
         assert_eq!(
             labels("{ viewer { id # c\n  |"),
-            vec!["id", "friends", "__typename"]
+            vec!["friends", "__typename"]
         );
     }
 
@@ -1461,12 +1539,37 @@ mod tests {
     }
 
     #[test]
+    fn skips_fields_already_in_the_selection_set() {
+        let rest = vec!["friends", "__typename"];
+        assert_eq!(labels("{ viewer { id | } }"), rest);
+        assert_eq!(labels("{ viewer { |\n id } }"), rest);
+        assert_eq!(labels("{ viewer { id @include(if: true) | } }"), rest);
+        assert_eq!(labels("{ viewer { friends(first: 1) { id } | } }"), ["id", "__typename"]);
+        assert!(labels("{ viewer { id i| } }").is_empty());
+        // The word being typed is not already selected.
+        assert_eq!(labels("{ viewer { i|d } }"), ["id"]);
+        // A field under an alias, an alias, and fragments may repeat fields.
+        let all = vec!["id", "friends", "__typename"];
+        assert_eq!(labels("{ viewer { me: id | } }"), all);
+        assert_eq!(labels("{ viewer { id me: | } }"), all);
+        assert_eq!(labels("{ viewer { ...F | } }"), all);
+        assert_eq!(labels("{ viewer { ... on User { id } | } }"), all);
+    }
+
+    #[test]
+    fn skips_arguments_already_given() {
+        assert_eq!(labels("{ viewer { friends(first: 2, |) } }"), ["order"]);
+        assert_eq!(labels("{ viewer { friends(|, order: ASC) } }"), ["first"]);
+        assert_eq!(labels("{ viewer @include(if: true, |) }"), Vec::<String>::new());
+    }
+
+    #[test]
     fn suggests_nothing_in_comments_and_strings() {
         assert!(labels("{ viewer { # i|").is_empty());
         assert!(labels("{ viewer { friends(order: \"A|").is_empty());
         assert_eq!(
-            labels("{ viewer { friends(order: \"x\", |"),
-            vec!["first", "order"]
+            labels("{ viewer { friends(first: \"x\", |"),
+            vec!["order"]
         );
     }
 
