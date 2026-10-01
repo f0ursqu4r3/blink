@@ -648,7 +648,7 @@ dependencies = [
 
 [[package]]
 name = "blink"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "blink-core",
@@ -664,7 +664,7 @@ dependencies = [
 
 [[package]]
 name = "blink-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "chrono",
