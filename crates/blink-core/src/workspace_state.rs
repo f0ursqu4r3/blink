@@ -32,6 +32,7 @@ use crate::preferences::{
 };
 use crate::request::{is_method, js_trim};
 use crate::response_token_cache::ResponseTokenCache;
+use crate::response_tokens::TokenSources;
 use crate::session::{create_session, has_draft};
 use crate::workspace::{decode_workspace, encode_workspace};
 
@@ -187,6 +188,18 @@ impl Workspace {
             released: Vec::new(),
             depth: 0,
         }
+    }
+
+    /// Tokens, response tokens, and cached values at `now_ms`.
+    pub fn token_sources(&self, now_ms: f64) -> TokenSources<'_> {
+        TokenSources::new(
+            &self.groups,
+            &self.global_definitions,
+            &self.global_response_tokens,
+            &self.sessions,
+            &self.response_cache,
+        )
+        .at(now_ms)
     }
 
     // ── Persistence ─────────────────────────────────────────────────────────

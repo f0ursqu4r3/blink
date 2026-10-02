@@ -35,7 +35,7 @@ impl Deref for ResolvedRequestContext {
 
 /// The group ancestry of `group_id`, nearest first. Stops at a cycle or a
 /// missing group.
-fn ancestry(group_id: Option<u64>, groups: &[RequestGroup]) -> Vec<&RequestGroup> {
+pub(crate) fn ancestry(group_id: Option<u64>, groups: &[RequestGroup]) -> Vec<&RequestGroup> {
     let by_id: HashMap<u64, &RequestGroup> = groups.iter().map(|g| (g.id, g)).collect();
     let mut chain = Vec::new();
     let mut cursor = group_id;
