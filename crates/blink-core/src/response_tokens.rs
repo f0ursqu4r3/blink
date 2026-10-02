@@ -448,7 +448,8 @@ impl<'a> TokenSources<'a> {
 pub struct PlanStep {
     /// The source request to send.
     pub request_id: u64,
-    /// The token that needs it, for messages.
+    /// The token that needs it, for messages. When several tokens read the
+    /// same request, the first one found names the step.
     pub token: String,
 }
 
@@ -495,10 +496,15 @@ pub fn response_token_plan(
 }
 
 /// Encloses each probe marker. Digits only, so a marker stays intact through
-/// URL and form encoding, and is valid in a JSON string or number.
-const PROBE_FENCE: &str = "7302958164";
+/// URL and form encoding, and is valid in a JSON string or number. No proper
+/// prefix is also a suffix, so a fence cannot start inside another marker.
+const PROBE_FENCE: &str = "7302958";
 
 /// The probe value of the token at `index` in the probe key list.
+///
+/// GraphQL variables are parsed and written back, so a marker in a number
+/// position must stay a u64: 18 digits up to index 9999, 19 up to 99999.
+/// A request cannot reach more response tokens than that in practice.
 fn probe_marker(index: usize) -> String {
     format!("{PROBE_FENCE}{index:04}{PROBE_FENCE}")
 }
@@ -539,10 +545,9 @@ impl TokenSources<'_> {
         };
         let ctx = self.request_context(session);
         for key in self.probe(session, &ctx) {
-            let name = key.strip_prefix("_.").unwrap_or(&key);
-            let info = match key.strip_prefix("_.") {
-                Some(name) => ctx.tokens.workspace_response_tokens.get(name),
-                None => ctx.tokens.response_tokens.get(name),
+            let (name, info) = match key.strip_prefix("_.") {
+                Some(name) => (name, ctx.tokens.workspace_response_tokens.get(name)),
+                None => (key.as_str(), ctx.tokens.response_tokens.get(&key)),
             };
             if let Some(problem) = info.and_then(|info| info.problem.as_ref()) {
                 return Err(format!("\"{name}\" {problem}"));
@@ -608,33 +613,35 @@ impl TokenSources<'_> {
         }
 
         let mut sent: Vec<String> = Vec::new();
-        if crate::websocket_log::is_web_socket_url(&session.draft.url) {
+        let headers = if crate::websocket_log::is_web_socket_url(&session.draft.url) {
             let Ok(socket) = crate::runner::build_web_socket_request(&session.draft, Some(&probe))
             else {
                 return Vec::new();
             };
             sent.push(socket.url);
-            sent.extend(socket.headers.into_iter().map(|h| h.value));
+            socket.headers
         } else {
             let Ok(request) = crate::runner::prepare(&session.draft, Some(&probe)).request else {
                 return Vec::new();
             };
             sent.push(request.url);
-            sent.extend(request.headers.into_iter().map(|h| h.value));
             sent.extend(request.body);
             for part in request.multipart.into_iter().flatten() {
                 sent.push(part.key);
                 sent.push(part.value);
             }
+            request.headers
+        };
+        for header in headers {
+            // Basic auth sends its credentials in base64.
+            let decoded = header
+                .value
+                .strip_prefix("Basic ")
+                .and_then(|encoded| BASE64.decode(encoded).ok())
+                .map(|bytes| String::from_utf8_lossy(&bytes).into_owned());
+            sent.push(header.value);
+            sent.extend(decoded);
         }
-        // Basic auth sends its credentials in base64.
-        let decoded: Vec<String> = sent
-            .iter()
-            .filter_map(|value| value.strip_prefix("Basic "))
-            .filter_map(|encoded| BASE64.decode(encoded).ok())
-            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
-            .collect();
-        sent.extend(decoded);
         let text = sent.join("\n");
 
         let mut found: Vec<(usize, String)> = keys
@@ -1435,6 +1442,13 @@ mod tests {
             s.draft.form = Some(vec![crate::request::pair("token", "{{access_token}}")]);
         });
         assert_eq!(form.len(), 1, "form");
+        let graphql = one(&|s| {
+            s.draft.method = "POST".into();
+            s.draft.body_mode = crate::model::BodyMode::Graphql;
+            s.draft.body = "query { me { id } }".into();
+            s.draft.variables = Some("{\"id\": {{access_token}}}".into());
+        });
+        assert_eq!(graphql.len(), 1, "graphql number");
         let basic = one(&|s| {
             s.draft.local_auth = Some(AuthorizationConfig::Basic {
                 username: "me".into(),
@@ -1460,6 +1474,15 @@ mod tests {
                 token: "access_token".into()
             }]
         );
+    }
+
+    #[test]
+    fn probe_markers_survive_a_json_number_round_trip() {
+        for index in [0, 9_999, 99_999] {
+            let marker = probe_marker(index);
+            let value: serde_json::Value = serde_json::from_str(&marker).unwrap();
+            assert_eq!(value.to_string(), marker);
+        }
     }
 
     #[test]
