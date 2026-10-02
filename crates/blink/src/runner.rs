@@ -215,7 +215,9 @@ impl Store {
             let completed = result.is_ok();
             let outcome = finish_send(session, flight.ticket, result);
             let values = workspace
-                .session(session_id)
+                .is_token_source(session_id)
+                .then(|| workspace.session(session_id))
+                .flatten()
                 .and_then(|session| session.response.as_ref())
                 .filter(|response| completed && (200..=299).contains(&response.status))
                 .map(|response| values_for(session_id, workspace.all_response_tokens(), response));
@@ -223,7 +225,7 @@ impl Store {
                 workspace.capture(group_id, &outcome.captured);
             }
             let recorded = match values {
-                Some(values) if workspace.is_token_source(session_id) => {
+                Some(values) => {
                     workspace.response_cache.record(
                         session_id,
                         &fingerprint,
@@ -238,7 +240,7 @@ impl Store {
             recorded
         });
         if recorded {
-            self.save_response_cache();
+            self.save_response_cache(cx);
         }
     }
 

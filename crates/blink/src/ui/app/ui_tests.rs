@@ -224,6 +224,120 @@ fn a_2xx_send_of_a_source_request_records_its_token_values(cx: &mut TestAppConte
             .cloned()
     });
     assert_eq!(value.as_deref(), Some("abc"));
-    let saved = engine.load_response_tokens();
-    assert_eq!(saved.entries().len(), 1);
+    wait_for_saved_entries(cx, &engine, 1);
+}
+
+fn source_token(request_id: u64) -> blink_core::model::ResponseToken {
+    blink_core::model::ResponseToken {
+        id: 1,
+        name: "access_token".into(),
+        request_id,
+        source: blink_core::model::CheckSource::Json,
+        path: ".access_token".into(),
+        max_age_secs: None,
+    }
+}
+
+/// Wait until the cache file holds `count` entries.
+fn wait_for_saved_entries(
+    cx: &mut TestAppContext,
+    engine: &blink_core::engine::Engine,
+    count: usize,
+) {
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(15);
+    while engine.load_response_tokens().entries().len() != count {
+        assert!(
+            std::time::Instant::now() < deadline,
+            "cache never held {count} entries"
+        );
+        cx.run_until_parked();
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+}
+
+#[gpui_kit::test]
+fn a_non_2xx_send_of_a_source_request_records_nothing(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let (url, _requests) = serve(|_| {
+        let mut reply = Reply::ok("application/json", r#"{"access_token":"abc"}"#);
+        reply.status = "500 Internal Server Error";
+        reply
+    });
+    let login = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.set_global_response_tokens(vec![source_token(login)]);
+        })
+    });
+    harness.send(cx, &format!("{url}/login"));
+    let recorded = cx.read(|cx| {
+        harness
+            .store
+            .read(cx)
+            .workspace
+            .response_cache
+            .entries()
+            .len()
+    });
+    assert_eq!(recorded, 0);
+    assert!(engine.load_response_tokens().entries().is_empty());
+}
+
+#[gpui_kit::test]
+fn reset_clears_the_cache_on_disk(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let (url, _requests) = serve(|_| Reply::ok("application/json", r#"{"access_token":"abc"}"#));
+    let login = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.set_global_response_tokens(vec![source_token(login)]);
+        })
+    });
+    harness.send(cx, &format!("{url}/login"));
+    wait_for_saved_entries(cx, &engine, 1);
+    harness.store.update(cx, |store, cx| store.reset(cx));
+    wait_for_saved_entries(cx, &engine, 0);
+}
+
+#[gpui_kit::test]
+fn restore_prunes_cache_entries_of_missing_requests(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    let mut cache = blink_core::response_token_cache::ResponseTokenCache::default();
+    cache.record(
+        999_999,
+        "fingerprint",
+        1,
+        vec![(
+            blink_core::response_token_cache::ValueKey {
+                source: blink_core::model::CheckSource::Json,
+                path: ".access_token".into(),
+            },
+            "abc".into(),
+        )],
+    );
+    std::fs::write(
+        dir.path().join("response-tokens.json"),
+        serde_json::to_vec(&cache).unwrap(),
+    )
+    .unwrap();
+    assert_eq!(engine.load_response_tokens().entries().len(), 1);
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let kept = cx.read(|cx| {
+        harness
+            .store
+            .read(cx)
+            .workspace
+            .response_cache
+            .entries()
+            .len()
+    });
+    assert_eq!(kept, 0);
 }

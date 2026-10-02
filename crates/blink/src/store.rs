@@ -123,6 +123,7 @@ impl Store {
                         this.workspace.response_cache = this.engine.load_response_tokens();
                         let live = this.workspace.sessions.iter().map(|s| s.id).collect();
                         this.workspace.response_cache.prune(&live);
+                        this.workspace.refresh_all_stale();
                         this.error.clear();
                         this.ready = true;
                         this.saved_key = this.workspace.autosave_key();
@@ -144,10 +145,14 @@ impl Store {
 
     /// Save the response token cache. A failure is not a workspace error:
     /// the cache is rebuilt by the next send.
-    pub fn save_response_cache(&self) {
-        let _ = self
+    pub fn save_response_cache(&self, cx: &mut Context<Self>) {
+        let save = self
             .engine
-            .save_response_tokens(&self.workspace.response_cache);
+            .save_response_tokens(self.workspace.response_cache.clone());
+        cx.spawn(async move |_, _| {
+            let _ = save.await;
+        })
+        .detach();
     }
 
     /// Start fresh: save an empty workspace, then use it.
@@ -161,7 +166,7 @@ impl Store {
                 match result {
                     Ok(()) => {
                         this.workspace = fresh;
-                        this.save_response_cache();
+                        this.save_response_cache(cx);
                         this.error.clear();
                         this.ready = true;
                         this.saved_key = this.workspace.autosave_key();

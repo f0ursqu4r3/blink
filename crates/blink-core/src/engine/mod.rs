@@ -327,8 +327,17 @@ impl Engine {
         self.0.response_tokens.load()
     }
 
-    pub fn save_response_tokens(&self, cache: &ResponseTokenCache) -> Result<(), String> {
-        self.0.response_tokens.save(cache)
+    /// Write the cache on the engine runtime. Saves land in request order.
+    pub fn save_response_tokens(
+        &self,
+        cache: ResponseTokenCache,
+    ) -> impl Future<Output = Result<(), String>> + Send + 'static {
+        let state = self.0.response_tokens.clone();
+        let ticket = state.ticket();
+        self.blocking(
+            move || state.save_ticketed(ticket, &cache),
+            "Response token save task failed.",
+        )
     }
 
     pub fn load_update_choices(&self) -> UpdateChoices {
