@@ -99,6 +99,9 @@ pub fn deleted_request_problem() -> String {
 
 static EMPTY_CACHE: LazyLock<ResponseTokenCache> = LazyLock::new(ResponseTokenCache::default);
 
+/// Fingerprints by request id. A missing id reads as no fingerprint.
+type Fingerprints = HashMap<u64, String>;
+
 /// Everything token resolution reads: text tokens, response tokens, the
 /// requests they read, and the cached values at `now_ms`.
 pub struct TokenSources<'a> {
@@ -108,11 +111,10 @@ pub struct TokenSources<'a> {
     pub sessions: &'a [RequestSession],
     pub cache: &'a ResponseTokenCache,
     pub now_ms: f64,
-    /// Requests whose fingerprint is being built, to stop recursion.
-    visiting: RefCell<Vec<u64>>,
-    /// Fingerprints already built, by request id.
-    fingerprints: RefCell<HashMap<u64, String>>,
-    /// Fingerprints built, not remembered: the cost of resolution.
+    /// The fingerprints of every request a response token reads, solved on
+    /// first use.
+    fingerprints: RefCell<Option<Fingerprints>>,
+    /// Fingerprints built: the cost of resolution.
     #[cfg(test)]
     prepares: std::cell::Cell<usize>,
 }
@@ -133,8 +135,7 @@ impl<'a> TokenSources<'a> {
             sessions,
             cache,
             now_ms: 0.0,
-            visiting: RefCell::new(Vec::new()),
-            fingerprints: RefCell::new(HashMap::new()),
+            fingerprints: RefCell::new(None),
             #[cfg(test)]
             prepares: std::cell::Cell::new(0),
         }
@@ -148,6 +149,7 @@ impl<'a> TokenSources<'a> {
     /// The same sources at `now_ms`.
     pub fn at(mut self, now_ms: f64) -> Self {
         self.now_ms = now_ms;
+        self.fingerprints = RefCell::new(None);
         self
     }
 
@@ -155,17 +157,159 @@ impl<'a> TokenSources<'a> {
     /// The nearest scope wins; in one scope, text tokens win over response
     /// tokens.
     pub fn context(&self, group_id: Option<u64>) -> InterpolationContext {
-        self.context_reading(group_id, None)
+        self.with_fingerprints(|fingerprints| self.context_with(group_id, fingerprints))
     }
 
-    /// `context`, but only response tokens named in `used` read a value.
-    /// The others keep their names and read nothing.
-    fn context_reading(
+    /// The resolved auth and tokens of `session`.
+    pub fn request_context(&self, session: &RequestSession) -> ResolvedRequestContext {
+        self.with_fingerprints(|fingerprints| self.request_context_with(session, fingerprints))
+    }
+
+    /// The fingerprint `session` would send now.
+    ///
+    /// All source fingerprints are solved together on first use (see
+    /// `solve`) and remembered, so each is built about once, and no result
+    /// depends on the order in which tokens are declared or read.
+    /// `TokenSources` is short-lived, so the memo cannot go stale.
+    pub fn fingerprint(&self, session: &RequestSession) -> String {
+        self.with_fingerprints(|fingerprints| match fingerprints.get(&session.id) {
+            Some(fingerprint) => fingerprint.clone(),
+            None => self.build(session, fingerprints),
+        })
+    }
+
+    fn with_fingerprints<T>(&self, f: impl FnOnce(&Fingerprints) -> T) -> T {
+        if self.fingerprints.borrow().is_none() {
+            let solved = self.solve();
+            *self.fingerprints.borrow_mut() = Some(solved);
+        }
+        f(self.fingerprints.borrow().as_ref().expect("solved above"))
+    }
+
+    /// The fingerprint of every request a response token reads.
+    ///
+    /// A request depends on the requests read by the response tokens it may
+    /// reference (`used_names`). The strongly connected groups of that graph
+    /// are solved dependencies first. A request outside any cycle is built
+    /// once, from final fingerprints. A cycle group is iterated to a fixed
+    /// point, starting with no fingerprints. A fingerprint is non-empty only
+    /// when every token the request sends has a value, and each such value
+    /// comes from a non-empty fingerprint that is already final, so every
+    /// non-empty result is final and the loop ends within the group size plus
+    /// one round. A request in a real use cycle keeps an empty fingerprint,
+    /// so the lookup misses and its tokens read no value. A false use (a
+    /// disabled row, a body that is not sent) only joins requests into one
+    /// group; it does not change their results.
+    fn solve(&self) -> Fingerprints {
+        let mut nodes: Vec<&RequestSession> = Vec::new();
+        let all_tokens = self
+            .groups
+            .iter()
+            .flat_map(|g| g.response_tokens.iter().flatten())
+            .chain(self.global_response_tokens);
+        for token in all_tokens {
+            if let Some(source) = self.sessions.iter().find(|s| s.id == token.request_id)
+                && !nodes.iter().any(|n| n.id == source.id)
+            {
+                nodes.push(source);
+            }
+        }
+        let edges: Vec<Vec<usize>> = nodes
+            .iter()
+            .map(|session| {
+                let used = self.used_names(session);
+                let mut targets: Vec<usize> = self
+                    .claims(session.group_id)
+                    .into_iter()
+                    .filter(|token| used.contains(&token.name))
+                    .filter_map(|token| nodes.iter().position(|n| n.id == token.request_id))
+                    .collect();
+                targets.sort_unstable();
+                targets.dedup();
+                targets
+            })
+            .collect();
+
+        let mut fingerprints = Fingerprints::new();
+        for component in strongly_connected(&edges) {
+            let cyclic = component.len() > 1 || edges[component[0]].contains(&component[0]);
+            loop {
+                let mut changed = false;
+                for &node in &component {
+                    let fingerprint = self.build(nodes[node], &fingerprints);
+                    let old = fingerprints.get(&nodes[node].id).map_or("", String::as_str);
+                    changed |= old != fingerprint;
+                    fingerprints.insert(nodes[node].id, fingerprint);
+                }
+                if !cyclic || !changed {
+                    break;
+                }
+            }
+        }
+        fingerprints
+    }
+
+    /// The fingerprint of `session`, with sources read from `fingerprints`.
+    fn build(&self, session: &RequestSession, fingerprints: &Fingerprints) -> String {
+        #[cfg(test)]
+        self.prepares.set(self.prepares.get() + 1);
+        let ctx = self.request_context_with(session, fingerprints);
+        crate::runner::prepare(&session.draft, Some(&ctx)).fingerprint()
+    }
+
+    fn request_context_with(
+        &self,
+        session: &RequestSession,
+        fingerprints: &Fingerprints,
+    ) -> ResolvedRequestContext {
+        ResolvedRequestContext {
+            auth: self.auth(session),
+            tokens: self.context_with(session.group_id, fingerprints),
+        }
+    }
+
+    fn auth(&self, session: &RequestSession) -> AuthorizationConfig {
+        resolve_authorization(
+            session.draft.local_auth.as_ref(),
+            session.group_id,
+            self.groups,
+        )
+    }
+
+    /// The response tokens that own their names for `group_id`, by the same
+    /// rules as `context_with`.
+    fn claims(&self, group_id: Option<u64>) -> Vec<&'a ResponseToken> {
+        let mut texts: HashSet<String> = HashSet::new();
+        let mut group = Vec::<&ResponseToken>::new();
+        for scope in ancestry(group_id, self.groups) {
+            for key in group_definitions(scope).into_keys() {
+                if !group.iter().any(|t| t.name == key) {
+                    texts.insert(key);
+                }
+            }
+            for token in scope.response_tokens.iter().flatten() {
+                if !texts.contains(&token.name) && !group.iter().any(|t| t.name == token.name) {
+                    group.push(token);
+                }
+            }
+        }
+        let mut global = Vec::<&ResponseToken>::new();
+        for token in self.global_response_tokens {
+            if !self.globals.contains_key(&token.name)
+                && !global.iter().any(|t| t.name == token.name)
+            {
+                global.push(token);
+            }
+        }
+        group.extend(global);
+        group
+    }
+
+    fn context_with(
         &self,
         group_id: Option<u64>,
-        used: Option<&HashSet<String>>,
+        fingerprints: &Fingerprints,
     ) -> InterpolationContext {
-        let reads = |token: &ResponseToken| used.is_none_or(|used| used.contains(&token.name));
         let mut definitions = Definitions::new();
         let mut response_tokens = IndexMap::new();
         for group in ancestry(group_id, self.groups) {
@@ -181,7 +325,7 @@ impl<'a> TokenSources<'a> {
                 {
                     continue;
                 }
-                let (info, value) = self.resolve(token, reads(token));
+                let (info, value) = self.resolve(token, fingerprints);
                 if let Some(value) = value {
                     definitions.insert(token.name.clone(), value);
                 }
@@ -197,7 +341,7 @@ impl<'a> TokenSources<'a> {
             {
                 continue;
             }
-            let (info, value) = self.resolve(token, reads(token));
+            let (info, value) = self.resolve(token, fingerprints);
             if let Some(value) = value {
                 workspace_definitions.insert(token.name.clone(), value);
             }
@@ -212,63 +356,12 @@ impl<'a> TokenSources<'a> {
         }
     }
 
-    /// The resolved auth and tokens of `session`.
-    pub fn request_context(&self, session: &RequestSession) -> ResolvedRequestContext {
-        ResolvedRequestContext {
-            auth: resolve_authorization(
-                session.draft.local_auth.as_ref(),
-                session.group_id,
-                self.groups,
-            ),
-            tokens: self.context(session.group_id),
-        }
-    }
-
-    /// The fingerprint `session` would send now.
-    ///
-    /// Empty while `session` is already being fingerprinted, so a token that
-    /// reads its own request finds no value.
-    ///
-    /// Each fingerprint is built once and remembered by request id, at any
-    /// depth, so resolution costs about O(k²) for k response tokens instead of
-    /// O(k!). The source context reads only the response tokens the request
-    /// references, so the recursion follows real use and never reaches an
-    /// unrelated request on the `visiting` stack. In an acyclic graph a
-    /// fingerprint therefore does not depend on the stack, and the memo is
-    /// exact. In a cycle the result is degenerate anyway: the send planner
-    /// reports the cycle and the lookup misses. `TokenSources` is
-    /// short-lived, so the memo cannot go stale.
-    pub fn fingerprint(&self, session: &RequestSession) -> String {
-        if let Some(fingerprint) = self.fingerprints.borrow().get(&session.id) {
-            return fingerprint.clone();
-        }
-        if self.visiting.borrow().contains(&session.id) {
-            return String::new();
-        }
-        self.visiting.borrow_mut().push(session.id);
-        #[cfg(test)]
-        self.prepares.set(self.prepares.get() + 1);
-        let auth = resolve_authorization(
-            session.draft.local_auth.as_ref(),
-            session.group_id,
-            self.groups,
-        );
-        let used = self.used_names(session, &auth);
-        let ctx = ResolvedRequestContext {
-            auth,
-            tokens: self.context_reading(session.group_id, Some(&used)),
-        };
-        let fingerprint = crate::runner::prepare(&session.draft, Some(&ctx)).fingerprint();
-        self.visiting.borrow_mut().pop();
-        self.fingerprints
-            .borrow_mut()
-            .insert(session.id, fingerprint.clone());
-        fingerprint
-    }
-
     /// Every token name `session` can reach: names in its draft and auth,
-    /// and names in the text tokens those names refer to. A superset is safe.
-    fn used_names(&self, session: &RequestSession, auth: &AuthorizationConfig) -> HashSet<String> {
+    /// and names in the text tokens those names refer to. A superset is
+    /// safe: a false name only adds a dependency, which can join requests
+    /// into one cycle group, and `solve` iterates a group to the result that
+    /// real use gives.
+    fn used_names(&self, session: &RequestSession) -> HashSet<String> {
         let texts: Vec<Definitions> = ancestry(session.group_id, self.groups)
             .into_iter()
             .map(group_definitions)
@@ -276,7 +369,7 @@ impl<'a> TokenSources<'a> {
             .collect();
         let mut pending = vec![
             serde_json::to_string(&session.draft).unwrap_or_default(),
-            serde_json::to_string(auth).unwrap_or_default(),
+            serde_json::to_string(&self.auth(session)).unwrap_or_default(),
         ];
         let mut names = HashSet::new();
         while let Some(text) = pending.pop() {
@@ -290,8 +383,12 @@ impl<'a> TokenSources<'a> {
         names
     }
 
-    /// What is known about `token`, and its value when usable and `read`.
-    fn resolve(&self, token: &ResponseToken, read: bool) -> (ResponseTokenInfo, Option<String>) {
+    /// What is known about `token`, and its value when usable.
+    fn resolve(
+        &self,
+        token: &ResponseToken,
+        fingerprints: &Fingerprints,
+    ) -> (ResponseTokenInfo, Option<String>) {
         let Some(source) = self.sessions.iter().find(|s| s.id == token.request_id) else {
             let info = ResponseTokenInfo {
                 request_label: "a deleted request".to_string(),
@@ -307,17 +404,14 @@ impl<'a> TokenSources<'a> {
             source: token.source,
             path: token.path.clone(),
         };
-        let value = read
-            .then(|| self.fingerprint(source))
-            .and_then(|fingerprint| {
-                self.cache
-                    .lookup(token.request_id, &fingerprint, &key)
-                    .map(|(value, at)| (value.to_string(), at))
-            })
+        let value = fingerprints
+            .get(&source.id)
+            .and_then(|fingerprint| self.cache.lookup(token.request_id, fingerprint, &key))
             .filter(|(_, at)| match token.max_age_secs {
                 None => true,
                 Some(secs) => self.now_ms - *at as f64 <= secs as f64 * 1000.0,
-            });
+            })
+            .map(|(value, at)| (value.to_string(), at));
         let info = ResponseTokenInfo {
             request_label: session_label(
                 source,
@@ -334,6 +428,70 @@ impl<'a> TokenSources<'a> {
         };
         (info, value.map(|(value, _)| value))
     }
+}
+
+/// The strongly connected components of `edges` (Tarjan), each listed only
+/// after every component it has an edge to.
+fn strongly_connected(edges: &[Vec<usize>]) -> Vec<Vec<usize>> {
+    struct Walk<'e> {
+        edges: &'e [Vec<usize>],
+        index: Vec<Option<usize>>,
+        low: Vec<usize>,
+        on_stack: Vec<bool>,
+        stack: Vec<usize>,
+        next: usize,
+        components: Vec<Vec<usize>>,
+    }
+
+    impl Walk<'_> {
+        fn visit(&mut self, node: usize) {
+            self.index[node] = Some(self.next);
+            self.low[node] = self.next;
+            self.next += 1;
+            self.stack.push(node);
+            self.on_stack[node] = true;
+            for &target in &self.edges[node] {
+                match self.index[target] {
+                    None => {
+                        self.visit(target);
+                        self.low[node] = self.low[node].min(self.low[target]);
+                    }
+                    Some(index) if self.on_stack[target] => {
+                        self.low[node] = self.low[node].min(index);
+                    }
+                    Some(_) => {}
+                }
+            }
+            if Some(self.low[node]) == self.index[node] {
+                let mut component = Vec::new();
+                while let Some(member) = self.stack.pop() {
+                    self.on_stack[member] = false;
+                    component.push(member);
+                    if member == node {
+                        break;
+                    }
+                }
+                component.reverse();
+                self.components.push(component);
+            }
+        }
+    }
+
+    let mut walk = Walk {
+        edges,
+        index: vec![None; edges.len()],
+        low: vec![0; edges.len()],
+        on_stack: vec![false; edges.len()],
+        stack: Vec::new(),
+        next: 0,
+        components: Vec::new(),
+    };
+    for node in 0..edges.len() {
+        if walk.index[node].is_none() {
+            walk.visit(node);
+        }
+    }
+    walk.components
 }
 
 #[cfg(test)]
@@ -732,5 +890,53 @@ mod tests {
         assert_eq!(ctx.workspace_definitions["tc"], "vc");
         assert_eq!(ctx.workspace_definitions["tb"], "vb");
         assert_eq!(ctx.workspace_definitions["ta"], "va");
+    }
+
+    /// A sends `tb` only in a disabled header, B sends `ta`, C sends `tb`.
+    /// The false use A -> B must not make B's fingerprint degenerate.
+    fn disabled_use_case(tb_first: bool) {
+        let mut a = request(&[]);
+        let mut disabled = crate::request::pair("X", "{{tb}}");
+        disabled.enabled = false;
+        a.draft.headers.push(disabled);
+        let mut b = request(&[]);
+        b.draft
+            .headers
+            .push(crate::request::pair("Authorization", "Bearer {{ta}}"));
+        let c = request(&["tb"]);
+        let mut tokens = vec![token(1, "ta", a.id), token(2, "tb", b.id)];
+        if tb_first {
+            tokens.reverse();
+        }
+        let sessions = vec![a.clone(), b.clone(), c.clone()];
+        let globals = Definitions::new();
+        let mut cache = ResponseTokenCache::default();
+        for (session, value) in [(&a, "va"), (&b, "vb")] {
+            let fingerprint =
+                TokenSources::new(&[], &globals, &tokens, &sessions, &cache).fingerprint(session);
+            assert!(!fingerprint.is_empty());
+            cache.record(
+                session.id,
+                &fingerprint,
+                0,
+                vec![(json_value(), value.into())],
+            );
+        }
+
+        let all = TokenSources::new(&[], &globals, &tokens, &sessions, &cache);
+        let ctx = all.context(None);
+        assert_eq!(ctx.workspace_definitions["ta"], "va");
+        assert_eq!(ctx.workspace_definitions["tb"], "vb");
+        assert!(!all.fingerprint(&c).is_empty());
+    }
+
+    #[test]
+    fn a_disabled_use_does_not_hide_a_value_when_ta_is_declared_first() {
+        disabled_use_case(false);
+    }
+
+    #[test]
+    fn a_disabled_use_does_not_hide_a_value_when_tb_is_declared_first() {
+        disabled_use_case(true);
     }
 }
