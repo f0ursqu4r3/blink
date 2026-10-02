@@ -67,6 +67,10 @@ impl Paths {
         self.data_dir.join("update-state.json")
     }
 
+    pub fn response_tokens(&self) -> PathBuf {
+        self.data_dir.join("response-tokens.json")
+    }
+
     pub fn responses(&self) -> PathBuf {
         self.cache_dir.join("responses")
     }

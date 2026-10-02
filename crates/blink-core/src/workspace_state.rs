@@ -31,6 +31,7 @@ use crate::preferences::{
     valid_preferences,
 };
 use crate::request::{is_method, js_trim};
+use crate::response_token_cache::ResponseTokenCache;
 use crate::session::{create_session, has_draft};
 use crate::workspace::{decode_workspace, encode_workspace};
 
@@ -135,6 +136,8 @@ pub struct Workspace {
     /// Workspace-global response tokens.
     pub global_response_tokens: Vec<ResponseToken>,
     pub preferences: WorkspacePreferences,
+    /// Values read from responses. Saved by the store in its own file.
+    pub response_cache: ResponseTokenCache,
     /// Selected Browser rows and the range anchor. Not saved.
     pub selected_ids: Vec<u64>,
     pub selection_anchor_id: Option<u64>,
@@ -172,6 +175,7 @@ impl Workspace {
             global_definitions: Definitions::new(),
             global_response_tokens: Vec::new(),
             preferences: default_preferences(),
+            response_cache: ResponseTokenCache::default(),
             selected_ids: Vec::new(),
             selection_anchor_id: None,
             focused_group_id: None,

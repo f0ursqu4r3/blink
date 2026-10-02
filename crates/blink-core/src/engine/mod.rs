@@ -11,6 +11,7 @@ pub mod http;
 pub mod paths;
 pub mod request_files;
 pub mod response_store;
+mod response_token_state;
 pub mod storage;
 pub mod timing;
 pub mod update_state;
@@ -37,6 +38,7 @@ pub use websocket::SocketEvent;
 pub use window_state::WindowBounds;
 
 use crate::model::{ApiResponse, Header, RequestInput, TransportOptions};
+use crate::response_token_cache::ResponseTokenCache;
 
 /// A handle to the engine. Clones share one runtime and one state.
 #[derive(Clone)]
@@ -54,6 +56,7 @@ struct Inner {
     store: Arc<response_store::ResponseStore>,
     window_state: window_state::WindowState,
     update_state: update_state::UpdateState,
+    response_tokens: response_token_state::ResponseTokenState,
     sequence: AtomicU64,
 }
 
@@ -89,6 +92,7 @@ impl Engine {
             store: Arc::new(response_store::ResponseStore::new(paths.responses())),
             window_state: window_state::WindowState::new(paths.window_state()),
             update_state: update_state::UpdateState::new(paths.update_state()),
+            response_tokens: response_token_state::ResponseTokenState::new(paths.response_tokens()),
             sequence: AtomicU64::new(0),
             paths,
         })))
@@ -317,6 +321,14 @@ impl Engine {
 
     pub fn save_window_state(&self, bounds: &WindowBounds) -> Result<(), String> {
         self.0.window_state.save(bounds)
+    }
+
+    pub fn load_response_tokens(&self) -> ResponseTokenCache {
+        self.0.response_tokens.load()
+    }
+
+    pub fn save_response_tokens(&self, cache: &ResponseTokenCache) -> Result<(), String> {
+        self.0.response_tokens.save(cache)
     }
 
     pub fn load_update_choices(&self) -> UpdateChoices {
