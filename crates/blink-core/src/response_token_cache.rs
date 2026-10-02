@@ -41,6 +41,11 @@ impl ResponseTokenCache {
         fetched_at_ms: u64,
         values: Vec<(ValueKey, String)>,
     ) {
+        // An empty fingerprint means the request did not build; it names no
+        // response.
+        if fingerprint.is_empty() {
+            return;
+        }
         self.entries
             .retain(|e| !(e.request_id == request_id && e.fingerprint == fingerprint));
         self.entries.insert(
@@ -68,6 +73,9 @@ impl ResponseTokenCache {
         fingerprint: &str,
         key: &ValueKey,
     ) -> Option<(&str, u64)> {
+        if fingerprint.is_empty() {
+            return None;
+        }
         let entry = self
             .entries
             .iter()
@@ -133,6 +141,22 @@ mod tests {
             cache.entries().iter().filter(|e| e.request_id == 2).count(),
             1
         );
+    }
+
+    #[test]
+    fn an_empty_fingerprint_is_never_recorded_or_found() {
+        let mut cache = ResponseTokenCache::default();
+        cache.record(1, "", 10, vec![(key(".t"), "a".into())]);
+        assert!(cache.entries().is_empty());
+
+        // A corrupt or hand-edited file can still hold one.
+        let loaded: ResponseTokenCache = serde_json::from_str(
+            r#"{"entries":[{"requestId":1,"fingerprint":"","fetchedAtMs":10,
+                "values":[[{"source":"json","path":".t"},"a"]]}]}"#,
+        )
+        .unwrap();
+        assert_eq!(loaded.entries().len(), 1);
+        assert_eq!(loaded.lookup(1, "", &key(".t")), None);
     }
 
     #[test]

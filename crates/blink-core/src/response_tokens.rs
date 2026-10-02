@@ -233,7 +233,8 @@ impl<'a> TokenSources<'a> {
         let mut fingerprints = Fingerprints::new();
         for component in strongly_connected(&edges) {
             let cyclic = component.len() > 1 || edges[component[0]].contains(&component[0]);
-            loop {
+            let mut settled = false;
+            for _ in 0..=component.len() {
                 let mut changed = false;
                 for &node in &component {
                     let fingerprint = self.build(nodes[node], &fingerprints);
@@ -242,7 +243,16 @@ impl<'a> TokenSources<'a> {
                     fingerprints.insert(nodes[node].id, fingerprint);
                 }
                 if !cyclic || !changed {
+                    settled = true;
                     break;
+                }
+            }
+            // A valid cache settles within the group size plus one round (see
+            // above). Only corrupt cache contents can keep changing; then the
+            // group reads no values.
+            if !settled {
+                for &node in &component {
+                    fingerprints.insert(nodes[node].id, String::new());
                 }
             }
         }
@@ -406,6 +416,7 @@ impl<'a> TokenSources<'a> {
         };
         let value = fingerprints
             .get(&source.id)
+            .filter(|fingerprint| !fingerprint.is_empty())
             .and_then(|fingerprint| self.cache.lookup(token.request_id, fingerprint, &key))
             .filter(|(_, at)| match token.max_age_secs {
                 None => true,
@@ -938,5 +949,52 @@ mod tests {
     #[test]
     fn a_disabled_use_does_not_hide_a_value_when_tb_is_declared_first() {
         disabled_use_case(true);
+    }
+
+    /// The fingerprint `session` sends with global token `name` set to `value`.
+    fn fingerprint_with(session: &RequestSession, name: &str, value: &str) -> String {
+        let ctx = ResolvedRequestContext {
+            auth: AuthorizationConfig::None,
+            tokens: InterpolationContext::new(
+                Definitions::new(),
+                [(name.to_string(), value.to_string())]
+                    .into_iter()
+                    .collect(),
+            ),
+        };
+        crate::runner::prepare(&session.draft, Some(&ctx)).fingerprint()
+    }
+
+    #[test]
+    fn a_corrupt_cache_entry_under_no_fingerprint_does_not_loop() {
+        // S sends tx (reads X); X sends ts (reads S).
+        let s = request(&["tx"]);
+        let x = request(&["ts"]);
+        let tokens = vec![token(1, "ts", s.id), token(2, "tx", x.id)];
+        let sessions = vec![s.clone(), x.clone()];
+        let globals = Definitions::new();
+        let entry = |id: u64, fingerprint: &str, value: &str| {
+            serde_json::json!({
+                "requestId": id,
+                "fingerprint": fingerprint,
+                "fetchedAtMs": 0,
+                "values": [[{"source": "json", "path": ".access_token"}, value]],
+            })
+        };
+        // S@"" -> ts=a, X@fp(X|ts=a) -> tx=b, S@fp(S|tx=b) -> ts=c.
+        let cache: ResponseTokenCache = serde_json::from_value(serde_json::json!({
+            "entries": [
+                entry(s.id, "", "a"),
+                entry(x.id, &fingerprint_with(&x, "ts", "a"), "b"),
+                entry(s.id, &fingerprint_with(&s, "tx", "b"), "c"),
+            ]
+        }))
+        .unwrap();
+
+        let ctx = TokenSources::new(&[], &globals, &tokens, &sessions, &cache).context(None);
+        for name in ["ts", "tx"] {
+            assert!(!ctx.workspace_definitions.contains_key(name));
+            assert_eq!(ctx.workspace_response_tokens[name].fetched_at_ms, None);
+        }
     }
 }
