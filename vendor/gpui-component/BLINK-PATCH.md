@@ -2,8 +2,8 @@
 
 This directory is `gpui-component` 0.7.0 from crates.io (git
 `0c830f4d257e69fdd17200650533ab4ca9a40cc0`, `crates/component`). The root
-`Cargo.toml` uses it through `[patch.crates-io]`. It has two patches (menu
-metrics and dialog placement, below). The only other change is that
+`Cargo.toml` uses it through `[patch.crates-io]`. It has three patches (menu
+metrics, dialog placement, and a hidden accessibility value, below). The only other change is that
 `.cargo-ok` is removed.
 
 ## Menu metrics
@@ -75,7 +75,32 @@ Application Settings opens in its own window, not a dialog. The headless test
 `ui::settings_window::ui_tests::dialogs_are_centered_and_capped` measures the
 two dialogs.
 
+## Hidden accessibility value
+
+### Why
+
+Blink's secret token fields (bearer token, basic password) show `{{name}}`
+references as inline tokens and mask the rest with a row drawn over the
+input. Upstream `Input` exposes the whole text as the accessibility value
+unless the state is masked or the content type is `Password`/`NewPassword`.
+Both of those also turn off inline tokens (`check_token_mode` returns
+`UnsupportedMode` for a masked state or a secret token presentation), so no
+public API can hide the value of a token field.
+
+### What changed
+
+Only `src/input/input.rs`.
+
+1. New private field `accessibility_value_hidden` (default `false`) and
+   public `Input::hide_accessibility_value(bool)`.
+2. In `render`, the accessibility value is left out when the field is set.
+
+Without the call, the value is exposed as upstream does. Blink calls it in
+`crates/blink/src/ui/token_input.rs` for secret fields. The headless test
+`ui::request_pane::editor::ui_tests::secret_auth_fields_keep_their_text_out_of_the_accessibility_tree`
+reads the value.
+
 ## Updating
 
 Copy the new upstream release over this directory, then apply the diff of the
-three files above again (`diff -u` against the registry copy shows it).
+four files above again (`diff -u` against the registry copy shows it).

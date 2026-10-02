@@ -294,3 +294,113 @@ fn the_basic_password_is_a_secret_token_field(cx: &mut TestAppContext) {
         assert_eq!(text, "•{{pass}}", "the value of a reference never shows");
     });
 }
+
+#[gpui_kit::test]
+fn secret_auth_fields_keep_their_text_out_of_the_accessibility_tree(cx: &mut TestAppContext) {
+    use blink_core::model::AuthorizationConfig;
+    use gpui_kit::test::TestWindowExt as _;
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let id = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.session_mut(id).unwrap().view.request_tab = "auth".into();
+        });
+    });
+    let editor = editor(&harness, cx);
+    let (token, username, password) = cx.read(|cx| {
+        let editor = editor.read(cx);
+        (
+            editor.token.clone(),
+            editor.username.clone(),
+            editor.password.clone(),
+        )
+    });
+    // The accessibility value the field's input reports.
+    let value = |field: &Entity<crate::ui::token_input::TokenInput>, cx: &mut TestAppContext| {
+        harness.draw(cx);
+        let state = cx.read(|cx| field.read(cx).state().entity_id());
+        harness.update(cx, |window, _| {
+            window.find(("input", state)).value().map(str::to_string)
+        })
+    };
+
+    harness.edit_draft(cx, |draft| {
+        draft.local_auth = Some(AuthorizationConfig::Bearer {
+            token: "s3cr3t-bearer{{acess_token}}".into(),
+        });
+    });
+    assert_eq!(value(&token, cx), None);
+
+    harness.edit_draft(cx, |draft| {
+        draft.local_auth = Some(AuthorizationConfig::Basic {
+            username: "visible-user".into(),
+            password: "s3cr3t-pass".into(),
+        });
+    });
+    assert_eq!(
+        value(&username, cx).as_deref(),
+        Some("visible-user"),
+        "the username is not secret"
+    );
+    assert_eq!(value(&password, cx), None);
+
+    // Focused, the field still keeps its text out of the tree, and its
+    // references stay inline tokens.
+    harness.update(cx, |window, cx| {
+        window.activate_window();
+        password.update(cx, |password, cx| password.focus(window, cx));
+    });
+    assert_eq!(value(&password, cx), None);
+    assert!(cx.read(|cx| password.read(cx).secret_segments().is_none()));
+}
+
+#[gpui_kit::test]
+fn a_secret_field_scrolls_back_to_the_start_on_blur(cx: &mut TestAppContext) {
+    use blink_core::model::AuthorizationConfig;
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let id = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.session_mut(id).unwrap().view.request_tab = "auth".into();
+        });
+    });
+    let long = "x".repeat(400);
+    let value = long.clone();
+    harness.edit_draft(cx, |draft| {
+        draft.local_auth = Some(AuthorizationConfig::Bearer { token: value });
+    });
+    harness.draw(cx);
+    let editor = editor(&harness, cx);
+    let token = cx.read(|cx| editor.read(cx).token.clone());
+    let state = cx.read(|cx| token.read(cx).state().clone());
+    harness.update(cx, |window, cx| {
+        window.activate_window();
+        token.update(cx, |token, cx| token.focus(window, cx));
+        state.update(cx, |state, cx| {
+            state.set_selected_range(long.len()..long.len(), cx)
+        });
+    });
+    harness.draw(cx);
+    harness.draw(cx);
+    let scrolled = cx.read(|cx| state.read(cx).scroll_offset().x);
+    assert!(
+        scrolled < gpui_kit::px(0.),
+        "the caret at the end scrolls the text"
+    );
+
+    harness.update(cx, |window, cx| window.blur(cx));
+    harness.draw(cx);
+    harness.draw(cx);
+    assert_eq!(
+        cx.read(|cx| state.read(cx).scroll_offset().x),
+        gpui_kit::px(0.)
+    );
+}

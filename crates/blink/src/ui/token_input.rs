@@ -233,6 +233,13 @@ impl TokenInput {
             InputEvent::Blur => {
                 self.focused = false;
                 self.dismissed = None;
+                if self.secret {
+                    // The masked row starts at the first character; so does
+                    // the text under it, for the next click.
+                    self.input.update(cx, |input, cx| {
+                        input.set_scroll_offset(point(px(0.), px(0.)), cx)
+                    });
+                }
                 cx.emit(TokenInputEvent::Blur);
                 cx.notify();
             }
@@ -460,6 +467,7 @@ impl TokenInput {
             .min(bounds.right());
         let position = point(left, bounds.bottom() + px(2.));
         let active = self.active.min(matches.len().saturating_sub(1));
+        let secret = self.secret;
         let _ = window;
         let rows = matches.into_iter().enumerate().map(|(index, option)| {
             let selected = index == active;
@@ -494,7 +502,7 @@ impl TokenInput {
                         .truncate()
                         .font_family(theme::MONO)
                         .text_color(colors.muted_foreground)
-                        .child(option.value.clone()),
+                        .children(suggestion_value(&option, secret)),
                 )
                 .child(
                     div()
@@ -664,22 +672,43 @@ pub fn secret_display(
         .collect()
 }
 
+/// The hover hint for one reference.
+/// The value column of a suggestion. A secret field never shows values.
+fn suggestion_value(option: &TokenOption, secret: bool) -> Option<String> {
+    (!secret).then(|| option.value.clone())
+}
+
+/// A `secret` field never shows a token's value: a defined token reads
+/// `name is defined`.
+fn reference_hint(
+    raw: &str,
+    ctx: Option<&InterpolationContext>,
+    secret: bool,
+    now_ms: f64,
+) -> String {
+    let Some(span) = token_spans(raw, ctx).into_iter().next() else {
+        return String::new();
+    };
+    match (&span.token, &span.name) {
+        (Some(TokenState::Resolved), Some(name)) if secret => format!("{name} is defined"),
+        _ => token_hint(&span, ctx, now_ms),
+    }
+}
+
 /// One token as the input draws it: a value on a tint, or a warning. It
 /// shows as selected only in a `focused` field, as the selected text does.
 fn render_token(
     token: &InlineTokenContext,
     ctx: Option<&InterpolationContext>,
     focused: bool,
+    secret: bool,
     masked: bool,
     cx: &App,
 ) -> AnyElement {
     let colors = theme::colors(cx);
     let id = token.token().id().to_string();
     let raw = token.token().text().to_string();
-    let hint = token_spans(&raw, ctx)
-        .first()
-        .map(|span| token_hint(span, ctx, blink_core::history::now_ms()))
-        .unwrap_or_default();
+    let hint = reference_hint(&raw, ctx, secret, blink_core::history::now_ms());
     let label = token.token().label().clone();
     div()
         .id(SharedString::from(format!("token-{}", token.range().start)))
@@ -706,6 +735,7 @@ impl Render for TokenInput {
         self.apply_retokenize(window, cx);
         let suggestions = self.suggestions(cx);
         let ctx = self.context.clone();
+        let secret = self.secret;
         let colors = theme::colors(cx);
         let paste_filter = self.paste_filter.clone();
         let this = cx.entity().downgrade();
@@ -719,11 +749,19 @@ impl Render for TokenInput {
             .text_size(self.text_size)
             .appearance(self.appearance)
             .disabled(self.disabled)
+            .hide_accessibility_value(self.secret)
             .when(masked, |input| {
                 input.text_color(colors.foreground.opacity(0.))
             })
             .token(move |token, window, cx| {
-                render_token(token, ctx.as_ref(), focus.is_focused(window), masked, cx)
+                render_token(
+                    token,
+                    ctx.as_ref(),
+                    focus.is_focused(window),
+                    secret,
+                    masked,
+                    cx,
+                )
             });
         if let Some(size) = self.size {
             input = input.with_size(size);
@@ -854,6 +892,35 @@ mod tests {
         assert_eq!(labels, ["{{host}}", "{{nope}}", "{{!HOME}}"]);
         let content = token_content("x{{host}}", Some(&ctx()), true);
         assert_eq!(content.tokens()[0].token().label().as_ref(), "{{host}}");
+    }
+
+    #[test]
+    fn a_secret_field_hints_without_token_values() {
+        let ctx = ctx();
+        assert_eq!(
+            reference_hint("{{host}}", Some(&ctx), false, 0.),
+            "host = api.test"
+        );
+        assert_eq!(
+            reference_hint("{{host}}", Some(&ctx), true, 0.),
+            "host is defined"
+        );
+        assert_eq!(
+            reference_hint("{{nope}}", Some(&ctx), true, 0.),
+            "nope is not defined"
+        );
+        assert_eq!(
+            reference_hint("{{!HOME}}", Some(&ctx), true, 0.),
+            "{{!HOME}} reads the environment when sending"
+        );
+    }
+
+    #[test]
+    fn a_secret_field_suggests_names_without_values() {
+        let options = token_options(Some(&ctx()));
+        let host = options.iter().find(|option| option.name == "host").unwrap();
+        assert_eq!(suggestion_value(host, false).as_deref(), Some("api.test"));
+        assert_eq!(suggestion_value(host, true), None);
     }
 
     #[test]

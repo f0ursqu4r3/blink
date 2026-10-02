@@ -131,6 +131,8 @@ pub struct Input {
     role: RoleOverride,
     accessibility_id: Option<SharedString>,
     aria_label: Option<SharedString>,
+    // Blink patch: keep the text out of the accessibility value.
+    accessibility_value_hidden: bool,
 
     /// An optional context menu builder to allow a custom context menu on the input.
     ///
@@ -234,6 +236,7 @@ impl Input {
             role: RoleOverride::default(),
             accessibility_id: None,
             aria_label: None,
+            accessibility_value_hidden: false,
             context_menu_builder: None,
             paste_handler: None,
             token_renderer: None,
@@ -259,6 +262,14 @@ impl Input {
 
     pub fn aria_label(mut self, label: impl Into<SharedString>) -> Self {
         self.aria_label = Some(label.into());
+        self
+    }
+
+    /// Blink patch: keep the text out of the accessibility value, as a masked
+    /// or password input does, without masking the text or disabling inline
+    /// tokens.
+    pub fn hide_accessibility_value(mut self, hidden: bool) -> Self {
+        self.accessibility_value_hidden = hidden;
         self
     }
 
@@ -669,6 +680,7 @@ impl RenderOnce for Input {
         // Tests read the same accessibility value as assistive technology.
         // Avoid materializing the rope in normal builds without a client.
         let accessibility_value = ((window.is_a11y_active() || cfg!(feature = "test-support"))
+            && !self.accessibility_value_hidden
             && exposes_accessibility_value(presentation.is_masked(), content_type))
         .then(|| state.text(cx).to_string());
         let input_focused =
