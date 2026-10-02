@@ -5,6 +5,8 @@ use std::cell::RefCell;
 use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
+use base64::Engine;
+use base64::engine::general_purpose::STANDARD as BASE64;
 use indexmap::IndexMap;
 
 use crate::authorization::{ResolvedRequestContext, ancestry, resolve_authorization};
@@ -438,6 +440,210 @@ impl<'a> TokenSources<'a> {
             problem: None,
         };
         (info, value.map(|(value, _)| value))
+    }
+}
+
+/// A source request to send before the request that needs its token.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlanStep {
+    /// The source request to send.
+    pub request_id: u64,
+    /// The token that needs it, for messages.
+    pub token: String,
+}
+
+/// Why a source request did not give its token a value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DependencyFailure {
+    /// The source returned this status, which the send treats as a failure.
+    Status(u16),
+    /// The transport failed. The engine text never holds token values.
+    Error(String),
+    /// The response has no value at `path`. Empty for a status or body source.
+    Missing {
+        path: String,
+    },
+    Cancelled,
+}
+
+/// The message for a source request that did not supply `token`.
+pub fn dependency_error(token: &str, label: &str, failure: &DependencyFailure) -> String {
+    let what = match failure {
+        DependencyFailure::Status(status) => format!("returned {status}."),
+        DependencyFailure::Error(error) => format!("failed. {error}"),
+        DependencyFailure::Missing { path } if path.is_empty() => "has no value.".to_string(),
+        DependencyFailure::Missing { path } => format!("has no value at {path}."),
+        DependencyFailure::Cancelled => "was cancelled.".to_string(),
+    };
+    format!("Could not get \"{token}\": \"{label}\" {what}")
+}
+
+/// Source requests to send before `session_id`, in order. Empty when every
+/// response token it uses has a usable value. Err for a cycle or a deleted
+/// source.
+///
+/// Only tokens the request sends count: a disabled row, a body that is not
+/// sent, or an overridden auth does not make a dependency.
+pub fn response_token_plan(
+    session_id: u64,
+    sources: &TokenSources,
+) -> Result<Vec<PlanStep>, String> {
+    let mut plan = Vec::new();
+    let mut stack = vec![session_id];
+    sources.plan_into(session_id, &mut stack, &mut plan)?;
+    Ok(plan)
+}
+
+/// Encloses each probe marker. Digits only, so a marker stays intact through
+/// URL and form encoding, and is valid in a JSON string or number.
+const PROBE_FENCE: &str = "7302958164";
+
+/// The probe value of the token at `index` in the probe key list.
+fn probe_marker(index: usize) -> String {
+    format!("{PROBE_FENCE}{index:04}{PROBE_FENCE}")
+}
+
+impl TokenSources<'_> {
+    fn label(&self, session: &RequestSession) -> String {
+        session_label(
+            session,
+            Some(LabelTokens {
+                groups: self.groups,
+                global_definitions: self.globals,
+            }),
+        )
+    }
+
+    /// The response token that owns `key` for `group_id`. A key that starts
+    /// with `_.` names a global response token.
+    fn claimed(&self, group_id: Option<u64>, key: &str) -> Option<&ResponseToken> {
+        match key.strip_prefix("_.") {
+            Some(name) => self
+                .global_response_tokens
+                .iter()
+                .find(|t| t.name == name && !self.globals.contains_key(name)),
+            None => self.claims(group_id).into_iter().find(|t| t.name == key),
+        }
+    }
+
+    /// Append the steps `session_id` needs to `plan`. `stack` holds the
+    /// requests being planned, `session_id` last.
+    fn plan_into(
+        &self,
+        session_id: u64,
+        stack: &mut Vec<u64>,
+        plan: &mut Vec<PlanStep>,
+    ) -> Result<(), String> {
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return Ok(());
+        };
+        let ctx = self.request_context(session);
+        for key in self.probe(session, &ctx) {
+            let name = key.strip_prefix("_.").unwrap_or(&key);
+            let info = match key.strip_prefix("_.") {
+                Some(name) => ctx.tokens.workspace_response_tokens.get(name),
+                None => ctx.tokens.response_tokens.get(name),
+            };
+            if let Some(problem) = info.and_then(|info| info.problem.as_ref()) {
+                return Err(format!("\"{name}\" {problem}"));
+            }
+            let Some(token) = self.claimed(session.group_id, &key) else {
+                continue;
+            };
+            if let Some(start) = stack.iter().position(|id| *id == token.request_id) {
+                let labels: Vec<String> = stack[start..]
+                    .iter()
+                    .chain(std::iter::once(&token.request_id))
+                    .filter_map(|id| self.sessions.iter().find(|s| s.id == *id))
+                    .map(|s| self.label(s))
+                    .collect();
+                return Err(format!("Response token cycle: {}", labels.join(" → ")));
+            }
+            if plan.iter().any(|step| step.request_id == token.request_id) {
+                continue;
+            }
+            stack.push(token.request_id);
+            self.plan_into(token.request_id, stack, plan)?;
+            stack.pop();
+            plan.push(PlanStep {
+                request_id: token.request_id,
+                token: name.to_string(),
+            });
+        }
+        Ok(())
+    }
+
+    /// The keys of the response tokens without a usable value that `session`
+    /// sends, in order of first appearance. A global key starts with `_.`.
+    ///
+    /// Each such token gets a marker value and is treated as text; the built
+    /// request is then scanned for the markers. A request that does not
+    /// build needs nothing: the send reports the real error.
+    fn probe(&self, session: &RequestSession, ctx: &ResolvedRequestContext) -> Vec<String> {
+        let mut probe = ctx.clone();
+        let tokens = &mut probe.tokens;
+        let mut keys: Vec<String> = Vec::new();
+        let unusable = |map: &IndexMap<String, ResponseTokenInfo>| -> Vec<String> {
+            map.iter()
+                .filter(|(_, info)| info.fetched_at_ms.is_none())
+                .map(|(name, _)| name.clone())
+                .collect()
+        };
+        for name in unusable(&tokens.response_tokens) {
+            tokens.response_tokens.shift_remove(&name);
+            tokens
+                .definitions
+                .insert(name.clone(), probe_marker(keys.len()));
+            keys.push(name);
+        }
+        for name in unusable(&tokens.workspace_response_tokens) {
+            tokens.workspace_response_tokens.shift_remove(&name);
+            tokens
+                .workspace_definitions
+                .insert(name.clone(), probe_marker(keys.len()));
+            keys.push(format!("_.{name}"));
+        }
+        if keys.is_empty() {
+            return Vec::new();
+        }
+
+        let mut sent: Vec<String> = Vec::new();
+        if crate::websocket_log::is_web_socket_url(&session.draft.url) {
+            let Ok(socket) = crate::runner::build_web_socket_request(&session.draft, Some(&probe))
+            else {
+                return Vec::new();
+            };
+            sent.push(socket.url);
+            sent.extend(socket.headers.into_iter().map(|h| h.value));
+        } else {
+            let Ok(request) = crate::runner::prepare(&session.draft, Some(&probe)).request else {
+                return Vec::new();
+            };
+            sent.push(request.url);
+            sent.extend(request.headers.into_iter().map(|h| h.value));
+            sent.extend(request.body);
+            for part in request.multipart.into_iter().flatten() {
+                sent.push(part.key);
+                sent.push(part.value);
+            }
+        }
+        // Basic auth sends its credentials in base64.
+        let decoded: Vec<String> = sent
+            .iter()
+            .filter_map(|value| value.strip_prefix("Basic "))
+            .filter_map(|encoded| BASE64.decode(encoded).ok())
+            .map(|bytes| String::from_utf8_lossy(&bytes).into_owned())
+            .collect();
+        sent.extend(decoded);
+        let text = sent.join("\n");
+
+        let mut found: Vec<(usize, String)> = keys
+            .into_iter()
+            .enumerate()
+            .filter_map(|(index, key)| text.find(&probe_marker(index)).map(|at| (at, key)))
+            .collect();
+        found.sort_by_key(|(at, _)| *at);
+        found.into_iter().map(|(_, key)| key).collect()
     }
 }
 
@@ -996,5 +1202,274 @@ mod tests {
             assert!(!ctx.workspace_definitions.contains_key(name));
             assert_eq!(ctx.workspace_response_tokens[name].fetched_at_ms, None);
         }
+    }
+
+    fn workspace_with_login() -> (crate::workspace_state::Workspace, u64, u64) {
+        let mut workspace = crate::workspace_state::Workspace::new();
+        let login = workspace.sessions[0].id;
+        let group_id = workspace.add_group("API", None);
+        workspace.move_request(login, Some(group_id));
+        workspace.sessions[0].draft.url = "https://api.test/login".into();
+        workspace.groups[0].response_tokens = Some(vec![token(1, "access_token", login)]);
+        let mut me = create_session(None);
+        me.group_id = Some(group_id);
+        me.draft.url = "https://api.test/me".into();
+        me.draft.headers.push(crate::request::pair(
+            "Authorization",
+            "Bearer {{access_token}}",
+        ));
+        let me_id = me.id;
+        workspace.sessions.push(me);
+        (workspace, login, me_id)
+    }
+
+    #[test]
+    fn plans_the_source_when_no_value_exists() {
+        let (workspace, login, me) = workspace_with_login();
+        let plan = response_token_plan(me, &workspace.token_sources(0.0)).unwrap();
+        assert_eq!(
+            plan,
+            vec![PlanStep {
+                request_id: login,
+                token: "access_token".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn plans_nothing_when_the_value_is_usable() {
+        let (mut workspace, login, me) = workspace_with_login();
+        let fingerprint = workspace
+            .token_sources(0.0)
+            .fingerprint(workspace.session(login).unwrap());
+        workspace.response_cache.record(
+            login,
+            &fingerprint,
+            0,
+            vec![(
+                ValueKey {
+                    source: CheckSource::Json,
+                    path: ".access_token".into(),
+                },
+                "abc".into(),
+            )],
+        );
+        assert!(
+            response_token_plan(me, &workspace.token_sources(0.0))
+                .unwrap()
+                .is_empty()
+        );
+    }
+
+    #[test]
+    fn finds_tokens_through_text_tokens_and_ignores_disabled_headers() {
+        let (mut workspace, _, me) = workspace_with_login();
+        let session = workspace.session_mut(me).unwrap();
+        session.draft.headers.clear();
+        let mut disabled = crate::request::pair("X-Unused", "{{access_token}}");
+        disabled.enabled = false;
+        session.draft.headers.push(disabled);
+        assert!(
+            response_token_plan(me, &workspace.token_sources(0.0))
+                .unwrap()
+                .is_empty()
+        );
+        workspace.groups[0].local_definitions = Some(
+            [("auth".to_string(), "Bearer {{access_token}}".to_string())]
+                .into_iter()
+                .collect(),
+        );
+        workspace
+            .session_mut(me)
+            .unwrap()
+            .draft
+            .headers
+            .push(crate::request::pair("Authorization", "{{auth}}"));
+        assert_eq!(
+            response_token_plan(me, &workspace.token_sources(0.0))
+                .unwrap()
+                .len(),
+            1
+        );
+    }
+
+    #[test]
+    fn orders_chains_and_reports_cycles() {
+        let (mut workspace, login, me) = workspace_with_login();
+        let mut refresh = create_session(None);
+        refresh.group_id = workspace.sessions[0].group_id;
+        refresh.draft.url = "https://api.test/refresh?r={{refresh_token}}".into();
+        let refresh_id = refresh.id;
+        workspace.sessions.push(refresh);
+        let tokens = workspace.groups[0].response_tokens.as_mut().unwrap();
+        tokens[0].request_id = refresh_id; // access_token now comes from Refresh
+        tokens.push(token(2, "refresh_token", login));
+        let plan = response_token_plan(me, &workspace.token_sources(0.0)).unwrap();
+        assert_eq!(
+            plan.iter().map(|s| s.request_id).collect::<Vec<_>>(),
+            vec![login, refresh_id]
+        );
+        // Login now needs access_token: Login → Refresh → Login.
+        workspace.session_mut(login).unwrap().draft.url =
+            "https://api.test/login?a={{access_token}}".into();
+        let error = response_token_plan(me, &workspace.token_sources(0.0)).unwrap_err();
+        assert!(error.starts_with("Response token cycle: "), "{error}");
+    }
+
+    #[test]
+    fn a_deleted_source_fails_the_plan() {
+        let (mut workspace, _, me) = workspace_with_login();
+        workspace.groups[0].response_tokens.as_mut().unwrap()[0].request_id = 9_999;
+        assert_eq!(
+            response_token_plan(me, &workspace.token_sources(0.0)).unwrap_err(),
+            "\"access_token\" reads a deleted request."
+        );
+    }
+
+    #[test]
+    fn dependency_errors_name_the_token_and_request_only() {
+        assert_eq!(
+            dependency_error("access_token", "Login", &DependencyFailure::Status(401)),
+            "Could not get \"access_token\": \"Login\" returned 401."
+        );
+        assert_eq!(
+            dependency_error(
+                "t",
+                "Login",
+                &DependencyFailure::Missing { path: ".t".into() }
+            ),
+            "Could not get \"t\": \"Login\" has no value at .t."
+        );
+    }
+
+    #[test]
+    fn every_dependency_error_has_its_message() {
+        assert_eq!(
+            dependency_error(
+                "access_token",
+                "Login",
+                &DependencyFailure::Error("Connection refused.".into())
+            ),
+            "Could not get \"access_token\": \"Login\" failed. Connection refused."
+        );
+        assert_eq!(
+            dependency_error(
+                "access_token",
+                "Login",
+                &DependencyFailure::Missing {
+                    path: String::new()
+                }
+            ),
+            "Could not get \"access_token\": \"Login\" has no value."
+        );
+        assert_eq!(
+            dependency_error("access_token", "Login", &DependencyFailure::Cancelled),
+            "Could not get \"access_token\": \"Login\" was cancelled."
+        );
+    }
+
+    #[test]
+    fn the_cycle_message_names_only_the_requests_in_the_cycle() {
+        let (mut workspace, login, me) = workspace_with_login();
+        let mut refresh = create_session(None);
+        refresh.group_id = workspace.sessions[0].group_id;
+        refresh.draft.url = "https://api.test/refresh?r={{refresh_token}}".into();
+        let refresh_id = refresh.id;
+        workspace.sessions.push(refresh);
+        let tokens = workspace.groups[0].response_tokens.as_mut().unwrap();
+        tokens[0].request_id = refresh_id;
+        tokens.push(token(2, "refresh_token", login));
+        workspace.session_mut(login).unwrap().draft.url =
+            "https://api.test/login?a={{access_token}}".into();
+        assert_eq!(
+            response_token_plan(me, &workspace.token_sources(0.0)).unwrap_err(),
+            "Response token cycle: /refresh → /login → /refresh"
+        );
+    }
+
+    #[test]
+    fn a_request_that_reads_its_own_token_is_a_cycle() {
+        let (mut workspace, login, _) = workspace_with_login();
+        workspace
+            .session_mut(login)
+            .unwrap()
+            .draft
+            .headers
+            .push(crate::request::pair("X-Token", "{{access_token}}"));
+        assert_eq!(
+            response_token_plan(login, &workspace.token_sources(0.0)).unwrap_err(),
+            "Response token cycle: /login → /login"
+        );
+    }
+
+    #[test]
+    fn finds_tokens_in_query_rows_json_numbers_and_basic_auth() {
+        let one = |edit: &dyn Fn(&mut RequestSession)| {
+            let (mut workspace, _, me) = workspace_with_login();
+            let session = workspace.session_mut(me).unwrap();
+            session.draft.headers.clear();
+            edit(session);
+            response_token_plan(me, &workspace.token_sources(0.0)).unwrap()
+        };
+        let query = one(&|s| {
+            s.draft
+                .query
+                .push(crate::request::pair("token", "{{access_token}}"))
+        });
+        assert_eq!(query.len(), 1, "query");
+        let json = one(&|s| {
+            s.draft.method = "POST".into();
+            s.draft.body_mode = crate::model::BodyMode::Json;
+            s.draft.body = "{\"id\": {{access_token}}}".into();
+        });
+        assert_eq!(json.len(), 1, "json");
+        let json_string = one(&|s| {
+            s.draft.method = "POST".into();
+            s.draft.body_mode = crate::model::BodyMode::Json;
+            s.draft.body = "{\"token\": \"{{access_token}}\"}".into();
+        });
+        assert_eq!(json_string.len(), 1, "json string");
+        let form = one(&|s| {
+            s.draft.method = "POST".into();
+            s.draft.body_mode = crate::model::BodyMode::Form;
+            s.draft.form = Some(vec![crate::request::pair("token", "{{access_token}}")]);
+        });
+        assert_eq!(form.len(), 1, "form");
+        let basic = one(&|s| {
+            s.draft.local_auth = Some(AuthorizationConfig::Basic {
+                username: "me".into(),
+                password: "{{access_token}}".into(),
+            });
+        });
+        assert_eq!(basic.len(), 1, "basic");
+    }
+
+    #[test]
+    fn finds_tokens_in_a_web_socket_request_and_global_tokens() {
+        let (mut workspace, login, me) = workspace_with_login();
+        workspace.groups[0].response_tokens = None;
+        workspace.global_response_tokens = vec![token(1, "access_token", login)];
+        let session = workspace.session_mut(me).unwrap();
+        session.draft.headers.clear();
+        session.draft.url = "wss://api.test/socket?t={{_.access_token}}".into();
+        let plan = response_token_plan(me, &workspace.token_sources(0.0)).unwrap();
+        assert_eq!(
+            plan,
+            vec![PlanStep {
+                request_id: login,
+                token: "access_token".into()
+            }]
+        );
+    }
+
+    #[test]
+    fn a_request_that_does_not_build_plans_nothing() {
+        let (mut workspace, _, me) = workspace_with_login();
+        workspace.session_mut(me).unwrap().draft.url = "not a url {{access_token}}".into();
+        assert!(
+            response_token_plan(me, &workspace.token_sources(0.0))
+                .unwrap()
+                .is_empty()
+        );
     }
 }
