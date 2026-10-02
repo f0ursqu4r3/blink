@@ -192,3 +192,38 @@ fn dragging_the_handle_resizes_the_browser_within_limits(cx: &mut TestAppContext
     let shown = browser_box(&harness, cx).unwrap().size.width;
     assert_eq!(shown, px(browser::MIN_WIDTH + FRAME_GAP));
 }
+
+#[gpui_kit::test]
+fn a_2xx_send_of_a_source_request_records_its_token_values(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let (url, _requests) = serve(|_| Reply::ok("application/json", r#"{"access_token":"abc"}"#));
+    let login = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.set_global_response_tokens(vec![blink_core::model::ResponseToken {
+                id: 1,
+                name: "access_token".into(),
+                request_id: login,
+                source: blink_core::model::CheckSource::Json,
+                path: ".access_token".into(),
+                max_age_secs: None,
+            }]);
+        })
+    });
+    harness.send(cx, &format!("{url}/login"));
+    let value = cx.read(|cx| {
+        let workspace = &harness.store.read(cx).workspace;
+        workspace
+            .token_sources(blink_core::history::now_ms())
+            .context(None)
+            .workspace_definitions
+            .get("access_token")
+            .cloned()
+    });
+    assert_eq!(value.as_deref(), Some("abc"));
+    let saved = engine.load_response_tokens();
+    assert_eq!(saved.entries().len(), 1);
+}

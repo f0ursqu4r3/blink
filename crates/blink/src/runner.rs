@@ -3,6 +3,7 @@
 //! `RequestWorkspace.vue`; the pure parts live in `blink_core::runner`.
 
 use blink_core::history::now_ms;
+use blink_core::response_tokens::values_for;
 use std::time::Duration;
 
 use blink_core::engine::{SocketEvent, StreamMessage};
@@ -206,16 +207,39 @@ impl Store {
             }
             return;
         };
-        self.update_workspace(cx, |workspace| {
+        let recorded = self.update_workspace(cx, |workspace| {
             let Some(session) = workspace.session_mut(session_id) else {
-                return;
+                return false;
             };
+            let fingerprint = session.sent_fingerprint.clone();
+            let completed = result.is_ok();
             let outcome = finish_send(session, flight.ticket, result);
+            let values = workspace
+                .session(session_id)
+                .and_then(|session| session.response.as_ref())
+                .filter(|response| completed && (200..=299).contains(&response.status))
+                .map(|response| values_for(session_id, workspace.all_response_tokens(), response));
             if !outcome.captured.is_empty() {
                 workspace.capture(group_id, &outcome.captured);
             }
+            let recorded = match values {
+                Some(values) if workspace.is_token_source(session_id) => {
+                    workspace.response_cache.record(
+                        session_id,
+                        &fingerprint,
+                        now_ms() as u64,
+                        values,
+                    );
+                    true
+                }
+                _ => false,
+            };
             workspace.refresh_all_stale();
+            recorded
         });
+        if recorded {
+            self.save_response_cache();
+        }
     }
 
     // ── WebSocket ───────────────────────────────────────────────────────────

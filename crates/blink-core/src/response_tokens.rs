@@ -10,11 +10,12 @@ use base64::engine::general_purpose::STANDARD as BASE64;
 use indexmap::IndexMap;
 
 use crate::authorization::{ResolvedRequestContext, ancestry, resolve_authorization};
-use crate::checks::{INVALID_NAME_MESSAGE, is_capture_name};
+use crate::checks::{INVALID_NAME_MESSAGE, is_capture_name, read_source};
 use crate::environments::{group_definitions, request_environment};
 use crate::interpolation::{InterpolationContext, ResponseTokenInfo, TOKEN_RE};
 use crate::model::{
-    AuthorizationConfig, CheckSource, Definitions, RequestGroup, RequestSession, ResponseToken,
+    ApiResponse, AuthorizationConfig, CheckSource, Definitions, RequestGroup, RequestSession,
+    ResponseToken,
 };
 use crate::response_token_cache::{ResponseTokenCache, ValueKey};
 use crate::session::{LabelTokens, session_label};
@@ -465,6 +466,30 @@ pub enum DependencyFailure {
         path: String,
     },
     Cancelled,
+}
+
+/// The values `response` gives for each distinct `(source, path)` that a token
+/// reading `request_id` uses. A source that is absent or fails is skipped.
+pub fn values_for<'a>(
+    request_id: u64,
+    tokens: impl Iterator<Item = &'a ResponseToken>,
+    response: &ApiResponse,
+) -> Vec<(ValueKey, String)> {
+    let mut seen = HashSet::new();
+    let mut values = Vec::new();
+    for token in tokens.filter(|token| token.request_id == request_id) {
+        let key = ValueKey {
+            source: token.source,
+            path: token.path.clone(),
+        };
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        if let Ok(Some(value)) = read_source(key.source, &key.path, response) {
+            values.push((key, value));
+        }
+    }
+    values
 }
 
 /// The message for a source request that did not supply `token`.

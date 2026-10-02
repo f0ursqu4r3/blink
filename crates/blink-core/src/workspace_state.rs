@@ -202,6 +202,14 @@ impl Workspace {
         .at(now_ms)
     }
 
+    /// Every response token: groups first, then global.
+    pub fn all_response_tokens(&self) -> impl Iterator<Item = &ResponseToken> {
+        self.groups
+            .iter()
+            .flat_map(|group| group.response_tokens.iter().flatten())
+            .chain(self.global_response_tokens.iter())
+    }
+
     /// True when a group or global response token reads from request `id`.
     pub fn is_token_source(&self, id: u64) -> bool {
         let reads = |tokens: &[ResponseToken]| tokens.iter().any(|t| t.request_id == id);
