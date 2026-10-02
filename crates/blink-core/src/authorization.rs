@@ -86,6 +86,8 @@ pub fn resolve_token_definitions(
     InterpolationContext {
         definitions: merged,
         workspace_definitions: workspace_global.clone(),
+        response_tokens: Default::default(),
+        workspace_response_tokens: Default::default(),
     }
 }
 

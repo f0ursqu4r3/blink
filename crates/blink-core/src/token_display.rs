@@ -228,7 +228,8 @@ pub fn raw_slice(raw: &str, segments: &[DisplaySegment], start: usize, end: usiz
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Definitions;
+    use crate::interpolation::ResponseTokenInfo;
+    use crate::model::{CheckSource, Definitions};
 
     fn defs(entries: &[(&str, &str)]) -> Definitions {
         entries
@@ -349,5 +350,24 @@ mod tests {
             raw_slice(RAW, &shown().segments, 10, 22),
             "{{_.host}}/{{endpoint}}"
         );
+    }
+
+    #[test]
+    fn response_tokens_never_show_their_value() {
+        let mut ctx = InterpolationContext::local(defs(&[("t", "secret")]));
+        ctx.response_tokens.insert(
+            "t".into(),
+            ResponseTokenInfo {
+                request_label: "Login".into(),
+                source: CheckSource::Json,
+                path: ".t".into(),
+                fetched_at_ms: Some(0),
+                environment: None,
+                problem: None,
+            },
+        );
+        let display = token_display("Bearer {{t}}", Some(&ctx));
+        assert_eq!(display.text, "Bearer {{t}}");
+        assert!(display.segments.iter().all(|s| !s.unit));
     }
 }

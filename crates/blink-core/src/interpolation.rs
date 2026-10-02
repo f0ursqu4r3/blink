@@ -11,9 +11,24 @@
 
 use std::sync::LazyLock;
 
+use indexmap::IndexMap;
 use regex::{Captures, Regex};
 
-use crate::model::Definitions;
+use crate::model::{CheckSource, Definitions};
+
+/// What a context knows about a response token, for errors and hints.
+/// Never holds the value.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResponseTokenInfo {
+    pub request_label: String,
+    pub source: CheckSource,
+    pub path: String,
+    /// Set when a usable value is in the definitions.
+    pub fetched_at_ms: Option<u64>,
+    pub environment: Option<String>,
+    /// Why no value can be read, when the source request cannot supply one.
+    pub problem: Option<String>,
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct InterpolationContext {
@@ -21,6 +36,10 @@ pub struct InterpolationContext {
     pub definitions: Definitions,
     /// Workspace-global definitions.
     pub workspace_definitions: Definitions,
+    /// Response tokens of the group scopes, by name.
+    pub response_tokens: IndexMap<String, ResponseTokenInfo>,
+    /// Workspace-global response tokens, by name.
+    pub workspace_response_tokens: IndexMap<String, ResponseTokenInfo>,
 }
 
 impl InterpolationContext {
@@ -28,6 +47,8 @@ impl InterpolationContext {
         InterpolationContext {
             definitions,
             workspace_definitions,
+            response_tokens: IndexMap::new(),
+            workspace_response_tokens: IndexMap::new(),
         }
     }
 
@@ -36,7 +57,27 @@ impl InterpolationContext {
         InterpolationContext {
             definitions,
             workspace_definitions: Definitions::new(),
+            response_tokens: IndexMap::new(),
+            workspace_response_tokens: IndexMap::new(),
         }
+    }
+
+    /// The response token `name` refers to, in the order `interpolate` looks
+    /// names up. `name` may start with `_.`.
+    pub fn response_info(&self, name: &str) -> Option<&ResponseTokenInfo> {
+        if let Some(name) = name.strip_prefix("_.") {
+            return self.workspace_response_tokens.get(name);
+        }
+        if self.definitions.contains_key(name) && !self.response_tokens.contains_key(name) {
+            return None;
+        }
+        self.response_tokens.get(name).or_else(|| {
+            if self.definitions.contains_key(name) {
+                None
+            } else {
+                self.workspace_response_tokens.get(name)
+            }
+        })
     }
 }
 
@@ -84,14 +125,29 @@ fn replace(
     if stack.contains(&key) {
         return Err(format!("Circular token reference: \"{name}\"."));
     }
+    let lookup = if workspace_only {
+        format!("_.{name}")
+    } else {
+        name.to_string()
+    };
     let value = if workspace_only {
         ctx.workspace_definitions.get(name)
     } else {
-        ctx.definitions
-            .get(name)
-            .or_else(|| ctx.workspace_definitions.get(name))
+        ctx.definitions.get(name).or_else(|| {
+            if ctx.response_tokens.contains_key(name) {
+                None
+            } else {
+                ctx.workspace_definitions.get(name)
+            }
+        })
     };
     let Some(value) = value else {
+        if let Some(info) = ctx.response_info(&lookup) {
+            return Err(format!(
+                "\"{name}\" has no current value. Send \"{}\" or the request that uses it.",
+                info.request_label
+            ));
+        }
         return Err(format!(
             "Undefined token reference: \"{name}\". Define it in your {} variables.",
             if workspace_only {
@@ -101,6 +157,10 @@ fn replace(
             }
         ));
     };
+    // A response value is literal text, never a template.
+    if ctx.response_info(&lookup).is_some() {
+        return Ok(value.clone());
+    }
     stack.push(key);
     let resolved = resolve(value, ctx, stack);
     stack.pop();
@@ -110,6 +170,7 @@ fn replace(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::CheckSource;
 
     fn defs(entries: &[(&str, &str)]) -> Definitions {
         entries
@@ -246,5 +307,62 @@ mod tests {
     #[test]
     fn handles_an_empty_template() {
         assert_eq!(interpolate("", &local(&[])).unwrap(), "");
+    }
+
+    fn info(fetched: Option<u64>) -> ResponseTokenInfo {
+        ResponseTokenInfo {
+            request_label: "Login".into(),
+            source: CheckSource::Json,
+            path: ".access_token".into(),
+            fetched_at_ms: fetched,
+            environment: None,
+            problem: None,
+        }
+    }
+
+    #[test]
+    fn a_response_token_without_a_value_names_its_request() {
+        let mut ctx = both(&[], &[("access_token", "global-text")]);
+        ctx.response_tokens
+            .insert("access_token".into(), info(None));
+        assert_eq!(
+            interpolate("{{access_token}}", &ctx).unwrap_err(),
+            "\"access_token\" has no current value. Send \"Login\" or the request that uses it."
+        );
+    }
+
+    #[test]
+    fn a_response_token_with_a_value_resolves() {
+        let mut ctx = local(&[("access_token", "abc")]);
+        ctx.response_tokens
+            .insert("access_token".into(), info(Some(1)));
+        assert_eq!(
+            interpolate("Bearer {{access_token}}", &ctx).unwrap(),
+            "Bearer abc"
+        );
+    }
+
+    #[test]
+    fn a_response_token_value_is_never_interpolated_again() {
+        let mut ctx = local(&[("t", "{{missing}}")]);
+        ctx.response_tokens.insert("t".into(), info(Some(1)));
+        assert_eq!(interpolate("{{t}}", &ctx).unwrap(), "{{missing}}");
+    }
+
+    #[test]
+    fn a_global_response_token_without_a_value_blocks_the_bare_name() {
+        let mut ctx = both(&[], &[]);
+        ctx.workspace_response_tokens
+            .insert("csrf".into(), info(None));
+        assert!(
+            interpolate("{{csrf}}", &ctx)
+                .unwrap_err()
+                .starts_with("\"csrf\" has no current value")
+        );
+        assert!(
+            interpolate("{{_.csrf}}", &ctx)
+                .unwrap_err()
+                .starts_with("\"csrf\" has no current value")
+        );
     }
 }

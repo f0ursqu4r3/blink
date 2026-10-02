@@ -31,6 +31,8 @@ pub enum TokenState {
     Resolved,
     Unresolved,
     Env,
+    /// A reference to a response token, usable or not.
+    Response,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +60,9 @@ static REFERENCE_RE: LazyLock<Regex> =
 /// Returns None for an unknown name.
 pub fn token_value(name: &str, ctx: Option<&InterpolationContext>) -> Option<String> {
     let ctx = ctx?;
+    if ctx.response_info(name).is_some() {
+        return None;
+    }
     let workspace_only = name.starts_with("_.");
     let key = if workspace_only { &name[2..] } else { name };
     if !is_resolved(key, workspace_only, Some(ctx)) {
@@ -79,22 +84,46 @@ pub fn token_value(name: &str, ctx: Option<&InterpolationContext>) -> Option<Str
 pub fn token_options(ctx: Option<&InterpolationContext>) -> Vec<TokenOption> {
     let Some(ctx) = ctx else { return Vec::new() };
     let option = |name: String, scope: TokenScope| TokenOption {
-        value: token_value(&name, Some(ctx)).unwrap_or_default(),
+        value: ctx
+            .response_info(&name)
+            .map(|info| format!("from \"{}\"", info.request_label))
+            .or_else(|| token_value(&name, Some(ctx)))
+            .unwrap_or_default(),
         name,
         scope,
     };
-    let local = ctx.definitions.keys();
-    let global = ctx.workspace_definitions.keys();
+    // Response tokens without a value are not in the definitions.
+    let local = ctx.definitions.keys().chain(
+        ctx.response_tokens
+            .keys()
+            .filter(|name| !ctx.definitions.contains_key(*name)),
+    );
+    let global: Vec<&String> = ctx
+        .workspace_definitions
+        .keys()
+        .chain(
+            ctx.workspace_response_tokens
+                .keys()
+                .filter(|name| !ctx.workspace_definitions.contains_key(*name)),
+        )
+        .collect();
+    let local_has = |name: &String| {
+        ctx.definitions.contains_key(name) || ctx.response_tokens.contains_key(name)
+    };
     local
         .map(|name| option(name.clone(), TokenScope::Local))
         // A bare global name resolves when no local token has the same name.
         .chain(
             global
-                .clone()
-                .filter(|name| !ctx.definitions.contains_key(*name))
-                .map(|name| option(name.clone(), TokenScope::Global)),
+                .iter()
+                .filter(|name| !local_has(name))
+                .map(|name| option((*name).clone(), TokenScope::Global)),
         )
-        .chain(global.map(|name| option(format!("_.{name}"), TokenScope::Global)))
+        .chain(
+            global
+                .iter()
+                .map(|name| option(format!("_.{name}"), TokenScope::Global)),
+        )
         .collect()
 }
 
@@ -125,7 +154,10 @@ pub fn token_spans(text: &str, ctx: Option<&InterpolationContext>) -> Vec<TokenS
         } else {
             let global = caps.get(2).is_some();
             let name = js_trim(&caps[3]);
-            let token = if is_resolved(name, global, ctx) {
+            let full = format!("{}{name}", if global { "_." } else { "" });
+            let token = if ctx.and_then(|c| c.response_info(&full)).is_some() {
+                TokenState::Response
+            } else if is_resolved(name, global, ctx) {
                 TokenState::Resolved
             } else {
                 TokenState::Unresolved
@@ -183,16 +215,51 @@ pub fn resolve_for_display(text: &str, ctx: Option<&InterpolationContext>) -> St
 }
 
 /// One-line hint for a reference, such as `endpoint = users`.
-pub fn token_hint(span: &TokenSpan, ctx: Option<&InterpolationContext>) -> String {
+pub fn token_hint(span: &TokenSpan, ctx: Option<&InterpolationContext>, now_ms: f64) -> String {
     if span.token == Some(TokenState::Env) {
         return format!("{} reads the environment when sending", span.text);
     }
     let Some(name) = &span.name else {
         return String::new();
     };
+    if span.token == Some(TokenState::Response)
+        && let Some(info) = ctx.and_then(|ctx| ctx.response_info(name))
+    {
+        return match (info.fetched_at_ms, &info.problem) {
+            (Some(at), _) => {
+                let age = age_label((now_ms as u64).saturating_sub(at));
+                let source = format!("{} {}", info.source.label(), info.path.trim());
+                let mut hint = format!(
+                    "From \"{}\" · {} · {age}",
+                    info.request_label,
+                    source.trim_end()
+                );
+                if let Some(environment) = &info.environment {
+                    hint.push_str(&format!(" · {environment}"));
+                }
+                hint
+            }
+            (None, Some(problem)) => format!("No current value · {problem}"),
+            (None, None) => format!("No current value · sends \"{}\" first", info.request_label),
+        };
+    }
     match token_value(name, ctx) {
         Some(value) => format!("{name} = {value}"),
         None => format!("{name} is not defined"),
+    }
+}
+
+/// How long ago a value arrived: `just now`, `N min ago`, `N h ago`, `N d ago`.
+pub fn age_label(ms: u64) -> String {
+    let minutes = ms / 60_000;
+    if minutes < 1 {
+        "just now".to_string()
+    } else if minutes < 60 {
+        format!("{minutes} min ago")
+    } else if minutes < 24 * 60 {
+        format!("{} h ago", minutes / 60)
+    } else {
+        format!("{} d ago", minutes / (24 * 60))
     }
 }
 
@@ -254,7 +321,8 @@ pub fn apply_token_option(text: &str, from: usize, cursor: usize, name: &str) ->
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::Definitions;
+    use crate::interpolation::ResponseTokenInfo;
+    use crate::model::{CheckSource, Definitions};
 
     fn defs(entries: &[(&str, &str)]) -> Definitions {
         entries
@@ -360,8 +428,11 @@ mod tests {
     #[test]
     fn shows_the_value_or_says_the_token_is_not_defined() {
         let spans = token_spans("{{host}}/{{nope}}", Some(&ctx()));
-        assert_eq!(token_hint(&spans[0], Some(&ctx())), "host = local");
-        assert_eq!(token_hint(&spans[2], Some(&ctx())), "nope is not defined");
+        assert_eq!(token_hint(&spans[0], Some(&ctx()), 0.0), "host = local");
+        assert_eq!(
+            token_hint(&spans[2], Some(&ctx()), 0.0),
+            "nope is not defined"
+        );
     }
 
     #[test]
@@ -420,5 +491,89 @@ mod tests {
             ),
             "https://global/users/{{nope}}/{{!HOME}}"
         );
+    }
+
+    #[test]
+    fn response_tokens_hint_their_source_never_their_value() {
+        let mut ctx = InterpolationContext::local(defs(&[("access_token", "secret-value")]));
+        ctx.response_tokens.insert(
+            "access_token".into(),
+            ResponseTokenInfo {
+                request_label: "Login".into(),
+                source: CheckSource::Json,
+                path: ".access_token".into(),
+                fetched_at_ms: Some(1_000),
+                environment: Some("DEV".into()),
+                problem: None,
+            },
+        );
+        let span = &token_spans("{{access_token}}", Some(&ctx))[0];
+        assert_eq!(span.token, Some(TokenState::Response));
+        let hint = token_hint(span, Some(&ctx), 1_000.0 + 3.0 * 60_000.0);
+        assert_eq!(
+            hint,
+            "From \"Login\" · JSON (jq) .access_token · 3 min ago · DEV"
+        );
+        assert!(!hint.contains("secret-value"));
+        let option = token_options(Some(&ctx))
+            .into_iter()
+            .find(|o| o.name == "access_token")
+            .unwrap();
+        assert_eq!(option.value, "from \"Login\"");
+        assert_eq!(
+            resolve_for_display("{{access_token}}", Some(&ctx)),
+            "{{access_token}}"
+        );
+    }
+
+    #[test]
+    fn a_response_token_without_a_value_hints_the_send() {
+        let mut ctx = InterpolationContext::default();
+        ctx.response_tokens.insert(
+            "t".into(),
+            ResponseTokenInfo {
+                request_label: "Login".into(),
+                source: CheckSource::Json,
+                path: ".t".into(),
+                fetched_at_ms: None,
+                environment: None,
+                problem: None,
+            },
+        );
+        let span = &token_spans("{{t}}", Some(&ctx))[0];
+        assert_eq!(span.token, Some(TokenState::Response));
+        assert_eq!(
+            token_hint(span, Some(&ctx), 0.0),
+            "No current value · sends \"Login\" first"
+        );
+    }
+
+    #[test]
+    fn a_response_token_problem_replaces_the_send_hint() {
+        let mut ctx = InterpolationContext::default();
+        ctx.response_tokens.insert(
+            "t".into(),
+            ResponseTokenInfo {
+                request_label: "Login".into(),
+                source: CheckSource::Status,
+                path: String::new(),
+                fetched_at_ms: None,
+                environment: None,
+                problem: Some("Login is disabled".into()),
+            },
+        );
+        let span = &token_spans("{{t}}", Some(&ctx))[0];
+        assert_eq!(
+            token_hint(span, Some(&ctx), 0.0),
+            "No current value · Login is disabled"
+        );
+    }
+
+    #[test]
+    fn ages_read_in_the_largest_unit() {
+        assert_eq!(age_label(59_000), "just now");
+        assert_eq!(age_label(3 * 60_000), "3 min ago");
+        assert_eq!(age_label(2 * 3_600_000), "2 h ago");
+        assert_eq!(age_label(3 * 86_400_000), "3 d ago");
     }
 }

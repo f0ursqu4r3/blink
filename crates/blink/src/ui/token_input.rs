@@ -480,6 +480,7 @@ fn state_id(state: TokenState) -> &'static str {
         TokenState::Resolved => "resolved",
         TokenState::Unresolved => "unresolved",
         TokenState::Env => "env",
+        TokenState::Response => "response",
     }
 }
 
@@ -547,7 +548,7 @@ fn render_token(
     let raw = token.token().text().to_string();
     let hint = token_spans(&raw, ctx)
         .first()
-        .map(|span| token_hint(span, ctx))
+        .map(|span| token_hint(span, ctx, blink_core::history::now_ms()))
         .unwrap_or_default();
     let state = id.split(':').next().unwrap_or_default();
     div()
@@ -563,6 +564,12 @@ fn render_token(
                 div()
                     .rounded(px(2.))
                     .bg(colors.keyword.opacity(0.15))
+                    .child(token.token().label().clone()),
+            ),
+            "response" => this.text_color(colors.info).child(
+                div()
+                    .rounded(px(2.))
+                    .bg(colors.info.opacity(0.15))
                     .child(token.token().label().clone()),
             ),
             "env" => this

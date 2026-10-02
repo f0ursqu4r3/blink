@@ -353,7 +353,7 @@ fn semantic_tokens(
             continue;
         }
         let token_type = match range.token {
-            TokenState::Resolved => 0,
+            TokenState::Resolved | TokenState::Response => 0,
             TokenState::Env => 1,
             TokenState::Unresolved => 2,
         };
@@ -433,6 +433,7 @@ impl HoverProvider for BodyLanguage {
                     contents: HoverContents::Scalar(MarkedString::String(token_hint(
                         &span,
                         Some(ctx),
+                        blink_core::history::now_ms(),
                     ))),
                     range: Some(lsp_types::Range::new(
                         rope.offset_to_position(range.from),
