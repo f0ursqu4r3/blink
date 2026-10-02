@@ -1,7 +1,7 @@
 //! Tokens whose values come from another request's response: max age,
 //! validation, resolution, and the send plan.
 
-use crate::checks::is_capture_name;
+use crate::checks::{INVALID_NAME_MESSAGE, is_capture_name};
 use crate::model::{CheckSource, RequestSession, ResponseToken};
 
 /// Sources a response token can read.
@@ -61,7 +61,7 @@ pub fn validate_response_tokens(
         let error = if name.is_empty() {
             Some("Enter a token name.".to_string())
         } else if !is_capture_name(name) {
-            Some("Use letters, digits, _, -, or . in token names.".to_string())
+            Some(INVALID_NAME_MESSAGE.to_string())
         } else if seen.contains(&name) {
             Some(format!("Another token is named \"{name}\"."))
         } else if !sessions.iter().any(|s| s.id == token.request_id) {
@@ -144,5 +144,29 @@ mod tests {
         assert_eq!(errors, vec![(1, "Enter a path.".to_string())]);
         row.source = CheckSource::Status;
         assert!(validate_response_tokens(&[row], &[], std::slice::from_ref(&login)).is_empty());
+    }
+
+    #[test]
+    fn invalid_name_format_is_rejected() {
+        let login = create_session(None);
+        let mut row = token(1, "1a", login.id);
+        let errors = validate_response_tokens(&[row.clone()], &[], std::slice::from_ref(&login));
+        assert_eq!(
+            errors,
+            vec![(
+                1,
+                "Start with a letter. Use letters, digits, _, . or -.".to_string()
+            )]
+        );
+
+        row.name = "bad name".into();
+        let errors = validate_response_tokens(&[row], &[], std::slice::from_ref(&login));
+        assert_eq!(
+            errors,
+            vec![(
+                1,
+                "Start with a letter. Use letters, digits, _, . or -.".to_string()
+            )]
+        );
     }
 }

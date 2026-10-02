@@ -10,6 +10,9 @@ use crate::model::{
     ApiResponse, Assertion, AssertionResult, Capture, CheckOperator, CheckSource, Definitions,
 };
 
+/// Error message when a capture or token name is invalid.
+pub const INVALID_NAME_MESSAGE: &str = "Start with a letter. Use letters, digits, _, . or -.";
+
 /// `^[A-Za-z][\w.-]{0,63}$`: a name usable as a {{token}}.
 pub fn is_capture_name(name: &str) -> bool {
     let mut chars = name.chars();
