@@ -27,7 +27,12 @@ pub fn edit_draft(store: &Entity<Store>, id: u64, cx: &mut App, change: impl FnO
                 return;
             };
             change(&mut session.draft);
-            workspace.refresh_stale(id);
+            // Editing a token source changes its dependents' tokens too.
+            if workspace.is_token_source(id) {
+                workspace.refresh_all_stale();
+            } else {
+                workspace.refresh_stale(id);
+            }
         })
     });
 }

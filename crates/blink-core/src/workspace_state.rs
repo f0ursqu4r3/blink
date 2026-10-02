@@ -202,16 +202,23 @@ impl Workspace {
         .at(now_ms)
     }
 
+    /// True when a group or global response token reads from request `id`.
+    pub fn is_token_source(&self, id: u64) -> bool {
+        let reads = |tokens: &[ResponseToken]| tokens.iter().any(|t| t.request_id == id);
+        reads(&self.global_response_tokens)
+            || self
+                .groups
+                .iter()
+                .any(|group| group.response_tokens.as_deref().is_some_and(reads))
+    }
+
     /// Recompute `stale` for one request. Returns it.
     pub fn refresh_stale(&mut self, id: u64) -> bool {
         let Some(session) = self.session(id) else {
             return false;
         };
-        let stale = {
-            let sources = self.token_sources(crate::history::now_ms());
-            let ctx = sources.request_context(session);
-            crate::runner::is_stale(session, &crate::runner::prepare(&session.draft, Some(&ctx)))
-        };
+        let stale =
+            crate::runner::session_is_stale(session, &self.token_sources(crate::history::now_ms()));
         if let Some(session) = self.session_mut(id) {
             session.stale = stale;
         }
@@ -225,9 +232,10 @@ impl Workspace {
             self.sessions
                 .iter()
                 .map(|session| {
-                    let ctx = sources.request_context(session);
-                    let prepared = crate::runner::prepare(&session.draft, Some(&ctx));
-                    (session.id, crate::runner::is_stale(session, &prepared))
+                    (
+                        session.id,
+                        crate::runner::session_is_stale(session, &sources),
+                    )
                 })
                 .collect()
         };

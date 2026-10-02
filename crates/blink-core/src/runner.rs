@@ -228,10 +228,14 @@ pub fn is_stale(session: &RequestSession, prepared: &Prepared) -> bool {
 
 /// Update `session.stale` from the current draft and context. Returns it.
 pub fn refresh_stale(session: &mut RequestSession, sources: &TokenSources) -> bool {
-    let ctx = request_context(session, sources);
-    let prepared = prepare(&session.draft, Some(&ctx));
-    session.stale = is_stale(session, &prepared);
+    session.stale = session_is_stale(session, sources);
     session.stale
+}
+
+/// Whether `session` is stale under `sources`.
+pub fn session_is_stale(session: &RequestSession, sources: &TokenSources) -> bool {
+    let ctx = request_context(session, sources);
+    is_stale(session, &prepare(&session.draft, Some(&ctx)))
 }
 
 // ── Sending ─────────────────────────────────────────────────────────────────
@@ -735,10 +739,9 @@ mod tests {
         assert!(session.stale);
     }
 
-    #[test]
-    fn a_new_cached_value_marks_the_dependent_stale() {
+    /// A workspace where `dependent` reads `{{t}}` from `login`'s response.
+    fn token_workspace() -> (crate::workspace_state::Workspace, u64, u64) {
         use crate::model::{CheckSource, ResponseToken};
-        use crate::response_token_cache::ValueKey;
         use crate::workspace_state::Workspace;
 
         let mut workspace = Workspace::new();
@@ -759,24 +762,31 @@ mod tests {
             path: ".t".into(),
             max_age_secs: None,
         }]);
-        let record = |workspace: &mut Workspace, value: &str| {
-            let fingerprint = workspace
-                .token_sources(0.0)
-                .fingerprint(workspace.session(login).unwrap());
-            workspace.response_cache.record(
-                login,
-                &fingerprint,
-                0,
-                vec![(
-                    ValueKey {
-                        source: CheckSource::Json,
-                        path: ".t".into(),
-                    },
-                    value.into(),
-                )],
-            );
-        };
-        record(&mut workspace, "one");
+        (workspace, login, dependent_id)
+    }
+
+    fn record_token(workspace: &mut crate::workspace_state::Workspace, login: u64, value: &str) {
+        use crate::model::CheckSource;
+        use crate::response_token_cache::ValueKey;
+        let fingerprint = workspace
+            .token_sources(0.0)
+            .fingerprint(workspace.session(login).unwrap());
+        workspace.response_cache.record(
+            login,
+            &fingerprint,
+            0,
+            vec![(
+                ValueKey {
+                    source: CheckSource::Json,
+                    path: ".t".into(),
+                },
+                value.into(),
+            )],
+        );
+    }
+
+    /// Mark `dependent` as sent with its current resolved request.
+    fn mark_sent(workspace: &mut crate::workspace_state::Workspace, dependent_id: u64) {
         let sources = workspace.token_sources(0.0);
         let prepared = prepare_send(
             workspace.session(dependent_id).unwrap(),
@@ -788,9 +798,48 @@ mod tests {
         let session = workspace.session_mut(dependent_id).unwrap();
         session.sent_fingerprint = fingerprint;
         session.response = Some(ok("{}"));
+    }
+
+    #[test]
+    fn a_new_cached_value_marks_the_dependent_stale() {
+        let (mut workspace, login, dependent_id) = token_workspace();
+        record_token(&mut workspace, login, "one");
+        mark_sent(&mut workspace, dependent_id);
         assert!(!workspace.refresh_stale(dependent_id));
-        record(&mut workspace, "two");
+        record_token(&mut workspace, login, "two");
         assert!(workspace.refresh_stale(dependent_id));
+    }
+
+    #[test]
+    fn is_token_source_finds_group_and_global_sources() {
+        let (mut workspace, login, dependent_id) = token_workspace();
+        assert!(workspace.is_token_source(login));
+        assert!(!workspace.is_token_source(dependent_id));
+        workspace.groups[0].response_tokens = None;
+        assert!(!workspace.is_token_source(login));
+        workspace
+            .global_response_tokens
+            .push(crate::model::ResponseToken {
+                id: 2,
+                name: "g".into(),
+                request_id: dependent_id,
+                source: crate::model::CheckSource::Json,
+                path: ".g".into(),
+                max_age_secs: None,
+            });
+        assert!(workspace.is_token_source(dependent_id));
+    }
+
+    #[test]
+    fn editing_a_source_request_marks_the_dependent_stale() {
+        let (mut workspace, login, dependent_id) = token_workspace();
+        record_token(&mut workspace, login, "one");
+        mark_sent(&mut workspace, dependent_id);
+        workspace.refresh_all_stale();
+        assert!(!workspace.session(dependent_id).unwrap().stale);
+        workspace.session_mut(login).unwrap().draft.url = "https://api.test/login2".into();
+        workspace.refresh_all_stale();
+        assert!(workspace.session(dependent_id).unwrap().stale);
     }
 
     #[test]
