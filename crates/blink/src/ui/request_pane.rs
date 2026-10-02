@@ -2,10 +2,10 @@
 //! `RequestWorkspace.vue`, `RequestEditor.vue`, `KeyValueEditor.vue`,
 //! `TokenInput.vue`, `ChecksEditor.vue`, and `CodeEditor.vue`.
 
-mod checks;
+pub(crate) mod checks;
 mod code_language;
 mod code_panel;
-mod common;
+pub(crate) mod common;
 mod editor;
 
 use blink_core::codegen::generate_code;

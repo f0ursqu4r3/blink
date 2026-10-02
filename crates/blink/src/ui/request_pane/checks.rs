@@ -17,8 +17,8 @@ use crate::ui::key_value_editor::{check_box, ghost_button};
 use crate::ui::request_pane::common::{cell_select, edit_draft, help_link};
 use crate::ui::widgets::{WIDEST, tracked};
 
-const ROW_HEIGHT: f32 = 34.;
-const SIDE_COLUMN: f32 = 34.;
+pub(crate) const ROW_HEIGHT: f32 = 34.;
+pub(crate) const SIDE_COLUMN: f32 = 34.;
 
 /// Header name for header checks, a jq path for JSON checks.
 fn path_placeholder(source: CheckSource) -> &'static str {
@@ -481,7 +481,7 @@ fn section_heading(
         .child(help_link(id, "Help", help, cx).font_family(theme::SANS))
 }
 
-fn head(text: Option<&'static str>, cx: &App) -> Div {
+pub(crate) fn head(text: Option<&'static str>, cx: &App) -> Div {
     let colors = theme::colors(cx);
     div()
         .h(px(32.))
@@ -498,12 +498,12 @@ fn head(text: Option<&'static str>, cx: &App) -> Div {
         })
 }
 
-fn table_row(cx: &App) -> Div {
+pub(crate) fn table_row(cx: &App) -> Div {
     let _ = cx;
     div().flex().w_full()
 }
 
-fn cell(cx: &App) -> Div {
+pub(crate) fn cell(cx: &App) -> Div {
     let colors = theme::colors(cx);
     div()
         .h(px(ROW_HEIGHT))
@@ -516,7 +516,7 @@ fn cell(cx: &App) -> Div {
         .text_size(px(12.))
 }
 
-fn text_input(input: &Entity<InputState>) -> impl IntoElement {
+pub(crate) fn text_input(input: &Entity<InputState>) -> impl IntoElement {
     Input::new(input)
         .appearance(false)
         .small()
@@ -552,7 +552,7 @@ fn enabled_cell(
         ))
 }
 
-fn remove_cell(
+pub(crate) fn remove_cell(
     id: SharedString,
     label: String,
     on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,

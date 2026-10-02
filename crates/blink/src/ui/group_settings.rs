@@ -27,6 +27,7 @@ use crate::ui::form::{
     section_heading, section_heading_with_help, selected,
 };
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
+use crate::ui::response_tokens_editor::{ResponseTokensEditor, request_choices};
 use crate::ui::token_input::TokenInput;
 
 /// Open the dialog.
@@ -185,7 +186,7 @@ fn text_input<T>(value: &str, window: &mut Window, cx: &mut Context<T>) -> Entit
     cx.new(|cx| InputState::new(window, cx).default_value(value))
 }
 
-struct GroupForm {
+pub(crate) struct GroupForm {
     store: Entity<Store>,
     group_id: u64,
     name: Entity<InputState>,
@@ -200,13 +201,14 @@ struct GroupForm {
     local_tokens: Entity<KeyValueEditor>,
     local_rows: Vec<Pair>,
     environments: Entity<EnvironmentTokens>,
+    pub(crate) response_tokens: Entity<ResponseTokensEditor>,
     token_error: String,
     form_error: String,
     _subscriptions: Vec<Subscription>,
 }
 
 impl GroupForm {
-    fn new(
+    pub(crate) fn new(
         store: Entity<Store>,
         group_id: u64,
         window: &mut Window,
@@ -216,6 +218,7 @@ impl GroupForm {
         let group = workspace.group(group_id).cloned().expect("group exists");
         let groups = workspace.groups.clone();
         let preferences = workspace.preferences.clone();
+        let requests = request_choices(workspace);
         // The group's own tokens, as a request in it resolves them.
         let context = workspace
             .token_sources(blink_core::history::now_ms())
@@ -308,6 +311,10 @@ impl GroupForm {
             )
         });
 
+        let saved_tokens = group.response_tokens.clone().unwrap_or_default();
+        let response_tokens =
+            cx.new(|cx| ResponseTokensEditor::new(saved_tokens, requests, window, cx));
+
         let subscriptions = vec![
             cx.subscribe_in(
                 &parent,
@@ -352,6 +359,7 @@ impl GroupForm {
             local_tokens,
             local_rows,
             environments,
+            response_tokens,
             token_error: String::new(),
             form_error: String::new(),
             _subscriptions: subscriptions.into_iter().chain([watch_name]).collect(),
@@ -425,7 +433,7 @@ impl GroupForm {
     }
 
     /// Save, as the Vue `handleSave`. True when the dialog may close.
-    fn save(&mut self, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn save(&mut self, cx: &mut Context<Self>) -> bool {
         cx.notify();
         let name = self.name.read(cx).value().trim().to_string();
         let url = self.url.read(cx).value().to_string();
@@ -468,6 +476,18 @@ impl GroupForm {
                 }
             };
         self.token_error.clear();
+        // Text names of this group: the base table and every environment.
+        let text_names: Vec<&str> = local_definitions
+            .keys()
+            .chain(environments.iter().flatten().flat_map(|e| e.values.keys()))
+            .map(String::as_str)
+            .collect();
+        let sessions = self.store.read(cx).workspace.sessions.clone();
+        let Some(response_tokens) = self.response_tokens.update(cx, |editor, cx| {
+            editor.validated(&text_names, &sessions, cx)
+        }) else {
+            return false;
+        };
         let method = selected(&self.method, cx);
         let changes = GroupSettingsChanges {
             name: Some(name),
@@ -479,7 +499,7 @@ impl GroupForm {
                 (!url.is_empty()).then_some(url),
             )),
             environments: Some(environments),
-            response_tokens: None,
+            response_tokens: Some((!response_tokens.is_empty()).then_some(response_tokens)),
         };
         let group_id = self.group_id;
         self.store.update(cx, |store, cx| {
@@ -654,6 +674,7 @@ impl Render for GroupForm {
             .child(defaults)
             .child(authorization)
             .child(tokens)
+            .child(self.response_tokens.clone())
             .when(!self.form_error.is_empty(), |this| {
                 this.child(
                     div()

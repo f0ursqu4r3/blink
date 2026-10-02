@@ -11,6 +11,7 @@ pub mod history_view;
 pub mod key_value_editor;
 pub mod request_pane;
 pub mod response_panel;
+pub mod response_tokens_editor;
 pub mod settings_window;
 pub mod status_bar;
 pub mod tabs;

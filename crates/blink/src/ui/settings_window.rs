@@ -23,6 +23,7 @@ use crate::ui::form::{
     footer_button, note, section_heading, section_heading_with_help, selected, u,
 };
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
+use crate::ui::response_tokens_editor::{ResponseTokensEditor, request_choices};
 use crate::ui::widgets::dotted;
 
 actions!(settings, [CancelSettings]);
@@ -293,6 +294,7 @@ pub struct Settings {
     proxy_url: Entity<InputState>,
     tokens: Entity<KeyValueEditor>,
     token_rows: Vec<Pair>,
+    pub(crate) response_tokens: Entity<ResponseTokensEditor>,
     theme: Entity<ThemeSettings>,
     /// Errors show only after a save attempt, so typing does not flash errors.
     submitted: bool,
@@ -303,9 +305,11 @@ pub struct Settings {
 impl EventEmitter<SaveRequested> for Settings {}
 
 impl Settings {
-    fn new(store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
+    pub(crate) fn new(store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let workspace = &store.read(cx).workspace;
         let base = workspace.preferences.clone();
+        let saved_tokens = workspace.global_response_tokens.clone();
+        let requests = request_choices(workspace);
         let token_rows = definitions_to_rows(&workspace.global_definitions);
         let methods = METHODS.iter().map(|m| Choice::same(*m)).collect();
         let method = choice_select(methods, &base.default_method, window, cx);
@@ -340,6 +344,8 @@ impl Settings {
                 cx,
             )
         });
+        let response_tokens =
+            cx.new(|cx| ResponseTokensEditor::new(saved_tokens, requests, window, cx));
         let mut subscriptions =
             vec![cx.subscribe(&tokens, |this, _, event: &KeyValueEvent, cx| {
                 if let KeyValueEvent::Change(rows) = event {
@@ -377,6 +383,7 @@ impl Settings {
             proxy_url,
             tokens,
             token_rows,
+            response_tokens,
             theme,
             submitted: false,
             token_error: String::new(),
@@ -408,7 +415,7 @@ impl Settings {
     }
 
     /// Save, as the Vue `save()`. True when the dialog may close.
-    fn save(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub(crate) fn save(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> bool {
         self.submitted = true;
         cx.notify();
         let rows = if self.token_rows.is_empty() {
@@ -426,6 +433,13 @@ impl Settings {
                 return false;
             }
         };
+        let text_names: Vec<&str> = definitions.keys().map(String::as_str).collect();
+        let sessions = self.store.read(cx).workspace.sessions.clone();
+        let Some(response_tokens) = self.response_tokens.update(cx, |editor, cx| {
+            editor.validated(&text_names, &sessions, cx)
+        }) else {
+            return false;
+        };
         if !cx.global::<AppTheme>().state.error.is_empty() {
             return false;
         }
@@ -435,6 +449,7 @@ impl Settings {
         self.store.update(cx, |store, cx| {
             store.update_workspace(cx, |workspace| {
                 workspace.set_global_definitions(definitions);
+                workspace.set_global_response_tokens(response_tokens);
                 workspace.set_preferences(next);
             })
         });
@@ -711,6 +726,13 @@ impl Render for Settings {
                         .child(self.token_error.clone()),
                 )
             })
+            .child(
+                div()
+                    .border_t_1()
+                    .border_color(colors.border)
+                    .pt(u(12.))
+                    .child(self.response_tokens.clone()),
+            )
     }
 }
 
