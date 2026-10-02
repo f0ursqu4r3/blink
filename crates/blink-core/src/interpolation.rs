@@ -130,6 +130,14 @@ fn replace(
     } else {
         name.to_string()
     };
+    if let Some(info) = ctx.response_info(&lookup)
+        && info.fetched_at_ms.is_none()
+    {
+        return Err(format!(
+            "\"{name}\" has no current value. Send \"{}\" or the request that uses it.",
+            info.request_label
+        ));
+    }
     let value = if workspace_only {
         ctx.workspace_definitions.get(name)
     } else {
@@ -364,5 +372,27 @@ mod tests {
                 .unwrap_err()
                 .starts_with("\"csrf\" has no current value")
         );
+    }
+
+    #[test]
+    fn a_global_response_token_without_a_value_beats_a_global_text_token() {
+        let mut ctx = both(&[], &[("csrf", "text-value")]);
+        ctx.workspace_response_tokens
+            .insert("csrf".into(), info(None));
+        for template in ["{{csrf}}", "{{_.csrf}}"] {
+            assert_eq!(
+                interpolate(template, &ctx).unwrap_err(),
+                "\"csrf\" has no current value. Send \"Login\" or the request that uses it."
+            );
+        }
+    }
+
+    #[test]
+    fn a_global_response_token_with_a_value_resolves_bare_and_prefixed() {
+        let mut ctx = both(&[], &[("csrf", "{{literal}}")]);
+        ctx.workspace_response_tokens
+            .insert("csrf".into(), info(Some(1)));
+        assert_eq!(interpolate("{{csrf}}", &ctx).unwrap(), "{{literal}}");
+        assert_eq!(interpolate("{{_.csrf}}", &ctx).unwrap(), "{{literal}}");
     }
 }

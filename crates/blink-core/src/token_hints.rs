@@ -68,7 +68,7 @@ pub fn token_value(name: &str, ctx: Option<&InterpolationContext>) -> Option<Str
     if !is_resolved(key, workspace_only, Some(ctx)) {
         return None;
     }
-    match interpolate(&format!("{{{{{name}}}}}"), ctx) {
+    match interpolate(&format!("{{{{{name}}}}}"), &display_context(ctx)) {
         Ok(value) => Some(value),
         // A cycle or a missing nested token: show the raw value.
         Err(_) => if workspace_only || !ctx.definitions.contains_key(key) {
@@ -78,6 +78,23 @@ pub fn token_value(name: &str, ctx: Option<&InterpolationContext>) -> Option<Str
         }
         .cloned(),
     }
+}
+
+/// A copy of `ctx` where each response token holds its own reference as
+/// text, so nested expansion never reveals a response value.
+fn display_context(ctx: &InterpolationContext) -> InterpolationContext {
+    let mut shown = ctx.clone();
+    for name in ctx.response_tokens.keys() {
+        shown
+            .definitions
+            .insert(name.clone(), format!("{{{{{name}}}}}"));
+    }
+    for name in ctx.workspace_response_tokens.keys() {
+        shown
+            .workspace_definitions
+            .insert(name.clone(), format!("{{{{_.{name}}}}}"));
+    }
+    shown
 }
 
 /// Every name a field can reference, local names first.
@@ -575,5 +592,66 @@ mod tests {
         assert_eq!(age_label(3 * 60_000), "3 min ago");
         assert_eq!(age_label(2 * 3_600_000), "2 h ago");
         assert_eq!(age_label(3 * 86_400_000), "3 d ago");
+    }
+
+    fn nested_ctx(fetched: Option<u64>) -> InterpolationContext {
+        let mut ctx = InterpolationContext::local(defs(&[
+            ("auth", "Bearer {{access_token}}"),
+            ("access_token", "secret-value"),
+        ]));
+        ctx.response_tokens.insert(
+            "access_token".into(),
+            ResponseTokenInfo {
+                request_label: "Login".into(),
+                source: CheckSource::Json,
+                path: ".access_token".into(),
+                fetched_at_ms: fetched,
+                environment: None,
+                problem: None,
+            },
+        );
+        ctx
+    }
+
+    #[test]
+    fn a_text_token_never_shows_a_nested_response_value() {
+        for fetched in [Some(1), None] {
+            let ctx = nested_ctx(fetched);
+            let span = &token_spans("{{auth}}", Some(&ctx))[0];
+            let hint = token_hint(span, Some(&ctx), 0.0);
+            assert_eq!(hint, "auth = Bearer {{access_token}}");
+            let option = token_options(Some(&ctx))
+                .into_iter()
+                .find(|o| o.name == "auth")
+                .unwrap();
+            assert_eq!(option.value, "Bearer {{access_token}}");
+            let shown = crate::token_display::token_display("{{auth}}", Some(&ctx));
+            assert_eq!(shown.text, "Bearer {{access_token}}");
+            assert!(!shown.text.contains("secret-value"));
+        }
+    }
+
+    #[test]
+    fn a_global_response_token_marks_bare_and_prefixed_references() {
+        let mut ctx = InterpolationContext::new(defs(&[]), defs(&[("csrf", "tok")]));
+        ctx.workspace_response_tokens.insert(
+            "csrf".into(),
+            ResponseTokenInfo {
+                request_label: "Login".into(),
+                source: CheckSource::Json,
+                path: ".csrf".into(),
+                fetched_at_ms: Some(1),
+                environment: None,
+                problem: None,
+            },
+        );
+        assert_eq!(interpolate("{{csrf}}", &ctx).unwrap(), "tok");
+        assert_eq!(interpolate("{{_.csrf}}", &ctx).unwrap(), "tok");
+        for text in ["{{csrf}}", "{{_.csrf}}"] {
+            assert_eq!(
+                token_spans(text, Some(&ctx))[0].token,
+                Some(TokenState::Response)
+            );
+        }
     }
 }
