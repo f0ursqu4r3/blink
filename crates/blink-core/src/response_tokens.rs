@@ -2,6 +2,7 @@
 //! validation, resolution, and the send plan.
 
 use std::cell::RefCell;
+use std::collections::{HashMap, HashSet};
 use std::sync::LazyLock;
 
 use indexmap::IndexMap;
@@ -9,8 +10,10 @@ use indexmap::IndexMap;
 use crate::authorization::{ResolvedRequestContext, ancestry, resolve_authorization};
 use crate::checks::{INVALID_NAME_MESSAGE, is_capture_name};
 use crate::environments::{group_definitions, request_environment};
-use crate::interpolation::{InterpolationContext, ResponseTokenInfo};
-use crate::model::{CheckSource, Definitions, RequestGroup, RequestSession, ResponseToken};
+use crate::interpolation::{InterpolationContext, ResponseTokenInfo, TOKEN_RE};
+use crate::model::{
+    AuthorizationConfig, CheckSource, Definitions, RequestGroup, RequestSession, ResponseToken,
+};
 use crate::response_token_cache::{ResponseTokenCache, ValueKey};
 use crate::session::{LabelTokens, session_label};
 
@@ -107,6 +110,11 @@ pub struct TokenSources<'a> {
     pub now_ms: f64,
     /// Requests whose fingerprint is being built, to stop recursion.
     visiting: RefCell<Vec<u64>>,
+    /// Fingerprints already built, by request id.
+    fingerprints: RefCell<HashMap<u64, String>>,
+    /// Fingerprints built, not remembered: the cost of resolution.
+    #[cfg(test)]
+    prepares: std::cell::Cell<usize>,
 }
 
 impl<'a> TokenSources<'a> {
@@ -126,6 +134,9 @@ impl<'a> TokenSources<'a> {
             cache,
             now_ms: 0.0,
             visiting: RefCell::new(Vec::new()),
+            fingerprints: RefCell::new(HashMap::new()),
+            #[cfg(test)]
+            prepares: std::cell::Cell::new(0),
         }
     }
 
@@ -144,6 +155,17 @@ impl<'a> TokenSources<'a> {
     /// The nearest scope wins; in one scope, text tokens win over response
     /// tokens.
     pub fn context(&self, group_id: Option<u64>) -> InterpolationContext {
+        self.context_reading(group_id, None)
+    }
+
+    /// `context`, but only response tokens named in `used` read a value.
+    /// The others keep their names and read nothing.
+    fn context_reading(
+        &self,
+        group_id: Option<u64>,
+        used: Option<&HashSet<String>>,
+    ) -> InterpolationContext {
+        let reads = |token: &ResponseToken| used.is_none_or(|used| used.contains(&token.name));
         let mut definitions = Definitions::new();
         let mut response_tokens = IndexMap::new();
         for group in ancestry(group_id, self.groups) {
@@ -159,7 +181,7 @@ impl<'a> TokenSources<'a> {
                 {
                     continue;
                 }
-                let (info, value) = self.resolve(token);
+                let (info, value) = self.resolve(token, reads(token));
                 if let Some(value) = value {
                     definitions.insert(token.name.clone(), value);
                 }
@@ -175,7 +197,7 @@ impl<'a> TokenSources<'a> {
             {
                 continue;
             }
-            let (info, value) = self.resolve(token);
+            let (info, value) = self.resolve(token, reads(token));
             if let Some(value) = value {
                 workspace_definitions.insert(token.name.clone(), value);
             }
@@ -202,22 +224,74 @@ impl<'a> TokenSources<'a> {
         }
     }
 
-    /// The fingerprint `session` would send now. Empty while `session` is
-    /// already being fingerprinted, so a token that reads its own request
-    /// finds no value.
+    /// The fingerprint `session` would send now.
+    ///
+    /// Empty while `session` is already being fingerprinted, so a token that
+    /// reads its own request finds no value.
+    ///
+    /// Each fingerprint is built once and remembered by request id, at any
+    /// depth, so resolution costs about O(k²) for k response tokens instead of
+    /// O(k!). The source context reads only the response tokens the request
+    /// references, so the recursion follows real use and never reaches an
+    /// unrelated request on the `visiting` stack. In an acyclic graph a
+    /// fingerprint therefore does not depend on the stack, and the memo is
+    /// exact. In a cycle the result is degenerate anyway: the send planner
+    /// reports the cycle and the lookup misses. `TokenSources` is
+    /// short-lived, so the memo cannot go stale.
     pub fn fingerprint(&self, session: &RequestSession) -> String {
+        if let Some(fingerprint) = self.fingerprints.borrow().get(&session.id) {
+            return fingerprint.clone();
+        }
         if self.visiting.borrow().contains(&session.id) {
             return String::new();
         }
         self.visiting.borrow_mut().push(session.id);
-        let ctx = self.request_context(session);
+        #[cfg(test)]
+        self.prepares.set(self.prepares.get() + 1);
+        let auth = resolve_authorization(
+            session.draft.local_auth.as_ref(),
+            session.group_id,
+            self.groups,
+        );
+        let used = self.used_names(session, &auth);
+        let ctx = ResolvedRequestContext {
+            auth,
+            tokens: self.context_reading(session.group_id, Some(&used)),
+        };
         let fingerprint = crate::runner::prepare(&session.draft, Some(&ctx)).fingerprint();
         self.visiting.borrow_mut().pop();
+        self.fingerprints
+            .borrow_mut()
+            .insert(session.id, fingerprint.clone());
         fingerprint
     }
 
-    /// What is known about `token`, and its value when usable.
-    fn resolve(&self, token: &ResponseToken) -> (ResponseTokenInfo, Option<String>) {
+    /// Every token name `session` can reach: names in its draft and auth,
+    /// and names in the text tokens those names refer to. A superset is safe.
+    fn used_names(&self, session: &RequestSession, auth: &AuthorizationConfig) -> HashSet<String> {
+        let texts: Vec<Definitions> = ancestry(session.group_id, self.groups)
+            .into_iter()
+            .map(group_definitions)
+            .chain(std::iter::once(self.globals.clone()))
+            .collect();
+        let mut pending = vec![
+            serde_json::to_string(&session.draft).unwrap_or_default(),
+            serde_json::to_string(auth).unwrap_or_default(),
+        ];
+        let mut names = HashSet::new();
+        while let Some(text) = pending.pop() {
+            for caps in TOKEN_RE.captures_iter(&text) {
+                let name = caps[2].to_string();
+                if names.insert(name.clone()) {
+                    pending.extend(texts.iter().filter_map(|t| t.get(&name).cloned()));
+                }
+            }
+        }
+        names
+    }
+
+    /// What is known about `token`, and its value when usable and `read`.
+    fn resolve(&self, token: &ResponseToken, read: bool) -> (ResponseTokenInfo, Option<String>) {
         let Some(source) = self.sessions.iter().find(|s| s.id == token.request_id) else {
             let info = ResponseTokenInfo {
                 request_label: "a deleted request".to_string(),
@@ -233,15 +307,17 @@ impl<'a> TokenSources<'a> {
             source: token.source,
             path: token.path.clone(),
         };
-        let fingerprint = self.fingerprint(source);
-        let value = self
-            .cache
-            .lookup(token.request_id, &fingerprint, &key)
+        let value = read
+            .then(|| self.fingerprint(source))
+            .and_then(|fingerprint| {
+                self.cache
+                    .lookup(token.request_id, &fingerprint, &key)
+                    .map(|(value, at)| (value.to_string(), at))
+            })
             .filter(|(_, at)| match token.max_age_secs {
                 None => true,
                 Some(secs) => self.now_ms - *at as f64 <= secs as f64 * 1000.0,
-            })
-            .map(|(value, at)| (value.to_string(), at));
+            });
         let info = ResponseTokenInfo {
             request_label: session_label(
                 source,
@@ -491,7 +567,170 @@ mod tests {
         let globals = Definitions::new();
         let cache = ResponseTokenCache::default();
         let all = sources(&groups, &globals, &sessions, &cache, 0.0);
-        let _ = all.context(Some(1));
+        let ctx = all.context(Some(1));
         let _ = all.fingerprint(&source);
+        assert!(!ctx.definitions.contains_key("t"));
+        assert_eq!(ctx.response_tokens["t"].fetched_at_ms, None);
+    }
+
+    /// A request in no group that sends `{{uses}}` in a header.
+    fn request(uses: &[&str]) -> RequestSession {
+        let mut session = create_session(None);
+        session.draft.url = format!("https://api.test/r{}", session.id);
+        for name in uses {
+            session
+                .draft
+                .headers
+                .push(crate::request::pair("X-Token", format!("{{{{{name}}}}}")));
+        }
+        session
+    }
+
+    fn json_value() -> ValueKey {
+        ValueKey {
+            source: CheckSource::Json,
+            path: ".access_token".into(),
+        }
+    }
+
+    #[test]
+    fn requests_that_read_each_other_do_not_recurse() {
+        let mut a = login(1);
+        let mut b = login(1);
+        a.draft
+            .headers
+            .push(crate::request::pair("Authorization", "Bearer {{tb}}"));
+        b.draft
+            .headers
+            .push(crate::request::pair("Authorization", "Bearer {{ta}}"));
+        let groups = vec![group(1, vec![token(5, "ta", a.id), token(6, "tb", b.id)])];
+        let sessions = vec![a.clone(), b.clone()];
+        let globals = Definitions::new();
+        let cache = ResponseTokenCache::default();
+        let all = sources(&groups, &globals, &sessions, &cache, 0.0);
+        let ctx = all.context(Some(1));
+        let _ = all.fingerprint(&a);
+        let _ = all.fingerprint(&b);
+        for name in ["ta", "tb"] {
+            assert!(!ctx.definitions.contains_key(name));
+            assert_eq!(ctx.response_tokens[name].fetched_at_ms, None);
+        }
+    }
+
+    #[test]
+    fn a_nearer_response_token_without_a_value_hides_a_farther_text_token() {
+        let source = login(1);
+        let mut parent = group(1, vec![]);
+        parent.local_definitions =
+            Some([("t".to_string(), "far".to_string())].into_iter().collect());
+        let mut child = group(2, vec![token(5, "t", source.id)]);
+        child.parent_id = Some(1);
+        let groups = vec![parent, child];
+        let sessions = vec![source];
+        let globals = Definitions::new();
+        let cache = ResponseTokenCache::default();
+        let ctx = sources(&groups, &globals, &sessions, &cache, 0.0).context(Some(2));
+        assert!(!ctx.definitions.contains_key("t"));
+        let info = ctx.response_info("t").expect("the nearer response token");
+        assert_eq!(info, &ctx.response_tokens["t"]);
+        assert_eq!(info.fetched_at_ms, None);
+        assert_eq!(info.problem, None);
+    }
+
+    /// Global token `t{i}` reads request `i`; request `i` sends `uses(i)`.
+    fn global_chain(
+        uses: impl Fn(usize) -> Vec<String>,
+    ) -> (Vec<RequestSession>, Vec<ResponseToken>) {
+        let sessions: Vec<RequestSession> = (0..8)
+            .map(|i| {
+                let names = uses(i);
+                request(&names.iter().map(String::as_str).collect::<Vec<_>>())
+            })
+            .collect();
+        let tokens = sessions
+            .iter()
+            .enumerate()
+            .map(|(i, s)| token(100 + i as u64, &format!("t{i}"), s.id))
+            .collect();
+        (sessions, tokens)
+    }
+
+    #[test]
+    fn a_chain_of_eight_response_tokens_fingerprints_each_request_once() {
+        // Request i sends t{i+1}; the last sends nothing.
+        let (sessions, tokens) = global_chain(|i| {
+            if i < 7 {
+                vec![format!("t{}", i + 1)]
+            } else {
+                vec![]
+            }
+        });
+        let globals = Definitions::new();
+        let mut cache = ResponseTokenCache::default();
+        // Send the chain from the end, as a user would.
+        for i in (0..8).rev() {
+            let fingerprint = TokenSources::new(&[], &globals, &tokens, &sessions, &cache)
+                .fingerprint(&sessions[i]);
+            cache.record(
+                sessions[i].id,
+                &fingerprint,
+                0,
+                vec![(json_value(), format!("v{i}"))],
+            );
+        }
+
+        let all = TokenSources::new(&[], &globals, &tokens, &sessions, &cache);
+        let ctx = all.context(None);
+        assert_eq!(all.prepares.get(), 8);
+        for i in 0..8 {
+            assert_eq!(ctx.workspace_definitions[&format!("t{i}")], format!("v{i}"));
+        }
+    }
+
+    #[test]
+    fn eight_requests_that_use_every_token_fingerprint_each_request_once() {
+        let (sessions, tokens) = global_chain(|_| (0..8).map(|j| format!("t{j}")).collect());
+        let globals = Definitions::new();
+        let cache = ResponseTokenCache::default();
+        let all = TokenSources::new(&[], &globals, &tokens, &sessions, &cache);
+        let ctx = all.context(None);
+        assert_eq!(all.prepares.get(), 8);
+        assert!(
+            ctx.workspace_response_tokens
+                .values()
+                .all(|info| info.fetched_at_ms.is_none())
+        );
+    }
+
+    #[test]
+    fn an_unused_token_does_not_change_a_remembered_fingerprint() {
+        // A sends tb, B sends tc, C sends nothing. Every request also sees
+        // every token, but uses only its own.
+        let c = request(&[]);
+        let b = request(&["tc"]);
+        let a = request(&["tb"]);
+        let tokens = vec![
+            token(1, "tc", c.id),
+            token(2, "ta", a.id),
+            token(3, "tb", b.id),
+        ];
+        let sessions = vec![a.clone(), b.clone(), c.clone()];
+        let globals = Definitions::new();
+        let mut cache = ResponseTokenCache::default();
+        for (session, value) in [(&c, "vc"), (&b, "vb"), (&a, "va")] {
+            let fingerprint =
+                TokenSources::new(&[], &globals, &tokens, &sessions, &cache).fingerprint(session);
+            cache.record(
+                session.id,
+                &fingerprint,
+                0,
+                vec![(json_value(), value.into())],
+            );
+        }
+
+        let ctx = TokenSources::new(&[], &globals, &tokens, &sessions, &cache).context(None);
+        assert_eq!(ctx.workspace_definitions["tc"], "vc");
+        assert_eq!(ctx.workspace_definitions["tb"], "vb");
+        assert_eq!(ctx.workspace_definitions["ta"], "va");
     }
 }
