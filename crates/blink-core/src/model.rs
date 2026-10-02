@@ -222,6 +222,23 @@ pub struct Capture {
     pub path: String,
 }
 
+/// A token whose value comes from the last 2xx response of another request.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ResponseToken {
+    pub id: u64,
+    /// Token name, used as {{name}}.
+    pub name: String,
+    /// The source request (session id).
+    pub request_id: u64,
+    pub source: CheckSource,
+    /// jq expression or header name, as in captures.
+    pub path: String,
+    /// None: send again only when no usable value exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub max_age_secs: Option<u64>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
@@ -387,6 +404,9 @@ pub struct RequestGroup {
     /// Local token definitions for interpolation.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub local_definitions: Option<Definitions>,
+    /// Tokens read from responses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub response_tokens: Option<Vec<ResponseToken>>,
     /// Defaults for new requests in this group. None inherits.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub default_method: Option<String>,
@@ -563,6 +583,8 @@ pub struct RequestSession {
     pub socket: Option<SocketSession>,
     /// The request changed since the shown response was sent. Not saved.
     pub stale: bool,
+    /// The source request label while a response token dependency sends. Not saved.
+    pub waiting_on: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

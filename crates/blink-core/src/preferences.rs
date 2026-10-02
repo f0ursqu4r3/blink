@@ -243,6 +243,7 @@ mod tests {
             collapsed: false,
             local_auth: None,
             local_definitions: None,
+            response_tokens: None,
             default_method: None,
             default_url: None,
             environments: None,
@@ -285,6 +286,7 @@ mod tests {
             &Definitions::new(),
             &default_preferences(),
             &[session.id],
+            &[],
         )
     }
 
@@ -376,6 +378,7 @@ mod tests {
             &globals,
             &preferences,
             &[session.id],
+            &[],
         ))
         .unwrap();
         assert_eq!(decoded.preferences, preferences);

@@ -38,6 +38,7 @@ mod tests {
                 token: "abc".into(),
             }),
             local_definitions: None,
+            response_tokens: None,
             default_method: None,
             default_url: None,
             environments: None,

@@ -24,7 +24,7 @@ use crate::groups::{
 use crate::import::count_requests;
 use crate::model::{
     AuthorizationConfig, Definitions, Environment, ImportResult, ImportedGroup, PaneLayout,
-    RequestGroup, RequestSession, WorkspacePreferences,
+    RequestGroup, RequestSession, ResponseToken, WorkspacePreferences,
 };
 use crate::preferences::{
     apply_new_request_defaults, default_preferences, resolve_new_request_defaults,
@@ -108,6 +108,7 @@ pub struct GroupSettingsChanges {
     /// Sets the default method and URL together.
     pub new_request_defaults: Option<(Option<String>, Option<String>)>,
     pub environments: Option<Option<Vec<Environment>>>,
+    pub response_tokens: Option<Option<Vec<ResponseToken>>>,
 }
 
 /// The import notice: a message and the skipped-item details.
@@ -131,6 +132,8 @@ pub struct Workspace {
     pub active_id: Option<u64>,
     /// Workspace-global token definitions, shared across all requests.
     pub global_definitions: Definitions,
+    /// Workspace-global response tokens.
+    pub global_response_tokens: Vec<ResponseToken>,
     pub preferences: WorkspacePreferences,
     /// Selected Browser rows and the range anchor. Not saved.
     pub selected_ids: Vec<u64>,
@@ -167,6 +170,7 @@ impl Workspace {
             open_ids: vec![id],
             active_id: Some(id),
             global_definitions: Definitions::new(),
+            global_response_tokens: Vec::new(),
             preferences: default_preferences(),
             selected_ids: Vec::new(),
             selection_anchor_id: None,
@@ -191,6 +195,7 @@ impl Workspace {
             &self.global_definitions,
             &self.preferences,
             &self.open_ids,
+            &self.global_response_tokens,
         )
     }
 
@@ -215,6 +220,7 @@ impl Workspace {
             &self.global_definitions,
             &self.preferences,
             &self.open_ids,
+            &self.global_response_tokens,
         )
     }
 
@@ -233,6 +239,7 @@ impl Workspace {
             ws.open_ids = restored.open_ids;
             ws.active_id = restored.active_id;
             ws.global_definitions = restored.global_definitions;
+            ws.global_response_tokens = restored.global_response_tokens;
             ws.preferences = restored.preferences;
         });
         Ok(())
@@ -247,6 +254,7 @@ impl Workspace {
             ws.sessions = vec![session];
             ws.groups.clear();
             ws.global_definitions = Definitions::new();
+            ws.global_response_tokens.clear();
             ws.preferences = default_preferences();
         });
     }
@@ -960,6 +968,10 @@ impl Workspace {
     }
 
     /// Replace the workspace-wide global definitions map.
+    pub fn set_global_response_tokens(&mut self, tokens: Vec<ResponseToken>) {
+        self.global_response_tokens = tokens;
+    }
+
     pub fn set_global_definitions(&mut self, definitions: Definitions) {
         self.global_definitions = definitions;
     }
@@ -1060,6 +1072,11 @@ impl Workspace {
             }
             if let Some(local_definitions) = changes.local_definitions {
                 ws.set_group_local_definitions(group_id, Some(local_definitions));
+            }
+            if let Some(tokens) = changes.response_tokens
+                && let Some(group) = ws.group_mut(group_id)
+            {
+                group.response_tokens = tokens;
             }
             if let Some(environments) = changes.environments {
                 ws.set_group_environments(group_id, environments);
@@ -1922,6 +1939,7 @@ mod tests {
                 parent_id: Some(Some(parent)),
                 new_request_defaults: Some((Some("POST".into()), None)),
                 environments: None,
+                response_tokens: None,
             },
         );
         let saved = ws.group(group).unwrap();

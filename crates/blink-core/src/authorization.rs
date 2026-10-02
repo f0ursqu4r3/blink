@@ -122,6 +122,7 @@ mod tests {
             collapsed: false,
             local_auth: None,
             local_definitions: None,
+            response_tokens: None,
             default_method: None,
             default_url: None,
             environments: None,

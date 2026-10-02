@@ -469,6 +469,7 @@ impl GroupForm {
                 (!url.is_empty()).then_some(url),
             )),
             environments: Some(environments),
+            response_tokens: None,
         };
         let group_id = self.group_id;
         self.store.update(cx, |store, cx| {

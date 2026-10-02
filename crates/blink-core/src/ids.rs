@@ -40,3 +40,6 @@ pub static CHECKS: Sequence = Sequence::new();
 pub static HISTORY: Sequence = Sequence::new();
 /// WebSocket log messages.
 pub static SOCKET_MESSAGES: Sequence = Sequence::new();
+
+/// Response tokens.
+pub static RESPONSE_TOKENS: Sequence = Sequence::new();

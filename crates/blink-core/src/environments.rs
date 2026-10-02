@@ -172,6 +172,7 @@ mod tests {
             collapsed: false,
             local_auth: None,
             local_definitions: None,
+            response_tokens: None,
             default_method: None,
             default_url: None,
             environments: None,
@@ -295,6 +296,7 @@ mod tests {
             &defs(&[]),
             &WorkspacePreferences::default(),
             &[session.id],
+            &[],
         );
         assert_eq!(decode_workspace(&encoded).unwrap().groups, groups);
         let mut bad: serde_json::Value = serde_json::from_str(&encoded).unwrap();

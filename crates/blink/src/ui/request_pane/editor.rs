@@ -1748,6 +1748,7 @@ mod tests {
                 collapsed: false,
                 local_auth: auth,
                 local_definitions: None,
+                response_tokens: None,
                 default_method: None,
                 default_url: None,
                 environments: None,

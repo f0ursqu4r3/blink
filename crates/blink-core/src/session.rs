@@ -129,6 +129,7 @@ pub fn create_session(source: Option<&Draft>) -> RequestSession {
         stream: None,
         socket: None,
         stale: false,
+        waiting_on: None,
     }
 }
 
@@ -320,6 +321,7 @@ mod tests {
             collapsed: false,
             local_auth: None,
             local_definitions: Some(defs(&[("endpoint", "users")])),
+            response_tokens: None,
             default_method: None,
             default_url: None,
             environments: None,

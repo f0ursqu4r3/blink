@@ -14,7 +14,8 @@ use crate::history::HISTORY_LIMIT;
 use crate::ids;
 use crate::model::{
     ApiResponse, AuthKind, AuthorizationConfig, BodyMode, CheckOperator, CheckSource, Definitions,
-    Draft, HistoryEntry, RequestGroup, RequestSession, RequestView, WorkspacePreferences,
+    Draft, HistoryEntry, RequestGroup, RequestSession, RequestView, ResponseToken,
+    WorkspacePreferences,
 };
 use crate::preferences::{default_preferences, normalize_preferences};
 use crate::request::{build_request, is_method, js_trim};
@@ -502,6 +503,7 @@ pub fn encode_workspace(
     global_definitions: &Definitions,
     preferences: &WorkspacePreferences,
     open_ids: &[u64],
+    global_response_tokens: &[ResponseToken],
 ) -> String {
     let tabs: Vec<Value> = sessions
         .iter()
@@ -543,6 +545,9 @@ pub fn encode_workspace(
         "preferences": to_value(preferences),
         "tabs": tabs,
     });
+    if !global_response_tokens.is_empty() {
+        snapshot["globalResponseTokens"] = to_value(&global_response_tokens);
+    }
     js_numbers(&mut snapshot);
     snapshot.to_string()
 }
@@ -560,6 +565,7 @@ pub struct DecodedWorkspace {
     pub groups: Vec<RequestGroup>,
     pub global_definitions: Definitions,
     pub preferences: WorkspacePreferences,
+    pub global_response_tokens: Vec<ResponseToken>,
 }
 
 fn read<T: serde::de::DeserializeOwned>(value: Value) -> Checked<T> {
@@ -609,6 +615,7 @@ fn read_session(tab: &Value, version: u64) -> Checked<RequestSession> {
         stream: None,
         socket: None,
         stale: false,
+        waiting_on: None,
     })
 }
 
@@ -631,6 +638,10 @@ pub fn decode_workspace(content: &str) -> Result<DecodedWorkspace, String> {
     } else {
         Definitions::new()
     };
+    let global_response_tokens: Vec<ResponseToken> = match data.get("globalResponseTokens") {
+        Some(value) => read(value.clone())?,
+        None => Vec::new(),
+    };
     let mut sessions = sessions;
     for session in &sessions {
         reserve_session_id(session.id);
@@ -652,7 +663,15 @@ pub fn decode_workspace(content: &str) -> Result<DecodedWorkspace, String> {
         for environment in group.environments.iter().flatten() {
             ids::ENVIRONMENTS.reserve(environment.id);
         }
+        group
+            .response_tokens
+            .iter()
+            .flatten()
+            .for_each(|t| ids::RESPONSE_TOKENS.reserve(t.id));
     }
+    global_response_tokens
+        .iter()
+        .for_each(|t| ids::RESPONSE_TOKENS.reserve(t.id));
     if version < 3 {
         for session in sessions.iter_mut().filter(|s| s.response.is_some()) {
             let context = build_resolved_request_context(
@@ -692,6 +711,7 @@ pub fn decode_workspace(content: &str) -> Result<DecodedWorkspace, String> {
         groups,
         global_definitions,
         preferences,
+        global_response_tokens,
     })
 }
 
@@ -726,6 +746,7 @@ mod tests {
             collapsed: false,
             local_auth: None,
             local_definitions: None,
+            response_tokens: None,
             default_method: None,
             default_url: None,
             environments: None,
@@ -752,6 +773,7 @@ mod tests {
             globals,
             &default_preferences(),
             &open,
+            &[],
         )
     }
 
@@ -767,6 +789,7 @@ mod tests {
             &Definitions::new(),
             &default_preferences(),
             open_ids,
+            &[],
         )
     }
 
@@ -1487,6 +1510,7 @@ mod tests {
             &decoded.global_definitions,
             &decoded.preferences,
             &decoded.open_ids,
+            &decoded.global_response_tokens,
         )
     }
 
@@ -1521,6 +1545,19 @@ mod tests {
             .max()
             .unwrap();
         assert!(ids::ENVIRONMENTS.next() > max_environment);
+    }
+
+    #[test]
+    fn round_trips_v4_with_response_tokens() {
+        let input = fixture("v4-response-tokens");
+        let expected = fixture("v4-response-tokens.roundtrip");
+        let decoded = decode_workspace(&input).unwrap();
+        assert_eq!(decoded.global_response_tokens[0].name, "csrf");
+        assert_eq!(
+            decoded.groups[0].response_tokens.as_ref().unwrap()[0].max_age_secs,
+            Some(900)
+        );
+        assert_eq!(rust_round_trip(&input), expected.trim_end());
     }
 
     #[test]
