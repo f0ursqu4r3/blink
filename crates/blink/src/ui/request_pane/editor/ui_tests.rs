@@ -178,3 +178,119 @@ fn ctrl_space_opens_completions_without_typing(cx: &mut TestAppContext) {
         "no text typed"
     );
 }
+
+#[gpui_kit::test]
+fn the_bearer_field_shows_an_undefined_reference(cx: &mut TestAppContext) {
+    use blink_core::model::AuthorizationConfig;
+    use blink_core::token_hints::TokenState;
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let id = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.session_mut(id).unwrap().view.request_tab = "auth".into();
+        });
+    });
+    harness.edit_draft(cx, |draft| {
+        draft.local_auth = Some(AuthorizationConfig::Bearer {
+            token: "{{acess_token}}".into(),
+        });
+    });
+    harness.draw(cx);
+    let editor = editor(&harness, cx);
+    let token = cx.read(|cx| editor.read(cx).token.clone());
+    let shown = |cx: &TestAppContext| {
+        cx.read(|cx| {
+            let segments = token.read(cx).secret_segments().expect("masked row");
+            let text: String = segments.iter().map(|(t, _)| t.as_str()).collect();
+            (text, segments)
+        })
+    };
+
+    let (text, segments) = shown(cx);
+    assert_eq!(text, "{{acess_token}}");
+    assert!(!text.contains('•'));
+    assert_eq!(segments[0].1, Some(TokenState::Unresolved));
+
+    harness.edit_draft(cx, |draft| {
+        draft.local_auth = Some(AuthorizationConfig::Bearer {
+            token: "abc{{acess_token}}".into(),
+        });
+    });
+    harness.draw(cx);
+    assert_eq!(shown(cx).0, "•••{{acess_token}}");
+
+    // Focused: the plain field, every reference labeled with its raw text.
+    // Focus events reach only an active window.
+    harness.update(cx, |window, cx| {
+        window.activate_window();
+        token.update(cx, |token, cx| token.focus(window, cx));
+    });
+    harness.draw(cx);
+    cx.read(|cx| {
+        let input = token.read(cx);
+        assert!(input.secret_segments().is_none());
+        let state = input.state().read(cx);
+        assert_eq!(state.value().as_ref(), "abc{{acess_token}}");
+        let labels: Vec<_> = state
+            .tokens()
+            .iter()
+            .map(|span| span.token().label().to_string())
+            .collect();
+        assert_eq!(labels, ["{{acess_token}}"]);
+    });
+
+    // A change in the field updates the draft's bearer token.
+    token.update(cx, |_, cx| {
+        cx.emit(crate::ui::token_input::TokenInputEvent::Change(
+            "{{access_token}}".into(),
+        ))
+    });
+    cx.run_until_parked();
+    assert_eq!(
+        harness.session(cx, |s| s.draft.local_auth.clone()),
+        Some(AuthorizationConfig::Bearer {
+            token: "{{access_token}}".into()
+        })
+    );
+}
+
+#[gpui_kit::test]
+fn the_basic_password_is_a_secret_token_field(cx: &mut TestAppContext) {
+    use blink_core::model::AuthorizationConfig;
+
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let harness = test_support::open(cx, &engine);
+    let id = harness.active_id(cx);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace
+                .global_definitions
+                .insert("pass".into(), "hunter2".into());
+            workspace.session_mut(id).unwrap().view.request_tab = "auth".into();
+        });
+    });
+    harness.edit_draft(cx, |draft| {
+        draft.local_auth = Some(AuthorizationConfig::Basic {
+            username: "me".into(),
+            password: "x{{pass}}".into(),
+        });
+    });
+    harness.draw(cx);
+    let editor = editor(&harness, cx);
+    let (username, password) = cx.read(|cx| {
+        let editor = editor.read(cx);
+        (editor.username.clone(), editor.password.clone())
+    });
+    cx.read(|cx| {
+        assert!(username.read(cx).secret_segments().is_none());
+        let segments = password.read(cx).secret_segments().expect("masked row");
+        let text: String = segments.iter().map(|(t, _)| t.as_str()).collect();
+        assert_eq!(text, "•{{pass}}", "the value of a reference never shows");
+    });
+}

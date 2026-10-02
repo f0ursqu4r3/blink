@@ -18,9 +18,7 @@ use blink_core::request::{
 use blink_core::text_location::{TextLocation, describe_location};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::input::{
-    Editor, EditorState, Enter, Input, InputEvent, InputState, Textarea, TextareaState,
-};
+use gpui_kit::component::input::{Editor, EditorState, Enter, InputEvent, Textarea, TextareaState};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_kit::component::resizable::{resizable_panel, v_resizable};
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
@@ -241,9 +239,9 @@ pub struct RequestEditor {
     text_body: Entity<TextareaState>,
     variables: Entity<EditorState>,
     checks: Entity<ChecksEditor>,
-    token: Entity<InputState>,
+    token: Entity<TokenInput>,
     username: Entity<TokenInput>,
-    password: Entity<InputState>,
+    password: Entity<TokenInput>,
     format_error: String,
     schema_loading: bool,
     schema_error: String,
@@ -341,17 +339,20 @@ impl RequestEditor {
                 .placeholder("{\n  \"id\": \"1\"\n}")
         });
         let checks = cx.new(|cx| ChecksEditor::new(store.clone(), session_id, window, cx));
-        let token = cx.new(|cx| {
-            InputState::new(window, cx)
-                .masked(true)
-                .placeholder("Bearer token")
-        });
-        let username = cx.new(|cx| {
-            let mut input = TokenInput::new("", window, cx);
-            input.set_size(gpui_kit::component::Size::Small, cx);
-            input
-        });
-        let password = cx.new(|cx| InputState::new(window, cx).masked(true));
+        let auth_field = |placeholder: &'static str,
+                          secret: bool,
+                          window: &mut Window,
+                          cx: &mut Context<Self>| {
+            cx.new(|cx| {
+                let mut input = TokenInput::new(placeholder, window, cx);
+                input.set_size(gpui_kit::component::Size::Small, cx);
+                input.set_secret(secret, cx);
+                input
+            })
+        };
+        let token = auth_field("Bearer token", true, window, cx);
+        let username = auth_field("", false, window, cx);
+        let password = auth_field("", true, window, cx);
 
         let id = session_id;
         let mut subscriptions = vec![
@@ -395,9 +396,9 @@ impl RequestEditor {
                     });
                 }
             }),
-            cx.subscribe_in(&token, window, |this, input, event, _, cx| {
-                if let InputEvent::Change = event {
-                    let token = input.read(cx).value().to_string();
+            cx.subscribe_in(&token, window, |this, _, event: &TokenInputEvent, _, cx| {
+                if let TokenInputEvent::Change(token) = event {
+                    let token = token.clone();
                     edit_draft(&this.store, this.session_id, cx, |draft| {
                         if let Some(AuthorizationConfig::Bearer { token: current }) =
                             &mut draft.local_auth
@@ -423,18 +424,22 @@ impl RequestEditor {
                     }
                 },
             ),
-            cx.subscribe_in(&password, window, |this, input, event, _, cx| {
-                if let InputEvent::Change = event {
-                    let text = input.read(cx).value().to_string();
-                    edit_draft(&this.store, this.session_id, cx, |draft| {
-                        if let Some(AuthorizationConfig::Basic { password, .. }) =
-                            &mut draft.local_auth
-                        {
-                            *password = text;
-                        }
-                    });
-                }
-            }),
+            cx.subscribe_in(
+                &password,
+                window,
+                |this, _, event: &TokenInputEvent, _, cx| {
+                    if let TokenInputEvent::Change(text) = event {
+                        let text = text.clone();
+                        edit_draft(&this.store, this.session_id, cx, |draft| {
+                            if let Some(AuthorizationConfig::Basic { password, .. }) =
+                                &mut draft.local_auth
+                            {
+                                *password = text;
+                            }
+                        });
+                    }
+                },
+            ),
         ];
         for (table, field) in [(&query, 0u8), (&headers, 1), (&form, 2)] {
             subscriptions.push(cx.subscribe_in(
@@ -557,12 +562,13 @@ impl RequestEditor {
             }
             _ => (String::new(), String::new(), String::new()),
         };
-        self.token
-            .update(cx, |input, cx| input.set_value(token, window, cx));
-        self.username
-            .update(cx, |input, cx| input.set_value(&username, window, cx));
-        self.password
-            .update(cx, |input, cx| input.set_value(password, window, cx));
+        for (field, value) in [
+            (&self.token, token),
+            (&self.username, username),
+            (&self.password, password),
+        ] {
+            field.update(cx, |input, cx| input.set_value(&value, window, cx));
+        }
     }
 
     fn set_body_language(&mut self, mode: BodyMode, window: &mut Window, cx: &mut Context<Self>) {
@@ -592,8 +598,9 @@ impl RequestEditor {
             let tokens = tokens.clone();
             table.update(cx, |table, cx| table.set_context(tokens, cx));
         }
-        self.username
-            .update(cx, |input, cx| input.set_context(tokens.clone(), cx));
+        for field in [&self.token, &self.username, &self.password] {
+            field.update(cx, |input, cx| input.set_context(tokens.clone(), cx));
+        }
         for (features, editor) in [
             (&self.body_features, &self.body),
             (&self.variables_features, &self.variables),
@@ -1391,12 +1398,11 @@ impl RequestEditor {
             .when(choice == AuthChoice::Bearer, |this| {
                 this.child(
                     row().child(label("Token")).child(
-                        div().flex_1().min_w_0().font_family(theme::MONO).child(
-                            Input::new(&self.token)
-                                .small()
-                                .font_family(theme::MONO)
-                                .text_size(px(12.)),
-                        ),
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .font_family(theme::MONO)
+                            .child(self.token.clone()),
                     ),
                 )
             })
@@ -1412,12 +1418,11 @@ impl RequestEditor {
                 )
                 .child(
                     row().child(label("Password")).child(
-                        div().flex_1().min_w_0().font_family(theme::MONO).child(
-                            Input::new(&self.password)
-                                .small()
-                                .font_family(theme::MONO)
-                                .text_size(px(12.)),
-                        ),
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .font_family(theme::MONO)
+                            .child(self.password.clone()),
                     ),
                 )
             })

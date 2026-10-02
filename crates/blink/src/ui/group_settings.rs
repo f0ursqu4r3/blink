@@ -27,6 +27,7 @@ use crate::ui::form::{
     section_heading, section_heading_with_help, selected,
 };
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
+use crate::ui::token_input::TokenInput;
 
 /// Open the dialog.
 pub fn open(store: Entity<Store>, group_id: u64, window: &mut Window, cx: &mut App) {
@@ -191,9 +192,9 @@ struct GroupForm {
     parent: Entity<ChoiceSelect>,
     parent_id: Option<u64>,
     auth_mode: AuthMode,
-    bearer: Entity<InputState>,
-    username: Entity<InputState>,
-    password: Entity<InputState>,
+    bearer: Entity<TokenInput>,
+    username: Entity<TokenInput>,
+    password: Entity<TokenInput>,
     method: Entity<ChoiceSelect>,
     url: Entity<InputState>,
     local_tokens: Entity<KeyValueEditor>,
@@ -215,6 +216,10 @@ impl GroupForm {
         let group = workspace.group(group_id).cloned().expect("group exists");
         let groups = workspace.groups.clone();
         let preferences = workspace.preferences.clone();
+        // The group's own tokens, as a request in it resolves them.
+        let context = workspace
+            .token_sources(blink_core::history::now_ms())
+            .context(Some(group_id));
 
         let name = text_input(&group.name, window, cx);
         let mut parent_choices = vec![Choice::new("", "Root")];
@@ -240,17 +245,22 @@ impl GroupForm {
                 (AuthMode::Basic, "", username.as_str(), password.as_str())
             }
         };
-        let bearer = cx.new(|cx| {
-            InputState::new(window, cx)
-                .masked(true)
-                .default_value(token.to_string())
-        });
-        let username = text_input(user, window, cx);
-        let password = cx.new(|cx| {
-            InputState::new(window, cx)
-                .masked(true)
-                .default_value(pass.to_string())
-        });
+        let auth_field =
+            |value: &str, secret: bool, window: &mut Window, cx: &mut Context<Self>| {
+                let context = context.clone();
+                cx.new(|cx| {
+                    let mut input = TokenInput::new("", window, cx);
+                    input.set_size(gpui_kit::component::Size::Small, cx);
+                    input.set_height(px(28.), cx);
+                    input.set_secret(secret, cx);
+                    input.set_context(Some(context), cx);
+                    input.set_value(value, window, cx);
+                    input
+                })
+            };
+        let bearer = auth_field(token, true, window, cx);
+        let username = auth_field(user, false, window, cx);
+        let password = auth_field(pass, true, window, cx);
 
         let inherited = resolve_new_request_defaults(&groups, group.parent_id, &preferences);
         let method = {
@@ -400,7 +410,7 @@ impl GroupForm {
     }
 
     fn local_auth(&self, cx: &App) -> Option<AuthorizationConfig> {
-        let value = |input: &Entity<InputState>| input.read(cx).value().to_string();
+        let value = |input: &Entity<TokenInput>| input.read(cx).value(cx);
         match self.auth_mode {
             AuthMode::Inherit => None,
             AuthMode::None => Some(AuthorizationConfig::None),
@@ -589,11 +599,11 @@ impl Render for GroupForm {
                     })),
             )
             .when(self.auth_mode == AuthMode::Bearer, |this| {
-                this.child(field_row("Token", small_input(&self.bearer), cx))
+                this.child(field_row("Token", self.bearer.clone(), cx))
             })
             .when(self.auth_mode == AuthMode::Basic, |this| {
-                this.child(field_row("Username", small_input(&self.username), cx))
-                    .child(field_row("Password", small_input(&self.password), cx))
+                this.child(field_row("Username", self.username.clone(), cx))
+                    .child(field_row("Password", self.password.clone(), cx))
             });
 
         let table = if self.is_root() {
