@@ -375,7 +375,7 @@ impl BlinkApp {
             .read(cx)
             .workspace
             .session(id)
-            .is_some_and(|session| session.busy);
+            .is_some_and(|session| session.busy || session.waiting_on.is_some());
         self.store.update(cx, |store, cx| {
             if busy {
                 store.cancel(id, cx);
@@ -610,7 +610,7 @@ impl BlinkApp {
         } else {
             "Show request browser"
         };
-        let busy = current.is_some_and(|session| session.busy);
+        let busy = current.is_some_and(|session| session.busy || session.waiting_on.is_some());
         let command = |id: &str, label: String, shortcut: &[&str], disabled: bool| Command {
             id: id.to_string(),
             label,

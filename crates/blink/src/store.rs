@@ -9,6 +9,7 @@
 use std::collections::{HashMap, HashSet};
 
 use blink_core::engine::Engine;
+use blink_core::runner::PrimaryAction;
 use blink_core::workspace_state::{UNDO_WINDOW, Workspace};
 use gpui_kit::*;
 
@@ -22,6 +23,19 @@ pub enum StoreEvent {
     DraftReplaced(u64),
     /// The whole workspace was restored or reset.
     Restored,
+}
+
+/// A request waiting for a source request to give a response token a value.
+/// See `runner.rs`.
+pub(crate) struct Waiting {
+    /// The source request it waits for.
+    pub dependency: u64,
+    /// The token that needs it, for messages.
+    pub token: String,
+    /// This wait sent the source request, so cancelling it may cancel that.
+    pub started: bool,
+    /// What to do once every token has a value.
+    pub then: PrimaryAction,
 }
 
 pub struct Store {
@@ -57,6 +71,8 @@ pub struct Store {
     pub(crate) confirming: HashSet<u64>,
     /// Sends in flight, by request id. See `runner.rs`.
     pub(crate) in_flight: HashMap<u64, InFlight>,
+    /// Requests waiting for a source request, by request id.
+    pub(crate) waiting: HashMap<u64, Waiting>,
     /// Live WebSocket connections: engine connection id and event task.
     pub(crate) sockets: HashMap<u64, (String, Task<()>)>,
 }
@@ -87,6 +103,7 @@ impl Store {
             import_timer: None,
             confirming: HashSet::new(),
             in_flight: HashMap::new(),
+            waiting: HashMap::new(),
             sockets: HashMap::new(),
         };
         store.restore(cx);

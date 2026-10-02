@@ -10,7 +10,7 @@ use gpui_kit::{
 use super::{BlinkApp, FRAME_GAP};
 use crate::actions::ToggleBrowser;
 use crate::store::Store;
-use crate::test_support::{self, Reply, serve, wait};
+use crate::test_support::{self, Harness, Reply, engine, init, open, serve, wait};
 use crate::ui::browser;
 
 const SCROLL: f64 = 360.0;
@@ -340,4 +340,217 @@ fn restore_prunes_cache_entries_of_missing_requests(cx: &mut TestAppContext) {
             .len()
     });
     assert_eq!(kept, 0);
+}
+
+/// A Login request at `/login` and a dependent at `/me` that sends
+/// `Authorization: Bearer {{access_token}}`. Returns (login, me).
+fn login_and_me(harness: &Harness, cx: &mut TestAppContext, url: &str) -> (u64, u64) {
+    let login = harness.active_id(cx);
+    let url = url.to_string();
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.session_mut(login).unwrap().draft.url = format!("{url}/login");
+            workspace.set_global_response_tokens(vec![source_token(login)]);
+            let mut me = blink_core::session::create_session(None);
+            me.draft.url = format!("{url}/me");
+            me.draft.local_auth = Some(blink_core::model::AuthorizationConfig::Bearer {
+                token: "{{access_token}}".into(),
+            });
+            let id = me.id;
+            workspace.sessions.push(me);
+            workspace.open_request(id);
+        })
+    });
+    cx.run_until_parked();
+    (login, harness.active_id(cx))
+}
+
+/// The paths of the requests the server saw since the last call.
+fn paths(requests: &std::sync::mpsc::Receiver<Vec<u8>>) -> Vec<String> {
+    requests
+        .try_iter()
+        .map(|raw| {
+            String::from_utf8_lossy(&raw)
+                .split(' ')
+                .nth(1)
+                .unwrap_or_default()
+                .to_string()
+        })
+        .collect()
+}
+
+#[gpui_kit::test]
+fn sends_the_source_request_first_and_uses_its_token(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|raw| {
+        if raw.starts_with(b"POST /login") || raw.starts_with(b"GET /login") {
+            Reply::ok("application/json", r#"{"access_token":"abc"}"#)
+        } else {
+            Reply::ok("text/plain", "me")
+        }
+    });
+    let (_, me) = login_and_me(&harness, cx, &url);
+    harness.send_draft(cx);
+    let seen = paths(&requests);
+    assert_eq!(seen, vec!["/login", "/me"]);
+    // The second send reuses the cached token.
+    harness.send_draft(cx);
+    assert_eq!(paths(&requests), vec!["/me"]);
+    let raw = harness.session(cx, |s| s.response.as_ref().map(|r| r.status));
+    assert_eq!(raw, Some(200));
+    assert_eq!(harness.active_id(cx), me);
+}
+
+#[gpui_kit::test]
+fn a_failed_source_request_stops_the_dependent(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|raw| {
+        if raw.windows(6).any(|w| w == b"/login") {
+            Reply {
+                status: "401 Unauthorized",
+                headers: vec![],
+                body: b"no".to_vec(),
+            }
+        } else {
+            Reply::ok("text/plain", "me")
+        }
+    });
+    let (_, me) = login_and_me(&harness, cx, &url);
+    harness.dispatch(cx, crate::actions::SendRequest);
+    wait(cx, "dependent failed", |cx| {
+        let session = harness
+            .store
+            .read(cx)
+            .workspace
+            .session(me)
+            .unwrap()
+            .clone();
+        session.waiting_on.is_none() && !session.error.is_empty()
+    });
+    assert_eq!(paths(&requests), vec!["/login"]);
+    assert_eq!(
+        harness.session(cx, |s| s.error.clone()),
+        "Could not get \"access_token\": \"/login\" returned 401."
+    );
+}
+
+#[gpui_kit::test]
+fn a_missing_path_stops_the_dependent_without_a_loop(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|_| Reply::ok("application/json", r#"{"other":1}"#));
+    let (_, me) = login_and_me(&harness, cx, &url);
+    harness.dispatch(cx, crate::actions::SendRequest);
+    wait(cx, "dependent failed", |cx| {
+        let session = harness
+            .store
+            .read(cx)
+            .workspace
+            .session(me)
+            .unwrap()
+            .clone();
+        session.waiting_on.is_none() && !session.error.is_empty()
+    });
+    assert_eq!(paths(&requests), vec!["/login"]);
+    assert!(harness.session(cx, |s| s.error.contains("has no value at .access_token")));
+}
+
+#[gpui_kit::test]
+fn two_dependents_share_one_source_send(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|raw| {
+        if raw.windows(6).any(|w| w == b"/login") {
+            std::thread::sleep(std::time::Duration::from_millis(200));
+            Reply::ok("application/json", r#"{"access_token":"abc"}"#)
+        } else {
+            Reply::ok("text/plain", "ok")
+        }
+    });
+    let (_, me) = login_and_me(&harness, cx, &url);
+    let other = harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            let mut copy = workspace.session(me).unwrap().clone();
+            copy.id = SESSIONS.next();
+            let id = copy.id;
+            workspace.sessions.push(copy);
+            id
+        })
+    });
+    harness.update(cx, |window, cx| {
+        harness.store.update(cx, |store, cx| {
+            store.send(me, window, cx);
+            store.send(other, window, cx);
+        })
+    });
+    wait(cx, "both sent", |cx| {
+        let ws = &harness.store.read(cx).workspace;
+        [me, other]
+            .iter()
+            .all(|id| ws.session(*id).unwrap().response.is_some())
+    });
+    let seen = paths(&requests);
+    assert_eq!(
+        seen.iter().filter(|p| p.as_str() == "/login").count(),
+        1,
+        "{seen:?}"
+    );
+}
+
+#[gpui_kit::test]
+fn cancel_while_waiting_stops_the_dependent_and_its_source(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, _requests) = serve(|raw| {
+        if raw.windows(6).any(|w| w == b"/login") {
+            std::thread::sleep(std::time::Duration::from_secs(3));
+        }
+        Reply::ok("application/json", r#"{"access_token":"abc"}"#)
+    });
+    let (login, me) = login_and_me(&harness, cx, &url);
+    harness.dispatch(cx, crate::actions::SendRequest);
+    wait(cx, "waiting on login", |cx| {
+        let workspace = &harness.store.read(cx).workspace;
+        workspace.session(me).unwrap().waiting_on.as_deref() == Some("/login")
+            && workspace.session(login).unwrap().busy
+    });
+    harness.draw(cx);
+    // Send while waiting is Cancel.
+    harness.dispatch(cx, crate::actions::SendRequest);
+    wait(cx, "login cancelled", |cx| {
+        !harness
+            .store
+            .read(cx)
+            .workspace
+            .session(login)
+            .unwrap()
+            .busy
+    });
+    let session = cx.read(|cx| {
+        harness
+            .store
+            .read(cx)
+            .workspace
+            .session(me)
+            .unwrap()
+            .clone()
+    });
+    assert_eq!(session.waiting_on, None);
+    assert_eq!(
+        session.error,
+        "Could not get \"access_token\": \"/login\" was cancelled."
+    );
+    assert!(session.response.is_none());
 }

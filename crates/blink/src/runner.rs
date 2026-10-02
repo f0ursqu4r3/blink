@@ -3,21 +3,24 @@
 //! `RequestWorkspace.vue`; the pure parts live in `blink_core::runner`.
 
 use blink_core::history::now_ms;
-use blink_core::response_tokens::values_for;
+use blink_core::response_tokens::{
+    DependencyFailure, deleted_request_problem, dependency_error, response_token_plan, values_for,
+};
+use blink_core::session::{LabelTokens, session_label};
 use std::time::Duration;
 
 use blink_core::engine::{SocketEvent, StreamMessage};
 use blink_core::environments::request_environment;
 use blink_core::runner::{
-    PrimaryAction, SendTicket, apply_socket_event, apply_stream_message, begin_send,
-    can_send_socket, connect_socket, disconnect_socket, finish_send, orphaned_body, prepare_send,
-    primary_action, socket_active, socket_sent, tick,
+    PrimaryAction, REQUEST_CANCELED, SendTicket, apply_socket_event, apply_stream_message,
+    begin_send, can_send_socket, connect_socket, disconnect_socket, finish_send, orphaned_body,
+    prepare_send, primary_action, socket_active, socket_sent, tick,
 };
 use futures::channel::mpsc::{UnboundedReceiver, unbounded};
 use futures::{FutureExt as _, StreamExt as _, select_biased};
 use gpui_kit::*;
 
-use crate::store::Store;
+use crate::store::{Store, Waiting};
 
 /// A send in flight: the engine request id and the pure send state.
 pub struct InFlight {
@@ -52,10 +55,189 @@ impl Store {
                 self.confirming.insert(session_id);
                 cx.notify();
             }
-            PrimaryAction::Send => self.send_http(session_id, cx),
-            PrimaryAction::Connect => self.connect(session_id, cx),
+            action @ (PrimaryAction::Send | PrimaryAction::Connect) => {
+                self.run_or_wait(session_id, action, cx)
+            }
             PrimaryAction::Disconnect => self.disconnect(session_id, cx),
         }
+    }
+
+    /// Run `then` when every response token the request sends has a value.
+    /// Otherwise send the first source request that it needs, and wait for
+    /// it: `finish` of that send runs this again.
+    fn run_or_wait(&mut self, session_id: u64, then: PrimaryAction, cx: &mut Context<Self>) {
+        self.waiting.remove(&session_id);
+        let workspace = &self.workspace;
+        let Some(session) = workspace.session(session_id) else {
+            return;
+        };
+        if session.busy {
+            return;
+        }
+        let plan = response_token_plan(session_id, &workspace.token_sources(now_ms()));
+        let step = match plan {
+            Ok(steps) => steps.into_iter().next(),
+            Err(message) => {
+                self.stop_waiting(session_id, message, cx);
+                return;
+            }
+        };
+        let Some(step) = step else {
+            if session.waiting_on.is_some() {
+                // Not saved: re-render only.
+                if let Some(session) = self.workspace.session_mut(session_id) {
+                    session.waiting_on = None;
+                }
+                cx.notify();
+            }
+            match then {
+                PrimaryAction::Send => self.send_http(session_id, cx),
+                PrimaryAction::Connect => self.connect(session_id, cx),
+                PrimaryAction::ConfirmEnvironment | PrimaryAction::Disconnect => {}
+            }
+            return;
+        };
+        let label = self.label(step.request_id);
+        let group_id = workspace
+            .session(step.request_id)
+            .and_then(|source| source.group_id);
+        let unconfirmed = request_environment(group_id, &workspace.groups)
+            .filter(|environment| environment.protected == Some(true))
+            .filter(|_| !workspace.environment_confirmed(group_id))
+            .map(|environment| environment.name.clone());
+        if let Some(environment) = unconfirmed {
+            let message = format!("Send \"{label}\" once to confirm {environment}.");
+            self.stop_waiting(session_id, message, cx);
+            return;
+        }
+        let started = !self.in_flight.contains_key(&step.request_id);
+        self.waiting.insert(
+            session_id,
+            Waiting {
+                dependency: step.request_id,
+                token: step.token.clone(),
+                started,
+                then,
+            },
+        );
+        self.update_workspace(cx, |workspace| {
+            if let Some(session) = workspace.session_mut(session_id) {
+                session.waiting_on = Some(label.clone());
+                session.error.clear();
+            }
+        });
+        if !started {
+            return;
+        }
+        self.send_http(step.request_id, cx);
+        if self.in_flight.contains_key(&step.request_id) {
+            return;
+        }
+        // The source request did not start, so no `finish` will wake this.
+        let reason = self
+            .workspace
+            .session(step.request_id)
+            .map(|source| {
+                let sources = self.workspace.token_sources(now_ms());
+                prepare_send(source, &sources, &self.workspace.preferences)
+                    .http
+                    .error()
+                    .to_string()
+            })
+            .filter(|reason| !reason.is_empty())
+            .unwrap_or_else(|| "It could not be sent.".to_string());
+        let message = dependency_error(&step.token, &label, &DependencyFailure::Error(reason));
+        self.stop_waiting(session_id, message, cx);
+    }
+
+    /// The request no longer waits: show `message` as its error.
+    fn stop_waiting(&mut self, session_id: u64, message: String, cx: &mut Context<Self>) {
+        self.waiting.remove(&session_id);
+        self.update_workspace(cx, |workspace| {
+            if let Some(session) = workspace.session_mut(session_id) {
+                session.waiting_on = None;
+                session.error = message;
+            }
+        });
+    }
+
+    /// The label of request `id`, as messages name it.
+    fn label(&self, id: u64) -> String {
+        let workspace = &self.workspace;
+        workspace
+            .session(id)
+            .map(|session| {
+                session_label(
+                    session,
+                    Some(LabelTokens {
+                        groups: &workspace.groups,
+                        global_definitions: &workspace.global_definitions,
+                    }),
+                )
+            })
+            .unwrap_or_default()
+    }
+
+    /// The send of `dependency` ended: continue or fail each request that
+    /// waited for it. Runs after the response token values are recorded, so
+    /// the new plan sees them.
+    fn wake_waiters(&mut self, dependency: u64, cancelled: bool, cx: &mut Context<Self>) {
+        let mut ids: Vec<u64> = self
+            .waiting
+            .iter()
+            .filter(|(_, wait)| wait.dependency == dependency)
+            .map(|(id, _)| *id)
+            .collect();
+        ids.sort_unstable();
+        for id in ids {
+            let Some(wait) = self.waiting.remove(&id) else {
+                continue;
+            };
+            match self.dependency_failure(id, &wait, cancelled) {
+                Some(message) => self.stop_waiting(id, message, cx),
+                None => self.run_or_wait(id, wait.then, cx),
+            }
+        }
+    }
+
+    /// The error for a request whose source request ended without giving it
+    /// a value. None when the request can go on.
+    fn dependency_failure(
+        &self,
+        session_id: u64,
+        wait: &Waiting,
+        cancelled: bool,
+    ) -> Option<String> {
+        let workspace = &self.workspace;
+        let dependency = wait.dependency;
+        let label = self.label(dependency);
+        let failure = |token: &str, failure: DependencyFailure| {
+            Some(dependency_error(token, &label, &failure))
+        };
+        let Some(source) = workspace.session(dependency) else {
+            return Some(format!("\"{}\" {}", wait.token, deleted_request_problem()));
+        };
+        if cancelled {
+            return failure(&wait.token, DependencyFailure::Cancelled);
+        }
+        if !source.error.is_empty() {
+            return failure(&wait.token, DependencyFailure::Error(source.error.clone()));
+        }
+        if let Some(response) = &source.response
+            && !(200..=299).contains(&response.status)
+        {
+            return failure(&wait.token, DependencyFailure::Status(response.status));
+        }
+        // The source answered, yet a token it gives still has no value: say
+        // so rather than send it again.
+        let plan = response_token_plan(session_id, &workspace.token_sources(now_ms())).ok()?;
+        let step = plan.first().filter(|step| step.request_id == dependency)?;
+        let path = workspace
+            .all_response_tokens()
+            .find(|token| token.request_id == dependency && token.name == step.token)
+            .map(|token| token.path.clone())
+            .unwrap_or_default();
+        failure(&step.token, DependencyFailure::Missing { path })
     }
 
     /// The user confirmed the protected environment: remember it, then run.
@@ -82,7 +264,29 @@ impl Store {
     }
 
     /// Cancel a running send or close a WebSocket. The draft stays editable.
+    /// A waiting request stops waiting, and cancels the source request it
+    /// started unless another request still waits for it.
     pub fn cancel(&mut self, session_id: u64, cx: &mut Context<Self>) {
+        if let Some(wait) = self.waiting.remove(&session_id) {
+            let message = dependency_error(
+                &wait.token,
+                &self.label(wait.dependency),
+                &DependencyFailure::Cancelled,
+            );
+            self.stop_waiting(session_id, message, cx);
+            let mut shared = false;
+            for other in self.waiting.values_mut() {
+                if other.dependency == wait.dependency {
+                    // Whoever still waits now owns the source request.
+                    other.started |= wait.started;
+                    shared = true;
+                }
+            }
+            if wait.started && !shared {
+                self.cancel(wait.dependency, cx);
+            }
+            return;
+        }
         if let Some(flight) = self.in_flight.get(&session_id) {
             self.engine.cancel_request(&flight.request_id);
         } else if self
@@ -199,12 +403,14 @@ impl Store {
         let Some(flight) = self.in_flight.remove(&session_id) else {
             return;
         };
+        let cancelled = matches!(&result, Err(message) if message == REQUEST_CANCELED);
         let group_id = self.workspace.session(session_id).map(|s| s.group_id);
         let Some(group_id) = group_id else {
             // A result for a deleted request has no owner, so free its body.
             if let Some(body_id) = orphaned_body(&result) {
                 self.engine.release_response(&body_id);
             }
+            self.wake_waiters(session_id, cancelled, cx);
             return;
         };
         let recorded = self.update_workspace(cx, |workspace| {
@@ -242,6 +448,7 @@ impl Store {
         if recorded {
             self.save_response_cache(cx);
         }
+        self.wake_waiters(session_id, cancelled, cx);
     }
 
     // ── WebSocket ───────────────────────────────────────────────────────────

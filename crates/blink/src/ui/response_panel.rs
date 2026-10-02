@@ -89,7 +89,7 @@ pub fn redirect_label(count: Option<u64>) -> String {
 
 /// The header status text.
 pub fn header_status(session: &RequestSession) -> &'static str {
-    if session.busy {
+    if session.busy || session.waiting_on.is_some() {
         "RECEIVING"
     } else if !session.error.is_empty() {
         "FAILED"
@@ -1784,6 +1784,19 @@ impl Render for ResponsePanel {
             .child(self.render_header(&session, cx));
         let root = if self.history_open {
             root.child(self.history.clone())
+        } else if let Some(label) = &session.waiting_on {
+            // A source request runs first for a response token.
+            root.child(
+                centered_state(cx)
+                    .child(receiving_bars(cx))
+                    .child(state_title("AWAITING RESPONSE", cx))
+                    .child(
+                        div()
+                            .mt(r(10.))
+                            .text_size(r(12.))
+                            .child(format!("Sending \"{label}\"…")),
+                    ),
+            )
         } else if let (Some(response), false, true) =
             (&session.response, session.busy, session.error.is_empty())
         {
