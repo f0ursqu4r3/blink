@@ -36,6 +36,9 @@ pub(crate) struct Waiting {
     pub started: bool,
     /// What to do once every token has a value.
     pub then: PrimaryAction,
+    /// The source requests this chain has sent, `dependency` included. One
+    /// that is needed again ends the wait, so a short max age cannot loop.
+    pub sent: Vec<u64>,
 }
 
 pub struct Store {

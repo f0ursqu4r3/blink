@@ -554,3 +554,223 @@ fn cancel_while_waiting_stops_the_dependent_and_its_source(cx: &mut TestAppConte
     );
     assert!(session.response.is_none());
 }
+
+fn token(
+    id: u64,
+    name: &str,
+    request_id: u64,
+    path: &str,
+    max_age_secs: Option<u64>,
+) -> blink_core::model::ResponseToken {
+    blink_core::model::ResponseToken {
+        id,
+        name: name.into(),
+        request_id,
+        source: blink_core::model::CheckSource::Json,
+        path: path.into(),
+        max_age_secs,
+    }
+}
+
+/// Add a request at `url` and return its id. It is not opened.
+fn add_request(harness: &Harness, cx: &mut TestAppContext, url: String) -> u64 {
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            let mut session = blink_core::session::create_session(None);
+            session.draft.url = url;
+            let id = session.id;
+            workspace.sessions.push(session);
+            id
+        })
+    })
+}
+
+#[gpui_kit::test]
+fn a_waiting_request_cannot_be_deleted_and_cancel_always_ends_a_wait(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|raw| {
+        if raw.windows(6).any(|w| w == b"/login") {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+        }
+        Reply::ok("application/json", r#"{"access_token":"abc"}"#)
+    });
+    let (login, me) = login_and_me(&harness, cx, &url);
+    harness.dispatch(cx, crate::actions::SendRequest);
+    wait(cx, "waiting on login", |cx| {
+        let workspace = &harness.store.read(cx).workspace;
+        workspace.session(me).unwrap().waiting_on.is_some()
+            && workspace.session(login).unwrap().busy
+    });
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| workspace.delete_request(me))
+    });
+    assert!(cx.read(|cx| harness.store.read(cx).workspace.session(me).is_some()));
+    // A wait that lost its entry, as a deleted and restored request had:
+    // Cancel still ends it.
+    harness.store.update(cx, |store, cx| {
+        store.waiting.remove(&me);
+        store.cancel(me, cx);
+    });
+    assert_eq!(harness.session(cx, |s| s.waiting_on.clone()), None);
+    wait(cx, "login done", |cx| {
+        !harness
+            .store
+            .read(cx)
+            .workspace
+            .session(login)
+            .unwrap()
+            .busy
+    });
+    let _ = paths(&requests);
+    harness.send_draft(cx);
+    assert_eq!(paths(&requests), vec!["/me"]);
+}
+
+#[gpui_kit::test]
+fn a_protected_source_environment_stops_the_dependent(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|_| Reply::ok("application/json", r#"{"access_token":"abc"}"#));
+    let (login, me) = login_and_me(&harness, cx, &url);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            let root = workspace.add_group("API", None);
+            let mut prod = blink_core::environments::create_environment(
+                "Prod",
+                blink_core::model::EnvironmentColor::Destructive,
+            );
+            prod.protected = Some(true);
+            let prod_id = prod.id;
+            workspace.set_group_environments(root, Some(vec![prod]));
+            workspace.switch_environment(root, Some(prod_id));
+            workspace.move_request(login, Some(root));
+        })
+    });
+    harness.dispatch(cx, crate::actions::SendRequest);
+    cx.run_until_parked();
+    let session = cx.read(|cx| {
+        harness
+            .store
+            .read(cx)
+            .workspace
+            .session(me)
+            .unwrap()
+            .clone()
+    });
+    assert_eq!(session.error, "Send \"/login\" once to confirm Prod.");
+    assert_eq!(session.waiting_on, None);
+    assert!(paths(&requests).is_empty());
+}
+
+#[gpui_kit::test]
+fn a_chain_of_sources_sends_in_order(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|raw| {
+        if raw.windows(6).any(|w| w == b"/login") {
+            Reply::ok("application/json", r#"{"refresh_token":"r1"}"#)
+        } else if raw.windows(8).any(|w| w == b"/refresh") {
+            Reply::ok("application/json", r#"{"access_token":"abc"}"#)
+        } else {
+            Reply::ok("text/plain", "me")
+        }
+    });
+    let (login, me) = login_and_me(&harness, cx, &url);
+    let refresh = add_request(
+        &harness,
+        cx,
+        format!("{url}/refresh?r={{{{refresh_token}}}}"),
+    );
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.set_global_response_tokens(vec![
+                token(1, "access_token", refresh, ".access_token", None),
+                token(2, "refresh_token", login, ".refresh_token", None),
+            ]);
+        })
+    });
+    harness.send_draft(cx);
+    assert_eq!(paths(&requests), vec!["/login", "/refresh?r=r1", "/me"]);
+    assert_eq!(harness.active_id(cx), me);
+    assert_eq!(harness.session(cx, |s| s.error.clone()), "");
+}
+
+#[gpui_kit::test]
+fn sources_that_expire_before_the_chain_ends_do_not_loop(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    // Each source answers slower than the other's max age.
+    let (url, requests) = serve(|raw| {
+        if raw.windows(6).any(|w| w == b"/login" || w == b"/other") {
+            std::thread::sleep(std::time::Duration::from_millis(1200));
+        }
+        Reply::ok("application/json", r#"{"access_token":"a","b":"b"}"#)
+    });
+    let (login, me) = login_and_me(&harness, cx, &url);
+    let other = add_request(&harness, cx, format!("{url}/other"));
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.session_mut(me).unwrap().draft.url = format!("{url}/me?b={{{{b}}}}");
+            workspace.set_global_response_tokens(vec![
+                token(1, "access_token", login, ".access_token", Some(1)),
+                token(2, "b", other, ".b", Some(1)),
+            ]);
+        })
+    });
+    harness.dispatch(cx, crate::actions::SendRequest);
+    wait(cx, "dependent failed", |cx| {
+        let session = harness
+            .store
+            .read(cx)
+            .workspace
+            .session(me)
+            .unwrap()
+            .clone();
+        session.waiting_on.is_none() && !session.error.is_empty()
+    });
+    // The URL token is read first. After /login, "b" has expired, but the
+    // chain sent /other already, so the wait ends.
+    assert_eq!(paths(&requests), vec!["/other", "/login"]);
+    assert_eq!(
+        harness.session(cx, |s| s.error.clone()),
+        "Could not get \"b\": \"/other\" has no value at .b."
+    );
+}
+
+#[gpui_kit::test]
+fn a_websocket_connects_after_its_source_request(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|_| Reply::ok("application/json", r#"{"access_token":"abc"}"#));
+    let socket = test_support::echo_server();
+    let (_, me) = login_and_me(&harness, cx, &url);
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            let session = workspace.session_mut(me).unwrap();
+            session.draft.url = format!("{socket}?t={{{{access_token}}}}");
+            session.draft.local_auth = None;
+        })
+    });
+    harness.dispatch(cx, crate::actions::SendRequest);
+    wait(cx, "socket open", |cx| {
+        let session = harness.store.read(cx).workspace.session(me).unwrap();
+        session
+            .socket
+            .as_ref()
+            .is_some_and(|s| s.state == blink_core::model::SocketState::Open)
+    });
+    assert_eq!(paths(&requests), vec!["/login"]);
+    let shown = harness.session(cx, |s| (s.waiting_on.clone(), s.error.clone()));
+    assert_eq!(shown, (None, String::new()));
+}

@@ -89,7 +89,7 @@ pub fn redirect_label(count: Option<u64>) -> String {
 
 /// The header status text.
 pub fn header_status(session: &RequestSession) -> &'static str {
-    if session.busy || session.waiting_on.is_some() {
+    if session.running() {
         "RECEIVING"
     } else if !session.error.is_empty() {
         "FAILED"
@@ -237,7 +237,7 @@ impl ResponsePanel {
         };
         // A restored response keeps its tab and scroll position.
         panel.rebuild_cache(cx);
-        panel.was_busy = panel.session(cx).is_some_and(|session| session.busy);
+        panel.was_busy = panel.session(cx).is_some_and(|session| session.running());
         panel.sync_body(cx);
         panel
     }
@@ -261,7 +261,7 @@ impl ResponsePanel {
         let Some(session) = self.session(cx) else {
             return;
         };
-        let busy = session.busy;
+        let busy = session.running();
         let key = response_key(session.response.as_ref());
         if busy && !self.was_busy {
             self.history_open = false;

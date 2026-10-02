@@ -61,7 +61,7 @@ impl TabInfo {
             label: session_label(session, Some(tokens)),
             host: session_host(session, Some(tokens)),
             status: session_status(session),
-            busy: session.busy,
+            busy: session.running(),
             failed: !session.error.is_empty(),
             socket_open: session
                 .socket

@@ -587,6 +587,14 @@ pub struct RequestSession {
     pub waiting_on: Option<String>,
 }
 
+impl RequestSession {
+    /// Sending, or waiting for a source request before it sends. Either way
+    /// Send is Cancel and the request cannot be deleted.
+    pub fn running(&self) -> bool {
+        self.busy || self.waiting_on.is_some()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum PaneLayout {

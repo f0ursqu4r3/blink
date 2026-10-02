@@ -57,7 +57,7 @@ pub fn render(store: &Entity<Store>, window: &mut Window, cx: &mut App) -> AnyEl
     let workspace = &state.workspace;
     let preferences = &workspace.preferences;
     let transport = transport_options(preferences);
-    let sending = workspace.sessions.iter().filter(|s| s.busy).count();
+    let sending = workspace.sessions.iter().filter(|s| s.running()).count();
     let zoom = preferences.zoom;
     let deletion = workspace.deletion_label();
 

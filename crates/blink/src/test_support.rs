@@ -269,3 +269,35 @@ pub fn serve(reply: impl Fn(&[u8]) -> Reply + Send + 'static) -> (String, mpsc::
     });
     (format!("http://{address}"), rx)
 }
+
+/// A WebSocket server that echoes every text message.
+pub fn echo_server() -> String {
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let address = listener.local_addr().unwrap();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(stream) = stream else { break };
+            std::thread::spawn(move || {
+                let Ok(mut socket) = tungstenite::accept(stream) else {
+                    return;
+                };
+                while let Ok(message) = socket.read() {
+                    match message {
+                        tungstenite::Message::Text(text) => {
+                            let reply = format!("echo: {text}");
+                            if socket.send(tungstenite::Message::text(reply)).is_err() {
+                                return;
+                            }
+                        }
+                        tungstenite::Message::Close(_) => {
+                            let _ = socket.flush();
+                            return;
+                        }
+                        _ => {}
+                    }
+                }
+            });
+        }
+    });
+    format!("ws://{address}/socket")
+}

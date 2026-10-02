@@ -727,6 +727,8 @@ impl Workspace {
                     {
                         item.session.group_id = None;
                     }
+                    // Its wait ended when it was deleted.
+                    item.session.waiting_on = None;
                     if let Some(open_index) = item.open_index {
                         reopen.push((open_index, item.session.id));
                     }
@@ -790,7 +792,7 @@ impl Workspace {
         let Some(index) = self.sessions.iter().position(|session| session.id == id) else {
             return;
         };
-        if self.sessions[index].busy {
+        if self.sessions[index].running() {
             return;
         }
         let open_index = self.open_ids.iter().position(|open| *open == id);
@@ -1379,7 +1381,7 @@ impl Workspace {
         let ids = self.menu_targets(session_id);
         if ids
             .iter()
-            .any(|id| self.session(*id).is_some_and(|session| session.busy))
+            .any(|id| self.session(*id).is_some_and(|session| session.running()))
         {
             return DeleteRequest::Blocked;
         }
@@ -1756,6 +1758,29 @@ mod tests {
         ws.delete_request(id);
         assert_eq!(ids(&ws), vec![id]);
         assert!(ws.last_deletion().is_none());
+    }
+
+    #[test]
+    fn a_waiting_request_is_not_deleted() {
+        let mut ws = Workspace::new();
+        let id = ws.sessions[0].id;
+        ws.sessions[0].waiting_on = Some("/login".into());
+        ws.delete_request(id);
+        assert_eq!(ids(&ws), vec![id]);
+        assert!(ws.last_deletion().is_none());
+        assert!(matches!(ws.request_delete(id), DeleteRequest::Blocked));
+    }
+
+    #[test]
+    fn undo_restores_a_request_that_does_not_wait() {
+        let mut ws = Workspace::new();
+        let all = add_open_sessions(&mut ws, 1);
+        ws.delete_request(all[1]);
+        if let Some(Deletion::Requests(items)) = ws.last_deletion.as_mut() {
+            items[0].session.waiting_on = Some("/login".into());
+        }
+        assert!(ws.undo_delete());
+        assert_eq!(ws.session(all[1]).unwrap().waiting_on, None);
     }
 
     // ── autosave ────────────────────────────────────────────────────────────

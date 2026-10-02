@@ -320,9 +320,11 @@ impl Browser {
         };
         update(&self.store, cx, |workspace| {
             // A target that started sending since the question stays.
-            let busy = ids
-                .iter()
-                .any(|id| workspace.session(*id).is_some_and(|session| session.busy));
+            let busy = ids.iter().any(|id| {
+                workspace
+                    .session(*id)
+                    .is_some_and(|session| session.running())
+            });
             if !busy {
                 workspace.remove_requests(&ids);
             }
@@ -1438,8 +1440,11 @@ impl Browser {
             Item::ConfirmDeleteRequests { id, ids, level } => (
                 *level,
                 ("browser-confirm-delete-request", *id),
-                ids.iter()
-                    .any(|id| workspace.session(*id).is_some_and(|session| session.busy)),
+                ids.iter().any(|id| {
+                    workspace
+                        .session(*id)
+                        .is_some_and(|session| session.running())
+                }),
             ),
             Item::ConfirmDeleteGroup { id, level } => {
                 (*level, ("browser-confirm-delete-group", *id), false)

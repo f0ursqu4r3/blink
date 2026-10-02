@@ -56,7 +56,7 @@ impl Store {
                 cx.notify();
             }
             action @ (PrimaryAction::Send | PrimaryAction::Connect) => {
-                self.run_or_wait(session_id, action, cx)
+                self.run_or_wait(session_id, action, Vec::new(), cx)
             }
             PrimaryAction::Disconnect => self.disconnect(session_id, cx),
         }
@@ -64,14 +64,23 @@ impl Store {
 
     /// Run `then` when every response token the request sends has a value.
     /// Otherwise send the first source request that it needs, and wait for
-    /// it: `finish` of that send runs this again.
-    fn run_or_wait(&mut self, session_id: u64, then: PrimaryAction, cx: &mut Context<Self>) {
+    /// it: `finish` of that send runs this again. `sent` holds the source
+    /// requests this chain sent before.
+    fn run_or_wait(
+        &mut self,
+        session_id: u64,
+        then: PrimaryAction,
+        mut sent: Vec<u64>,
+        cx: &mut Context<Self>,
+    ) {
         self.waiting.remove(&session_id);
         let workspace = &self.workspace;
         let Some(session) = workspace.session(session_id) else {
             return;
         };
         if session.busy {
+            // It sends already, so this wait is over.
+            self.clear_waiting_on(session_id, cx);
             return;
         }
         let plan = response_token_plan(session_id, &workspace.token_sources(now_ms()));
@@ -83,13 +92,7 @@ impl Store {
             }
         };
         let Some(step) = step else {
-            if session.waiting_on.is_some() {
-                // Not saved: re-render only.
-                if let Some(session) = self.workspace.session_mut(session_id) {
-                    session.waiting_on = None;
-                }
-                cx.notify();
-            }
+            self.clear_waiting_on(session_id, cx);
             match then {
                 PrimaryAction::Send => self.send_http(session_id, cx),
                 PrimaryAction::Connect => self.connect(session_id, cx),
@@ -111,6 +114,7 @@ impl Store {
             return;
         }
         let started = !self.in_flight.contains_key(&step.request_id);
+        sent.push(step.request_id);
         self.waiting.insert(
             session_id,
             Waiting {
@@ -118,6 +122,7 @@ impl Store {
                 token: step.token.clone(),
                 started,
                 then,
+                sent,
             },
         );
         self.update_workspace(cx, |workspace| {
@@ -148,6 +153,15 @@ impl Store {
             .unwrap_or_else(|| "It could not be sent.".to_string());
         let message = dependency_error(&step.token, &label, &DependencyFailure::Error(reason));
         self.stop_waiting(session_id, message, cx);
+    }
+
+    /// The request no longer waits. Not saved: re-render only.
+    fn clear_waiting_on(&mut self, session_id: u64, cx: &mut Context<Self>) {
+        if let Some(session) = self.workspace.session_mut(session_id)
+            && session.waiting_on.take().is_some()
+        {
+            cx.notify();
+        }
     }
 
     /// The request no longer waits: show `message` as its error.
@@ -193,9 +207,13 @@ impl Store {
             let Some(wait) = self.waiting.remove(&id) else {
                 continue;
             };
+            // A deleted request no longer waits.
+            if self.workspace.session(id).is_none() {
+                continue;
+            }
             match self.dependency_failure(id, &wait, cancelled) {
                 Some(message) => self.stop_waiting(id, message, cx),
-                None => self.run_or_wait(id, wait.then, cx),
+                None => self.run_or_wait(id, wait.then, wait.sent, cx),
             }
         }
     }
@@ -228,16 +246,23 @@ impl Store {
         {
             return failure(&wait.token, DependencyFailure::Status(response.status));
         }
-        // The source answered, yet a token it gives still has no value: say
-        // so rather than send it again.
+        // The source answered, yet a token from a source this chain already
+        // sent still has no value: say so rather than send it again.
         let plan = response_token_plan(session_id, &workspace.token_sources(now_ms())).ok()?;
-        let step = plan.first().filter(|step| step.request_id == dependency)?;
+        let step = plan
+            .first()
+            .filter(|step| repeats(&wait.sent, step.request_id))?;
         let path = workspace
             .all_response_tokens()
-            .find(|token| token.request_id == dependency && token.name == step.token)
+            .find(|token| token.request_id == step.request_id && token.name == step.token)
             .map(|token| token.path.clone())
             .unwrap_or_default();
-        failure(&step.token, DependencyFailure::Missing { path })
+        let label = self.label(step.request_id);
+        Some(dependency_error(
+            &step.token,
+            &label,
+            &DependencyFailure::Missing { path },
+        ))
     }
 
     /// The user confirmed the protected environment: remember it, then run.
@@ -274,6 +299,10 @@ impl Store {
                 &DependencyFailure::Cancelled,
             );
             self.stop_waiting(session_id, message, cx);
+            // Deleted requests no longer wait.
+            let workspace = &self.workspace;
+            self.waiting
+                .retain(|id, _| workspace.session(*id).is_some());
             let mut shared = false;
             for other in self.waiting.values_mut() {
                 if other.dependency == wait.dependency {
@@ -285,6 +314,15 @@ impl Store {
             if wait.started && !shared {
                 self.cancel(wait.dependency, cx);
             }
+            return;
+        }
+        // A wait that lost its entry (never expected) can always be ended.
+        if self
+            .workspace
+            .session(session_id)
+            .is_some_and(|session| session.waiting_on.is_some())
+        {
+            self.clear_waiting_on(session_id, cx);
             return;
         }
         if let Some(flight) = self.in_flight.get(&session_id) {
@@ -549,4 +587,9 @@ impl Store {
         });
         cx.emit(crate::store::StoreEvent::DraftReplaced(session_id));
     }
+}
+
+/// True when the chain that sent `sent` needs `request_id` again.
+fn repeats(sent: &[u64], request_id: u64) -> bool {
+    sent.contains(&request_id)
 }

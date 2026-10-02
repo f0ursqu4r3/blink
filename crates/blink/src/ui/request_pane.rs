@@ -712,7 +712,7 @@ impl Render for RequestPane {
         let Some(session) = workspace.session(self.session_id) else {
             return div().size_full().into_any_element();
         };
-        let busy = session.busy || session.waiting_on.is_some();
+        let busy = session.running();
         let socket_live = socket_active(session);
         let stacked = workspace.preferences.pane_layout == PaneLayout::Vertical;
         let target = workspace.preferences.code_target;
