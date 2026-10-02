@@ -4,8 +4,8 @@
 use std::rc::Rc;
 
 use blink_core::authorization::ResolvedRequestContext;
+use blink_core::history::now_ms;
 use blink_core::model::{Draft, RequestSession};
-use blink_core::runner::{refresh_stale, request_context};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::menu::{DropdownMenu as _, PopupMenuItem};
@@ -23,12 +23,11 @@ use crate::theme;
 pub fn edit_draft(store: &Entity<Store>, id: u64, cx: &mut App, change: impl FnOnce(&mut Draft)) {
     store.update(cx, |store, cx| {
         store.update_workspace(cx, |workspace| {
-            let Some(index) = workspace.sessions.iter().position(|s| s.id == id) else {
+            let Some(session) = workspace.session_mut(id) else {
                 return;
             };
-            let session = &mut workspace.sessions[index];
             change(&mut session.draft);
-            refresh_stale(session, &workspace.groups, &workspace.global_definitions);
+            workspace.refresh_stale(id);
         })
     });
 }
@@ -51,7 +50,7 @@ pub fn replace_draft(
 pub fn session_context(store: &Store, id: u64) -> Option<(RequestSession, ResolvedRequestContext)> {
     let workspace = &store.workspace;
     let session = workspace.session(id)?;
-    let ctx = request_context(session, &workspace.groups, &workspace.global_definitions);
+    let ctx = workspace.token_sources(now_ms()).request_context(session);
     Some((session.clone(), ctx))
 }
 

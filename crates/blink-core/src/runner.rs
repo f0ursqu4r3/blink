@@ -18,17 +18,18 @@
 
 use std::time::Instant;
 
-use crate::authorization::{ResolvedRequestContext, build_resolved_request_context};
+use crate::authorization::ResolvedRequestContext;
 use crate::checks::{run_assertions, run_captures};
 use crate::engine::{CANCELED, SocketEvent as EngineSocketEvent, StreamMessage};
 use crate::history::{HistoryOutcome, add_history, history_entry, next_history_id, now_ms};
 use crate::interpolation::interpolate;
 use crate::model::{
-    ApiResponse, BodyMode, Definitions, Draft, Environment, Header, LiveStream, RequestGroup,
-    RequestInput, RequestSession, STREAM_EVENT_LIMIT, SocketState, SseEvent, TransportOptions,
+    ApiResponse, BodyMode, Definitions, Draft, Environment, Header, LiveStream, RequestInput,
+    RequestSession, STREAM_EVENT_LIMIT, SocketState, SseEvent, TransportOptions,
 };
 use crate::preferences::transport_options;
 use crate::request::{RequestContext, build_request, js_trim, to_curl};
+use crate::response_tokens::TokenSources;
 use crate::session::request_fingerprint;
 use crate::sse::SseParser;
 use crate::transport_options::MIB;
@@ -152,21 +153,16 @@ impl PreparedSend {
 }
 
 /// The resolved auth and tokens of a request from its group ancestry.
-pub fn request_context(
-    session: &RequestSession,
-    groups: &[RequestGroup],
-    globals: &Definitions,
-) -> ResolvedRequestContext {
-    build_resolved_request_context(&session.draft, session.group_id, groups, globals)
+pub fn request_context(session: &RequestSession, sources: &TokenSources) -> ResolvedRequestContext {
+    sources.request_context(session)
 }
 
 pub fn prepare_send(
     session: &RequestSession,
-    groups: &[RequestGroup],
-    globals: &Definitions,
+    sources: &TokenSources,
     preferences: &crate::model::WorkspacePreferences,
 ) -> PreparedSend {
-    let ctx = request_context(session, groups, globals);
+    let ctx = request_context(session, sources);
     PreparedSend {
         http: prepare(&session.draft, Some(&ctx)),
         socket: build_web_socket_request(&session.draft, Some(&ctx)),
@@ -231,12 +227,8 @@ pub fn is_stale(session: &RequestSession, prepared: &Prepared) -> bool {
 }
 
 /// Update `session.stale` from the current draft and context. Returns it.
-pub fn refresh_stale(
-    session: &mut RequestSession,
-    groups: &[RequestGroup],
-    globals: &Definitions,
-) -> bool {
-    let ctx = request_context(session, groups, globals);
+pub fn refresh_stale(session: &mut RequestSession, sources: &TokenSources) -> bool {
+    let ctx = request_context(session, sources);
     let prepared = prepare(&session.draft, Some(&ctx));
     session.stale = is_stale(session, &prepared);
     session.stale
@@ -683,7 +675,11 @@ mod tests {
         session.group_id = Some(group.id);
         let mut preferences = crate::preferences::default_preferences();
         preferences.transport.timeout_seconds = 7;
-        let prepared = prepare_send(&session, &[group], &Definitions::new(), &preferences);
+        let prepared = prepare_send(
+            &session,
+            &TokenSources::text(&[group], &Definitions::new()),
+            &preferences,
+        );
         let request = prepared.http.request().unwrap();
         assert_eq!(request.url, "https://example.test/widgets");
         assert!(has_auth(&prepared.http));
@@ -722,20 +718,79 @@ mod tests {
         let globals = Definitions::new();
         let prepared = prepare_send(
             &session,
-            std::slice::from_ref(&group),
-            &globals,
+            &TokenSources::text(std::slice::from_ref(&group), &globals),
             &Default::default(),
         );
         let ticket = begin_send(&mut session, &prepared.http, &prepared.options).unwrap();
         finish_send(&mut session, ticket, Ok(ok("{}")));
         assert!(!refresh_stale(
             &mut session,
-            std::slice::from_ref(&group),
-            &globals
+            &TokenSources::text(std::slice::from_ref(&group), &globals)
         ));
         group.local_auth = Some(AuthorizationConfig::Bearer { token: "g".into() });
-        assert!(refresh_stale(&mut session, &[group], &globals));
+        assert!(refresh_stale(
+            &mut session,
+            &TokenSources::text(&[group], &globals)
+        ));
         assert!(session.stale);
+    }
+
+    #[test]
+    fn a_new_cached_value_marks_the_dependent_stale() {
+        use crate::model::{CheckSource, ResponseToken};
+        use crate::response_token_cache::ValueKey;
+        use crate::workspace_state::Workspace;
+
+        let mut workspace = Workspace::new();
+        let login = workspace.sessions[0].id;
+        let group_id = workspace.add_group("API", None);
+        workspace.move_request(login, Some(group_id));
+        workspace.sessions[0].draft.url = "https://api.test/login".into();
+        let mut dependent = crate::session::create_session(None);
+        dependent.group_id = Some(group_id);
+        dependent.draft.url = "https://api.test/me?t={{t}}".into();
+        let dependent_id = dependent.id;
+        workspace.sessions.push(dependent);
+        workspace.groups[0].response_tokens = Some(vec![ResponseToken {
+            id: 1,
+            name: "t".into(),
+            request_id: login,
+            source: CheckSource::Json,
+            path: ".t".into(),
+            max_age_secs: None,
+        }]);
+        let record = |workspace: &mut Workspace, value: &str| {
+            let fingerprint = workspace
+                .token_sources(0.0)
+                .fingerprint(workspace.session(login).unwrap());
+            workspace.response_cache.record(
+                login,
+                &fingerprint,
+                0,
+                vec![(
+                    ValueKey {
+                        source: CheckSource::Json,
+                        path: ".t".into(),
+                    },
+                    value.into(),
+                )],
+            );
+        };
+        record(&mut workspace, "one");
+        let sources = workspace.token_sources(0.0);
+        let prepared = prepare_send(
+            workspace.session(dependent_id).unwrap(),
+            &sources,
+            &workspace.preferences,
+        );
+        assert_eq!(prepared.http.error(), "");
+        let fingerprint = prepared.http.fingerprint();
+        let session = workspace.session_mut(dependent_id).unwrap();
+        session.sent_fingerprint = fingerprint;
+        session.response = Some(ok("{}"));
+        assert!(!workspace.refresh_stale(dependent_id));
+        record(&mut workspace, "two");
+        assert!(workspace.refresh_stale(dependent_id));
     }
 
     #[test]
@@ -1052,8 +1107,7 @@ mod tests {
         assert!(error.contains("ws://"));
         let prepared = prepare_send(
             &session("https://a.test"),
-            &[],
-            &Definitions::new(),
+            &TokenSources::text(&[], &Definitions::new()),
             &Default::default(),
         );
         assert!(!prepared.websocket);
@@ -1063,7 +1117,11 @@ mod tests {
     #[test]
     fn connects_logs_messages_both_ways_and_closes() {
         let mut session = session("ws://chat.test");
-        let prepared = prepare_send(&session, &[], &Definitions::new(), &Default::default());
+        let prepared = prepare_send(
+            &session,
+            &TokenSources::text(&[], &Definitions::new()),
+            &Default::default(),
+        );
         assert!(prepared.websocket);
         let request = prepared.socket.unwrap();
         assert!(connect_socket(&mut session, &request));

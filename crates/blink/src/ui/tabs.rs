@@ -1,5 +1,6 @@
 //! The request tab strip. Port of `RequestTabs.vue`.
 
+use blink_core::history::now_ms;
 use std::time::Duration;
 
 use blink_core::drag_drop::{
@@ -492,8 +493,7 @@ impl RequestTabs {
             .map(|session| {
                 session_curl(
                     session,
-                    &workspace.groups,
-                    &workspace.global_definitions,
+                    &workspace.token_sources(now_ms()),
                     &transport_options(&workspace.preferences),
                 )
             })

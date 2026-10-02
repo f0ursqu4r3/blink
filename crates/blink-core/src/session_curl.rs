@@ -1,18 +1,17 @@
 //! Port of `src/lib/session-curl.ts`.
 
-use crate::authorization::build_resolved_request_context;
-use crate::model::{Definitions, RequestGroup, RequestSession, TransportOptions};
+use crate::model::{RequestSession, TransportOptions};
 use crate::request::{build_request, to_curl};
+use crate::response_tokens::TokenSources;
 
 /// The cURL command for a session, resolved as a send resolves it. Empty when
 /// the draft does not build.
 pub fn session_curl(
     session: &RequestSession,
-    groups: &[RequestGroup],
-    globals: &Definitions,
+    sources: &TokenSources,
     options: &TransportOptions,
 ) -> String {
-    let ctx = build_resolved_request_context(&session.draft, session.group_id, groups, globals);
+    let ctx = sources.request_context(session);
     build_request(&session.draft, Some((&ctx).into()))
         .map(|request| to_curl(&request, options))
         .unwrap_or_default()
@@ -21,7 +20,7 @@ pub fn session_curl(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::AuthorizationConfig;
+    use crate::model::{AuthorizationConfig, Definitions, RequestGroup};
     use crate::session::create_session;
 
     #[test]
@@ -46,8 +45,7 @@ mod tests {
         }];
         let command = session_curl(
             &session,
-            &groups,
-            &Definitions::new(),
+            &TokenSources::text(&groups, &Definitions::new()),
             &TransportOptions::default(),
         );
         assert!(command.starts_with("curl"));
@@ -62,8 +60,7 @@ mod tests {
         assert_eq!(
             session_curl(
                 &session,
-                &[],
-                &Definitions::new(),
+                &TokenSources::text(&[], &Definitions::new()),
                 &TransportOptions::default()
             ),
             ""

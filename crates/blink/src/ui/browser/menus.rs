@@ -2,6 +2,7 @@
 //! request row, UNGROUPED, and blank-space menus of `RequestBrowser.vue`,
 //! and the `EnvironmentBadge.vue` menu.
 
+use blink_core::history::now_ms;
 use std::rc::Rc;
 
 use blink_core::environments::active_environment;
@@ -132,8 +133,7 @@ pub fn request_menu(
         let url = session.draft.url.clone();
         let curl = session_curl(
             session,
-            &workspace.groups,
-            &workspace.global_definitions,
+            &workspace.token_sources(now_ms()),
             &transport_options(&workspace.preferences),
         );
         let busy = targets

@@ -11,6 +11,7 @@ mod editor;
 use blink_core::codegen::generate_code;
 use blink_core::curl_import::{is_curl_command, parse_curl};
 use blink_core::environments::request_environment;
+use blink_core::history::now_ms;
 use blink_core::model::{CodeTarget, METHODS, PaneLayout};
 use blink_core::runner::{PreparedSend, confirm_environment_prompt, prepare_send, socket_active};
 use blink_core::websocket_log::is_web_socket_url;
@@ -228,12 +229,8 @@ impl RequestPane {
     fn prepared(&self, cx: &App) -> Option<PreparedSend> {
         let workspace = &self.store.read(cx).workspace;
         let session = workspace.session(self.session_id)?;
-        Some(prepare_send(
-            session,
-            &workspace.groups,
-            &workspace.global_definitions,
-            &workspace.preferences,
-        ))
+        let sources = workspace.token_sources(now_ms());
+        Some(prepare_send(session, &sources, &workspace.preferences))
     }
 
     /// Load the URL and method from the draft.

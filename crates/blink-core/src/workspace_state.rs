@@ -202,6 +202,42 @@ impl Workspace {
         .at(now_ms)
     }
 
+    /// Recompute `stale` for one request. Returns it.
+    pub fn refresh_stale(&mut self, id: u64) -> bool {
+        let Some(session) = self.session(id) else {
+            return false;
+        };
+        let stale = {
+            let sources = self.token_sources(crate::history::now_ms());
+            let ctx = sources.request_context(session);
+            crate::runner::is_stale(session, &crate::runner::prepare(&session.draft, Some(&ctx)))
+        };
+        if let Some(session) = self.session_mut(id) {
+            session.stale = stale;
+        }
+        stale
+    }
+
+    /// Recompute `stale` for every request from one set of token sources.
+    pub fn refresh_all_stale(&mut self) {
+        let flags: Vec<(u64, bool)> = {
+            let sources = self.token_sources(crate::history::now_ms());
+            self.sessions
+                .iter()
+                .map(|session| {
+                    let ctx = sources.request_context(session);
+                    let prepared = crate::runner::prepare(&session.draft, Some(&ctx));
+                    (session.id, crate::runner::is_stale(session, &prepared))
+                })
+                .collect()
+        };
+        for (id, stale) in flags {
+            if let Some(session) = self.session_mut(id) {
+                session.stale = stale;
+            }
+        }
+    }
+
     // ── Persistence ─────────────────────────────────────────────────────────
 
     pub fn encode(&self) -> String {

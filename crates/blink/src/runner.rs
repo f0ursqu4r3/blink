@@ -2,6 +2,7 @@
 //! `useRequestRunner`, `useWebSocket`, and the primary action of
 //! `RequestWorkspace.vue`; the pure parts live in `blink_core::runner`.
 
+use blink_core::history::now_ms;
 use std::time::Duration;
 
 use blink_core::engine::{SocketEvent, StreamMessage};
@@ -97,12 +98,8 @@ impl Store {
         let Some(session) = workspace.session(session_id) else {
             return;
         };
-        let prepared = prepare_send(
-            session,
-            &workspace.groups,
-            &workspace.global_definitions,
-            &workspace.preferences,
-        );
+        let sources = workspace.token_sources(now_ms());
+        let prepared = prepare_send(session, &sources, &workspace.preferences);
         let options = prepared.options.clone();
         let Some(ticket) = self.update_workspace(cx, |workspace| {
             begin_send(workspace.session_mut(session_id)?, &prepared.http, &options)
@@ -217,11 +214,7 @@ impl Store {
             if !outcome.captured.is_empty() {
                 workspace.capture(group_id, &outcome.captured);
             }
-            let groups = workspace.groups.clone();
-            let globals = workspace.global_definitions.clone();
-            for session in &mut workspace.sessions {
-                blink_core::runner::refresh_stale(session, &groups, &globals);
-            }
+            workspace.refresh_all_stale();
         });
     }
 
@@ -232,12 +225,8 @@ impl Store {
         let Some(session) = workspace.session(session_id) else {
             return;
         };
-        let prepared = prepare_send(
-            session,
-            &workspace.groups,
-            &workspace.global_definitions,
-            &workspace.preferences,
-        );
+        let sources = workspace.token_sources(now_ms());
+        let prepared = prepare_send(session, &sources, &workspace.preferences);
         let Ok(request) = prepared.socket else {
             return;
         };
