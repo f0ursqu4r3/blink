@@ -232,7 +232,8 @@ pub fn refresh_stale(session: &mut RequestSession, sources: &TokenSources) -> bo
     session.stale
 }
 
-/// Whether `session` is stale under `sources`.
+/// Whether `session` is stale under `sources`. Pass sources built with
+/// `ignoring_max_age`, so an expired value does not mark it edited.
 pub fn session_is_stale(session: &RequestSession, sources: &TokenSources) -> bool {
     let ctx = request_context(session, sources);
     is_stale(session, &prepare(&session.draft, Some(&ctx)))
@@ -798,6 +799,18 @@ mod tests {
         let session = workspace.session_mut(dependent_id).unwrap();
         session.sent_fingerprint = fingerprint;
         session.response = Some(ok("{}"));
+    }
+
+    #[test]
+    fn an_expired_value_does_not_mark_the_dependent_stale() {
+        let (mut workspace, login, dependent_id) = token_workspace();
+        workspace.groups[0].response_tokens.as_mut().unwrap()[0].max_age_secs = Some(1);
+        // Fetched at time 0 and sent fresh, then a second passes.
+        record_token(&mut workspace, login, "one");
+        mark_sent(&mut workspace, dependent_id);
+        workspace.refresh_all_stale();
+        assert!(!workspace.session(dependent_id).unwrap().stale);
+        assert!(!workspace.refresh_stale(dependent_id));
     }
 
     #[test]

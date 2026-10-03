@@ -225,8 +225,10 @@ impl Workspace {
         let Some(session) = self.session(id) else {
             return false;
         };
-        let stale =
-            crate::runner::session_is_stale(session, &self.token_sources(crate::history::now_ms()));
+        let sources = self
+            .token_sources(crate::history::now_ms())
+            .ignoring_max_age();
+        let stale = crate::runner::session_is_stale(session, &sources);
         if let Some(session) = self.session_mut(id) {
             session.stale = stale;
         }
@@ -236,7 +238,9 @@ impl Workspace {
     /// Recompute `stale` for every request from one set of token sources.
     pub fn refresh_all_stale(&mut self) {
         let flags: Vec<(u64, bool)> = {
-            let sources = self.token_sources(crate::history::now_ms());
+            let sources = self
+                .token_sources(crate::history::now_ms())
+                .ignoring_max_age();
             self.sessions
                 .iter()
                 .map(|session| {

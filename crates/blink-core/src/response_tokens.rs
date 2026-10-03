@@ -125,6 +125,9 @@ pub struct TokenSources<'a> {
     pub sessions: &'a [RequestSession],
     pub cache: &'a ResponseTokenCache,
     pub now_ms: f64,
+    /// Use a cached value even after its max age passes. Staleness reads
+    /// sources this way, so an expired value does not mark a request edited.
+    ignore_max_age: bool,
     /// The fingerprints of every request a response token reads, solved on
     /// first use.
     fingerprints: RefCell<Option<Fingerprints>>,
@@ -154,6 +157,7 @@ impl<'a> TokenSources<'a> {
             sessions,
             cache,
             now_ms: 0.0,
+            ignore_max_age: false,
             fingerprints: RefCell::new(None),
             labels: RefCell::new(HashMap::new()),
             #[cfg(test)]
@@ -171,6 +175,14 @@ impl<'a> TokenSources<'a> {
     /// The same sources at `now_ms`.
     pub fn at(mut self, now_ms: f64) -> Self {
         self.now_ms = now_ms;
+        self.fingerprints = RefCell::new(None);
+        self
+    }
+
+    /// The same sources, with cached values usable past their max age.
+    /// Only for staleness: a send still refreshes an expired value.
+    pub fn ignoring_max_age(mut self) -> Self {
+        self.ignore_max_age = true;
         self.fingerprints = RefCell::new(None);
         self
     }
@@ -447,6 +459,7 @@ impl<'a> TokenSources<'a> {
             .filter(|fingerprint| !fingerprint.is_empty())
             .and_then(|fingerprint| self.cache.lookup(token.request_id, fingerprint, &key))
             .filter(|(_, at)| match token.max_age_secs {
+                _ if self.ignore_max_age => true,
                 None => true,
                 Some(secs) => self.now_ms - *at as f64 <= secs as f64 * 1000.0,
             })
