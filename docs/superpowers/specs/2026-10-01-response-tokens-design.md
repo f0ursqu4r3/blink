@@ -84,6 +84,9 @@ New module `response_token_cache.rs`.
 - Every 2xx send of a request that a response token reads updates its
   entry, both manual sends and automatic sends. Blink extracts the values
   of all response tokens that read that request.
+- A 2xx response without the path of a token records an entry with no
+  value for that token. This entry replaces the previous value for that
+  fingerprint.
 - The cache saves to `response_tokens.json` in the app data directory,
   next to the workspace, in plaintext (the same as saved credentials). It
   keeps the newest 8 entries per request. The file saves off the UI thread,
@@ -103,6 +106,13 @@ When a response token has no usable value, interpolation fails with:
 `"access_token" has no current value. Send "Login" or the request that
 uses it.`
 
+History rows and the response panel's final URL show what was sent. This
+includes a response token value used in the URL, the same as for text
+tokens.
+
+Staleness ignores max age. An expired value does not mark a request
+EDITED. The next send still sends the source request again.
+
 ## Send flow
 
 Before an HTTP send or a WebSocket connect, the store runs a dependency
@@ -117,6 +127,14 @@ step.
    host is not sent automatically; the send shows "no current value".
 2. A cycle fails before any send. The message starts at the repeated
    request: `Response token cycle: /refresh → /login → /refresh`.
+   A request that sends a token it supplies itself fails with a message
+   that names the fix. When the reference comes from the request's auth
+   (its own or inherited), the message is
+   `"/login" uses "{{access_token}}", which it supplies. Set its auth to No auth.`
+   Otherwise it is
+   `"/login" uses "{{access_token}}", which it supplies. Remove that reference from "/login".`
+   Blink decides by building the request again with No auth. A manual send
+   of the source request shows the same message.
 3. The store sends each dependency in order through the normal send path.
    The source request's tab updates its response and history as for a
    manual send, and the cache updates.
@@ -156,6 +174,11 @@ shows the group path), source (Body / Header / Status), path, max age, and
 a delete button. The list shows inline errors for a duplicate name, a
 missing request, and an invalid max age.
 
+When a row's source request sends that same token, the row shows the
+self-supplying source message from the send flow as a warning when the
+editor opens. The warning does not block the save. A row error replaces
+the warning.
+
 ### Auth fields
 
 The bearer token, basic-auth username, and basic-auth password fields
@@ -181,6 +204,10 @@ Hint for a response token:
 
 - Usable: `From "Login" · body $.access_token · 3 min ago · DEV`
 - Not usable: `No current value · sends "Login" first`
+
+Hover hints refresh when the app state changes. When a max age passes
+while the app is idle, the hint can show the old age until the next
+change. The next send still refreshes the value.
 
 ### Source request
 
