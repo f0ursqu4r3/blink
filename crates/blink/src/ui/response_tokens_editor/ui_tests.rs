@@ -247,3 +247,92 @@ fn request_choices_show_the_group_path(cx: &mut TestAppContext) {
     let (_, label) = choices.iter().find(|(id, _)| *id == inner).unwrap();
     assert!(label.starts_with("API / Sub / "), "{label}");
 }
+
+#[gpui_kit::test]
+fn a_deleted_source_request_shows_when_the_dialog_opens(cx: &mut TestAppContext) {
+    let (_dir, harness, group_id, active) = setup(cx, &[]);
+    let token = ResponseToken {
+        id: blink_core::ids::RESPONSE_TOKENS.next(),
+        name: "access_token".into(),
+        request_id: active,
+        source: CheckSource::Json,
+        path: ".access_token".into(),
+        max_age_secs: None,
+    };
+    let token_id = token.id;
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            let group = workspace.groups.iter_mut().find(|g| g.id == group_id);
+            group.unwrap().response_tokens = Some(vec![token]);
+            workspace.delete_request(active);
+        })
+    });
+    assert!(cx.read(|cx| harness.store.read(cx).workspace.session(active).is_none()));
+
+    // The error shows before any save.
+    let form = open_form(&harness, cx, group_id);
+    let editor = cx.read(|cx| form.read(cx).response_tokens.clone());
+    let deleted = Some("Reads a deleted request. Choose a request.");
+    let error = cx.read(|cx| editor.read(cx).errors.get(&token_id).cloned());
+    assert_eq!(error.as_deref(), deleted);
+
+    // Save stays blocked and keeps the same error.
+    assert!(!save(&harness, cx, &form));
+    let error = cx.read(|cx| editor.read(cx).errors.get(&token_id).cloned());
+    assert_eq!(error.as_deref(), deleted);
+
+    // The real dialog paints the row with its error.
+    harness.dispatch(cx, OpenGroupSettings { group_id });
+    harness.draw(cx);
+    assert!(harness.update(cx, |window, cx| window.has_active_dialog(cx)));
+}
+
+#[gpui_kit::test]
+fn every_row_error_shows_at_once(cx: &mut TestAppContext) {
+    let (_dir, harness, group_id, active) = setup(cx, &[]);
+    let form = open_form(&harness, cx, group_id);
+    let editor = cx.read(|cx| form.read(cx).response_tokens.clone());
+    let bad_age = add_row(
+        &harness,
+        cx,
+        &editor,
+        ("a", active, CheckSource::Json, ".a", "soon"),
+    );
+    let no_path = add_row(
+        &harness,
+        cx,
+        &editor,
+        ("b", active, CheckSource::Json, "", ""),
+    );
+
+    assert!(!save(&harness, cx, &form));
+    let errors = cx.read(|cx| editor.read(cx).errors.clone());
+    assert_eq!(
+        errors.get(&bad_age).map(String::as_str),
+        Some("Enter a max age such as 30s, 15m, or 1h.")
+    );
+    assert_eq!(
+        errors.get(&no_path).map(String::as_str),
+        Some("Enter a path.")
+    );
+}
+
+#[gpui_kit::test]
+fn a_source_without_a_path_clears_the_path(cx: &mut TestAppContext) {
+    let (_dir, harness, group_id, active) = setup(cx, &[]);
+    let form = open_form(&harness, cx, group_id);
+    let editor = cx.read(|cx| form.read(cx).response_tokens.clone());
+    let id = add_row(
+        &harness,
+        cx,
+        &editor,
+        ("a", active, CheckSource::Json, ".a", ""),
+    );
+    harness.update(cx, |window, cx| {
+        editor.update(cx, |editor, cx| {
+            editor.set_source(id, CheckSource::Status, window, cx)
+        })
+    });
+    let path = cx.read(|cx| editor.read(cx).rows[0].path.read(cx).value().to_string());
+    assert_eq!(path, "");
+}

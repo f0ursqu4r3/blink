@@ -26,6 +26,32 @@ use crate::ui::request_pane::checks::{
 };
 use crate::ui::request_pane::common::cell_select;
 
+/// The row error of a token whose source request no longer exists.
+const DELETED_REQUEST: &str = "Reads a deleted request. Choose a request.";
+
+/// The field a row error is about.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Field {
+    Name,
+    Request,
+    Path,
+    MaxAge,
+}
+
+/// The field of an error from `validate_response_tokens`, `parse_max_age`,
+/// or this editor.
+fn field_of(error: &str) -> Field {
+    if error == DELETED_REQUEST || error == "Choose a request." {
+        Field::Request
+    } else if error == "Enter a path." {
+        Field::Path
+    } else if parse_max_age("x").err().as_deref() == Some(error) {
+        Field::MaxAge
+    } else {
+        Field::Name
+    }
+}
+
 const HELP: &str = "Read a value from another request's last 2xx response. Blink sends that request first when the value is missing, too old, or from other settings.";
 
 /// A jq path for JSON, a header name for Header. Body text and Status take
@@ -98,6 +124,8 @@ struct Row {
     source: CheckSource,
     path: Entity<InputState>,
     max_age: Entity<InputState>,
+    /// The saved source request no longer exists.
+    deleted_request: bool,
 }
 
 pub struct ResponseTokensEditor {
@@ -120,6 +148,14 @@ impl ResponseTokensEditor {
             errors: HashMap::new(),
         };
         for token in tokens {
+            // A source request deleted since the save shows at once.
+            if !editor
+                .requests
+                .iter()
+                .any(|(id, _)| *id == token.request_id)
+            {
+                editor.errors.insert(token.id, DELETED_REQUEST.to_string());
+            }
             editor.push_row(token, window, cx);
         }
         editor
@@ -145,6 +181,7 @@ impl ResponseTokensEditor {
             .map(|(id, label)| Choice::new(id.to_string(), label.clone()))
             .collect();
         let index = choice_index(&choices, &token.request_id.to_string());
+        let deleted_request = token.request_id != 0 && index.is_none();
         let request = cx.new(|cx| SelectState::new(choices, index, window, cx).searchable(true));
         self.rows.push(Row {
             id: token.id,
@@ -153,6 +190,7 @@ impl ResponseTokensEditor {
             source: token.source,
             path,
             max_age,
+            deleted_request,
         });
     }
 
@@ -185,7 +223,11 @@ impl ResponseTokensEditor {
         if let Some(row) = self.rows.iter_mut().find(|row| row.id == id) {
             row.source = source;
             row.path.update(cx, |input, cx| {
-                input.set_placeholder(path_placeholder(source), window, cx)
+                input.set_placeholder(path_placeholder(source), window, cx);
+                // A disabled path must not keep a stale value.
+                if !source.takes_path() {
+                    input.set_value("", window, cx);
+                }
             });
         }
         cx.notify();
@@ -197,35 +239,38 @@ impl ResponseTokensEditor {
         cx.notify();
     }
 
+    /// The row as a token, and its max-age error. A bad max age reads as
+    /// none.
+    fn row_token(row: &Row, cx: &App) -> (ResponseToken, Option<String>) {
+        let (max_age_secs, error) = match parse_max_age(&row.max_age.read(cx).value()) {
+            Ok(secs) => (secs, None),
+            Err(error) => (None, Some(error)),
+        };
+        let path = if row.source.takes_path() {
+            row.path.read(cx).value().trim().to_string()
+        } else {
+            String::new()
+        };
+        let token = ResponseToken {
+            id: row.id,
+            name: row.name.read(cx).value().trim().to_string(),
+            request_id: selected(&row.request, cx).parse().unwrap_or(0),
+            source: row.source,
+            path,
+            max_age_secs,
+        };
+        (token, error)
+    }
+
     /// The rows as tokens. Returns the first max-age error.
     pub fn tokens(&self, cx: &App) -> Result<Vec<ResponseToken>, String> {
         self.rows
             .iter()
-            .map(|row| {
-                let max_age_secs = parse_max_age(&row.max_age.read(cx).value())?;
-                let path = if row.source.takes_path() {
-                    row.path.read(cx).value().trim().to_string()
-                } else {
-                    String::new()
-                };
-                Ok(ResponseToken {
-                    id: row.id,
-                    name: row.name.read(cx).value().trim().to_string(),
-                    request_id: selected(&row.request, cx).parse().unwrap_or(0),
-                    source: row.source,
-                    path,
-                    max_age_secs,
-                })
+            .map(|row| match Self::row_token(row, cx) {
+                (token, None) => Ok(token),
+                (_, Some(error)) => Err(error),
             })
             .collect()
-    }
-
-    /// The id of the first row whose max age does not parse.
-    fn bad_max_age_row(&self, cx: &App) -> Option<u64> {
-        self.rows
-            .iter()
-            .find(|row| parse_max_age(&row.max_age.read(cx).value()).is_err())
-            .map(|row| row.id)
     }
 
     /// Show each error under its row. Replaces the errors shown before.
@@ -242,18 +287,45 @@ impl ResponseTokensEditor {
         sessions: &[RequestSession],
         cx: &mut Context<Self>,
     ) -> Option<Vec<ResponseToken>> {
-        let tokens = match self.tokens(cx) {
-            Ok(tokens) => tokens,
-            Err(error) => {
-                let errors = self.bad_max_age_row(cx).map(|id| (id, error));
-                self.show_errors(errors.into_iter().collect(), cx);
-                return None;
-            }
-        };
-        let errors = validate_response_tokens(&tokens, text_names, sessions);
+        // One pass: max-age errors and the other row errors show together.
+        let mut max_age_errors = HashMap::new();
+        let tokens: Vec<ResponseToken> = self
+            .rows
+            .iter()
+            .map(|row| {
+                let (token, error) = Self::row_token(row, cx);
+                if let Some(error) = error {
+                    max_age_errors.insert(row.id, error);
+                }
+                token
+            })
+            .collect();
+        let mut row_errors: HashMap<u64, String> =
+            validate_response_tokens(&tokens, text_names, sessions)
+                .into_iter()
+                .collect();
+        let errors: Vec<(u64, String)> = self
+            .rows
+            .iter()
+            .filter_map(|row| {
+                let error = row_errors
+                    .remove(&row.id)
+                    .map(|error| {
+                        let unchosen = selected(&row.request, cx).is_empty();
+                        if error == "Choose a request." && row.deleted_request && unchosen {
+                            DELETED_REQUEST.to_string()
+                        } else {
+                            error
+                        }
+                    })
+                    .or_else(|| max_age_errors.remove(&row.id))?;
+                Some((row.id, error))
+            })
+            .collect();
         let valid = errors.is_empty();
         self.show_errors(errors, cx);
-        valid.then_some(tokens)
+        // Without errors every max age parses, so `tokens` succeeds.
+        valid.then(|| self.tokens(cx).ok()).flatten()
     }
 
     fn render_row(&self, index: usize, row: &Row, cx: &mut Context<Self>) -> AnyElement {
@@ -261,6 +333,13 @@ impl ResponseTokensEditor {
         let id = row.id;
         let entity = cx.entity().downgrade();
         let error = self.errors.get(&id).cloned();
+        let field = error.as_deref().map(field_of);
+        // Tint only the cell the error is about.
+        let mark = move |cell: Div, which: Field| {
+            cell.when(field == Some(which), |this| {
+                this.bg(colors.destructive.opacity(0.12))
+            })
+        };
         let takes_path = row.source.takes_path();
         div()
             .flex()
@@ -268,25 +347,28 @@ impl ResponseTokensEditor {
             .child(
                 table_row(cx)
                     .child(
-                        cell(cx)
+                        mark(cell(cx), Field::Name)
                             .flex_1()
                             .min_w_0()
                             .border_l_0()
-                            .when(error.is_some(), |this| this.text_color(colors.destructive))
                             .child(text_input(&row.name)),
                     )
                     .child(
-                        cell(cx).w(relative(0.3)).flex_none().min_w_0().child(
-                            Select::new(&row.request)
-                                .appearance(false)
-                                .small()
-                                .w_full()
-                                .font_family(theme::MONO)
-                                .text_size(px(12.))
-                                .placeholder("Choose a request")
-                                .search_placeholder("Search requests")
-                                .menu_width(px(360.)),
-                        ),
+                        mark(cell(cx), Field::Request)
+                            .w(relative(0.3))
+                            .flex_none()
+                            .min_w_0()
+                            .child(
+                                Select::new(&row.request)
+                                    .appearance(false)
+                                    .small()
+                                    .w_full()
+                                    .font_family(theme::MONO)
+                                    .text_size(px(12.))
+                                    .placeholder("Choose a request")
+                                    .search_placeholder("Search requests")
+                                    .menu_width(px(360.)),
+                            ),
                     )
                     .child(
                         cell(cx).w(relative(0.16)).flex_none().child(cell_select(
@@ -306,7 +388,7 @@ impl ResponseTokensEditor {
                         )),
                     )
                     .child(
-                        cell(cx).flex_1().min_w_0().child(
+                        mark(cell(cx), Field::Path).flex_1().min_w_0().child(
                             Input::new(&row.path)
                                 .appearance(false)
                                 .small()
@@ -317,7 +399,7 @@ impl ResponseTokensEditor {
                         ),
                     )
                     .child(
-                        cell(cx)
+                        mark(cell(cx), Field::MaxAge)
                             .w(px(72.))
                             .flex_none()
                             .child(text_input(&row.max_age)),
@@ -424,6 +506,16 @@ mod tests {
         assert_eq!(path_placeholder(CheckSource::Header), "Header name");
         assert_eq!(path_placeholder(CheckSource::Body), "");
         assert_eq!(path_placeholder(CheckSource::Status), "");
+    }
+
+    #[test]
+    fn marks_the_field_each_error_is_about() {
+        assert_eq!(field_of(DELETED_REQUEST), Field::Request);
+        assert_eq!(field_of("Choose a request."), Field::Request);
+        assert_eq!(field_of("Enter a path."), Field::Path);
+        let max_age = parse_max_age("soon").unwrap_err();
+        assert_eq!(field_of(&max_age), Field::MaxAge);
+        assert_eq!(field_of("Enter a token name."), Field::Name);
     }
 
     #[test]
