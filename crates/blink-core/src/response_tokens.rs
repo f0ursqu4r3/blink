@@ -95,6 +95,17 @@ pub fn validate_response_tokens(
     errors
 }
 
+/// How many response tokens read the response of request `request_id`.
+pub fn response_token_readers(
+    workspace: &crate::workspace_state::Workspace,
+    request_id: u64,
+) -> usize {
+    workspace
+        .all_response_tokens()
+        .filter(|token| token.request_id == request_id)
+        .count()
+}
+
 /// The problem of a response token whose source request is gone.
 pub fn deleted_request_problem() -> String {
     "reads a deleted request.".to_string()
@@ -1253,6 +1264,14 @@ mod tests {
         let me_id = me.id;
         workspace.sessions.push(me);
         (workspace, login, me_id)
+    }
+
+    #[test]
+    fn counts_the_tokens_that_read_a_request() {
+        let (mut workspace, login, me) = workspace_with_login();
+        workspace.set_global_response_tokens(vec![token(9, "csrf", login)]);
+        assert_eq!(response_token_readers(&workspace, login), 2);
+        assert_eq!(response_token_readers(&workspace, me), 0);
     }
 
     #[test]

@@ -9,6 +9,7 @@ use blink_core::drag_drop::{
 };
 use blink_core::model::{RequestSession, SocketState};
 use blink_core::preferences::transport_options;
+use blink_core::response_tokens::response_token_readers;
 use blink_core::session::{
     LabelTokens, display_method, session_host, session_label, session_status,
 };
@@ -51,10 +52,11 @@ struct TabInfo {
     response_status: Option<u16>,
     stale: bool,
     failed_tests: usize,
+    readers: usize,
 }
 
 impl TabInfo {
-    fn new(session: &RequestSession, tokens: LabelTokens) -> Self {
+    fn new(session: &RequestSession, tokens: LabelTokens, readers: usize) -> Self {
         TabInfo {
             id: session.id,
             method: display_method(session).to_string(),
@@ -73,6 +75,7 @@ impl TabInfo {
                 .test_results
                 .as_ref()
                 .map_or(0, |results| results.iter().filter(|r| !r.pass).count()),
+            readers,
         }
     }
 }
@@ -241,6 +244,7 @@ impl RequestTabs {
             response_status,
             stale,
             failed_tests,
+            readers,
         } = tab;
         let title = format!("{method} {label} · {host} · {status}");
         let drop_zone = self
@@ -411,6 +415,18 @@ impl RequestTabs {
                                 )
                             }),
                     )
+                    .when(readers > 0, |this| {
+                        this.child(
+                            div()
+                                .id(("tab-token-readers", id))
+                                .text_xs()
+                                .text_color(colors.muted_foreground)
+                                .tooltip(move |window, cx| {
+                                    Tooltip::new(readers_tooltip(readers)).build(window, cx)
+                                })
+                                .child(readers.to_string()),
+                        )
+                    })
                     .children(indicator)
                     .when(!busy && failed_tests > 0, |this| {
                         let title = format!("{failed_tests} failed tests");
@@ -686,6 +702,14 @@ fn drop_point(position: Point<Pixels>) -> DropPoint {
     }
 }
 
+fn readers_tooltip(readers: usize) -> String {
+    if readers == 1 {
+        "Read by 1 response token".to_string()
+    } else {
+        format!("Read by {readers} response tokens")
+    }
+}
+
 fn truncated(text: String) -> Div {
     div()
         .min_w_0()
@@ -766,7 +790,11 @@ impl Render for RequestTabs {
             .into_iter()
             .map(|session| {
                 (
-                    TabInfo::new(session, tokens),
+                    TabInfo::new(
+                        session,
+                        tokens,
+                        response_token_readers(workspace, session.id),
+                    ),
                     self.tab_menu(session.id, workspace),
                 )
             })
@@ -933,6 +961,12 @@ impl Render for RequestTabs {
 mod tests {
     use super::*;
     use core::prelude::v1::test;
+
+    #[test]
+    fn words_the_reader_count_tooltip() {
+        assert_eq!(readers_tooltip(1), "Read by 1 response token");
+        assert_eq!(readers_tooltip(3), "Read by 3 response tokens");
+    }
 
     #[test]
     fn converts_bounds_for_the_drop_rules() {
