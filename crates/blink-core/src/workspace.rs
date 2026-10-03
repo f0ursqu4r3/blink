@@ -1561,6 +1561,24 @@ mod tests {
     }
 
     #[test]
+    fn decoding_reserves_response_token_ids() {
+        // Ids above any other test's, so the check holds in any order.
+        let input = fixture("v4-response-tokens")
+            .replace(
+                r#""id":7,"name":"access_token""#,
+                r#""id":800000001,"name":"access_token""#,
+            )
+            .replace(r#""id":8,"name":"csrf""#, r#""id":800000002,"name":"csrf""#);
+        let decoded = decode_workspace(&input).unwrap();
+        assert_eq!(
+            decoded.groups[0].response_tokens.as_ref().unwrap()[0].id,
+            800_000_001
+        );
+        assert_eq!(decoded.global_response_tokens[0].id, 800_000_002);
+        assert!(ids::RESPONSE_TOKENS.next() > 800_000_002);
+    }
+
+    #[test]
     fn reads_and_writes_a_v4_snapshot_without_open_tabs_like_the_ts_app() {
         assert_matches_ts("v4-no-tabs");
     }

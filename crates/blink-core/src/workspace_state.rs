@@ -2048,6 +2048,50 @@ mod tests {
         assert_eq!(saved.default_method.as_deref(), Some("POST"));
     }
 
+    fn response_token(id: u64, name: &str) -> ResponseToken {
+        ResponseToken {
+            id,
+            name: name.into(),
+            request_id: 1,
+            source: crate::model::CheckSource::Json,
+            path: ".t".into(),
+            max_age_secs: None,
+        }
+    }
+
+    #[test]
+    fn save_group_settings_sets_clears_and_keeps_response_tokens() {
+        let mut ws = Workspace::new();
+        let group = ws.add_group("G", None);
+        let tokens = |response_tokens| GroupSettingsChanges {
+            name: None,
+            local_auth: None,
+            local_definitions: None,
+            parent_id: None,
+            new_request_defaults: None,
+            environments: None,
+            response_tokens,
+        };
+        let list = vec![response_token(7, "t")];
+        ws.save_group_settings(group, tokens(Some(Some(list.clone()))));
+        assert_eq!(ws.group(group).unwrap().response_tokens, Some(list.clone()));
+        // None leaves the tokens as they are.
+        ws.save_group_settings(group, tokens(None));
+        assert_eq!(ws.group(group).unwrap().response_tokens, Some(list));
+        ws.save_group_settings(group, tokens(Some(None)));
+        assert_eq!(ws.group(group).unwrap().response_tokens, None);
+    }
+
+    #[test]
+    fn set_global_response_tokens_replaces_the_list() {
+        let mut ws = Workspace::new();
+        ws.set_global_response_tokens(vec![response_token(1, "a"), response_token(2, "b")]);
+        ws.set_global_response_tokens(vec![response_token(3, "c")]);
+        assert_eq!(ws.global_response_tokens, vec![response_token(3, "c")]);
+        ws.set_global_response_tokens(Vec::new());
+        assert!(ws.global_response_tokens.is_empty());
+    }
+
     // ── closeTabs ───────────────────────────────────────────────────────────
 
     fn open_four(ws: &mut Workspace) -> Vec<u64> {
