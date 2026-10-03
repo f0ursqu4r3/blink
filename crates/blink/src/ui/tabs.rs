@@ -308,6 +308,7 @@ impl RequestTabs {
 
         div()
             .id(("request-tab", id))
+            .test_support()
             .relative()
             .flex()
             .items_stretch()
@@ -504,17 +505,23 @@ impl RequestTabs {
             .session(id)
             .map(|session| session.draft.url.clone())
             .unwrap_or_default();
-        let curl = workspace
-            .session(id)
-            .map(|session| {
-                session_curl(
-                    session,
-                    &workspace.token_sources(now_ms()),
-                    &transport_options(&workspace.preferences),
-                )
-            })
-            .unwrap_or_default();
-        Box::new(move |menu, _, _| {
+        // Built on click: a token solve per tab per frame costs too much.
+        let curl = move |store: &Store| {
+            let workspace = &store.workspace;
+            workspace
+                .session(id)
+                .map(|session| {
+                    session_curl(
+                        session,
+                        &workspace.token_sources(now_ms()),
+                        &transport_options(&workspace.preferences),
+                    )
+                })
+                .unwrap_or_default()
+        };
+        Box::new(move |menu, _, cx| {
+            // The menu builds once per open, so this solve is not per frame.
+            let can_curl = !curl(store.read(cx)).is_empty();
             // Closing from the menu focuses the active tab, as `close` did.
             let change = |change: Box<dyn Fn(&mut Workspace)>| {
                 let store = store.clone();
@@ -565,8 +572,16 @@ impl RequestTabs {
             )
             .item(
                 PopupMenuItem::new("Copy as cURL")
-                    .disabled(curl.is_empty())
-                    .on_click(copy(curl.clone())),
+                    .disabled(!can_curl)
+                    .on_click({
+                        let store = store.clone();
+                        move |_: &ClickEvent, _: &mut Window, cx: &mut App| {
+                            let text = curl(store.read(cx));
+                            if !text.is_empty() {
+                                store.update(cx, |store, cx| store.copy(text, cx))
+                            }
+                        }
+                    }),
             )
             .separator()
             .item(

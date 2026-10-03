@@ -128,9 +128,14 @@ pub struct TokenSources<'a> {
     /// The fingerprints of every request a response token reads, solved on
     /// first use.
     fingerprints: RefCell<Option<Fingerprints>>,
+    /// The label of each source request, built once by `solve`.
+    labels: RefCell<HashMap<u64, String>>,
     /// Fingerprints built: the cost of resolution.
     #[cfg(test)]
     prepares: std::cell::Cell<usize>,
+    /// Source labels built.
+    #[cfg(test)]
+    labels_built: std::cell::Cell<usize>,
 }
 
 impl<'a> TokenSources<'a> {
@@ -150,8 +155,11 @@ impl<'a> TokenSources<'a> {
             cache,
             now_ms: 0.0,
             fingerprints: RefCell::new(None),
+            labels: RefCell::new(HashMap::new()),
             #[cfg(test)]
             prepares: std::cell::Cell::new(0),
+            #[cfg(test)]
+            labels_built: std::cell::Cell::new(0),
         }
     }
 
@@ -226,6 +234,12 @@ impl<'a> TokenSources<'a> {
                 && !nodes.iter().any(|n| n.id == source.id)
             {
                 nodes.push(source);
+            }
+        }
+        {
+            let mut labels = self.labels.borrow_mut();
+            for node in &nodes {
+                labels.entry(node.id).or_insert_with(|| self.label(node));
             }
         }
         let edges: Vec<Vec<usize>> = nodes
@@ -437,14 +451,15 @@ impl<'a> TokenSources<'a> {
                 Some(secs) => self.now_ms - *at as f64 <= secs as f64 * 1000.0,
             })
             .map(|(value, at)| (value.to_string(), at));
+        // `solve` labels every source before any resolve.
+        let request_label = self
+            .labels
+            .borrow()
+            .get(&source.id)
+            .cloned()
+            .unwrap_or_else(|| self.label(source));
         let info = ResponseTokenInfo {
-            request_label: session_label(
-                source,
-                Some(LabelTokens {
-                    groups: self.groups,
-                    global_definitions: self.globals,
-                }),
-            ),
+            request_label,
             source: token.source,
             path: token.path.clone(),
             fetched_at_ms: value.as_ref().map(|(_, at)| *at),
@@ -547,6 +562,8 @@ fn probe_marker(index: usize) -> String {
 
 impl TokenSources<'_> {
     fn label(&self, session: &RequestSession) -> String {
+        #[cfg(test)]
+        self.labels_built.set(self.labels_built.get() + 1);
         session_label(
             session,
             Some(LabelTokens {
@@ -1635,5 +1652,66 @@ mod tests {
                 .unwrap()
                 .is_empty()
         );
+    }
+
+    /// 100 requests in one group; requests 0..10 each supply a token that
+    /// every request sends in a header.
+    fn large_workspace() -> crate::workspace_state::Workspace {
+        let mut workspace = crate::workspace_state::Workspace::new();
+        workspace.sessions.clear();
+        let group_id = workspace.add_group("API", None);
+        let mut tokens = Vec::new();
+        for i in 0..100 {
+            let mut session = create_session(None);
+            session.group_id = Some(group_id);
+            session.draft.url = format!("https://api.test/r{i}");
+            for t in 0..10 {
+                if t != i {
+                    session.draft.headers.push(crate::request::pair(
+                        format!("X-T{t}"),
+                        format!("{{{{t{t}}}}}"),
+                    ));
+                }
+            }
+            if i < 10 {
+                tokens.push(token(1_000 + i as u64, &format!("t{i}"), session.id));
+            }
+            workspace.sessions.push(session);
+        }
+        workspace.groups[0].response_tokens = Some(tokens);
+        workspace
+    }
+
+    #[test]
+    fn one_instance_builds_each_source_once_and_labels_it_once() {
+        let workspace = large_workspace();
+        let sources = workspace.token_sources(0.0);
+        for session in workspace.sessions.iter().take(20) {
+            let _ = sources.request_context(session);
+        }
+        assert_eq!(sources.prepares.get(), 10);
+        assert_eq!(sources.labels_built.get(), 10);
+    }
+
+    /// Timing for the report: `cargo test --release -p blink-core
+    /// times_token_resolution -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn times_token_resolution() {
+        let workspace = large_workspace();
+        let session = &workspace.sessions[50];
+        let start = std::time::Instant::now();
+        for _ in 0..100 {
+            let _ = workspace.token_sources(0.0).request_context(session);
+        }
+        let fresh = start.elapsed();
+        let start = std::time::Instant::now();
+        let sources = workspace.token_sources(0.0);
+        for _ in 0..100 {
+            let _ = sources.request_context(session);
+        }
+        let shared = start.elapsed();
+        eprintln!("100 fresh token_sources().request_context(): {fresh:?}");
+        eprintln!("100 request_context() on one instance: {shared:?}");
     }
 }

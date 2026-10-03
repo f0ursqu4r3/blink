@@ -855,3 +855,33 @@ fn a_source_that_inherits_auth_with_its_own_token_names_the_fix(cx: &mut TestApp
     assert_eq!(paths(&requests), vec!["/login", "/me"]);
     assert_eq!(error(me, cx), "");
 }
+
+#[gpui_kit::test]
+fn the_tab_menu_copies_curl_as_the_request_is_when_clicked(cx: &mut TestAppContext) {
+    use gpui_kit::test::TestWindowExt as _;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let id = harness.active_id(cx);
+    harness.edit_draft(cx, |draft| draft.url = "https://a.test/one".into());
+    harness.draw(cx);
+    harness.update(cx, |window, cx| {
+        window.render_frame(cx);
+        window.right_click(("request-tab", id), cx);
+    });
+    harness.draw(cx);
+    // Changed after the menu opened: the copy reads the request at click.
+    harness.edit_draft(cx, |draft| draft.url = "https://a.test/two".into());
+    harness.update(cx, |window, cx| {
+        let mut menu = window.within("popup-menu");
+        // Close, Close others, Close to the right, Close all, -, Duplicate,
+        // -, Copy URL, Copy as cURL.
+        menu.click(8usize, cx);
+    });
+    harness.draw(cx);
+    let copied = cx.read_from_clipboard().and_then(|item| item.text());
+    let copied = copied.expect("copied text");
+    assert!(copied.starts_with("curl"), "{copied}");
+    assert!(copied.contains("https://a.test/two"), "{copied}");
+}
