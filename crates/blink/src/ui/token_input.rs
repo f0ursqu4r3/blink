@@ -672,14 +672,13 @@ pub fn secret_display(
         .collect()
 }
 
-/// The hover hint for one reference.
 /// The value column of a suggestion. A secret field never shows values.
 fn suggestion_value(option: &TokenOption, secret: bool) -> Option<String> {
     (!secret).then(|| option.value.clone())
 }
 
-/// A `secret` field never shows a token's value: a defined token reads
-/// `name is defined`.
+/// The hover hint for one reference. A `secret` field never shows a
+/// token's value: a defined token reads `name is defined`.
 fn reference_hint(
     raw: &str,
     ctx: Option<&InterpolationContext>,

@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 
-use blink_core::checks::{create_assertion, create_capture, is_capture_name};
+use blink_core::checks::{INVALID_NAME_MESSAGE, create_assertion, create_capture, is_capture_name};
 use blink_core::model::{Assertion, Capture, CheckOperator, CheckSource};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
@@ -368,10 +368,8 @@ impl ChecksEditor {
                             .min_w_0()
                             .when(invalid, |this| {
                                 this.text_color(colors.destructive).tooltip(|window, cx| {
-                                    gpui_kit::component::tooltip::Tooltip::new(
-                                        "Start with a letter. Use letters, digits, _, . or -.",
-                                    )
-                                    .build(window, cx)
+                                    gpui_kit::component::tooltip::Tooltip::new(INVALID_NAME_MESSAGE)
+                                        .build(window, cx)
                                 })
                             })
                             .when_some(name, |this, input| this.child(text_input(&input))),

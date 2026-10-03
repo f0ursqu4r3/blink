@@ -420,6 +420,8 @@ impl RequestTabs {
                         this.child(
                             div()
                                 .id(("tab-token-readers", id))
+                                .flex_shrink_0()
+                                .whitespace_nowrap()
                                 .text_xs()
                                 .text_color(colors.muted_foreground)
                                 .tooltip(move |window, cx| {
