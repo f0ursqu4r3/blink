@@ -52,6 +52,9 @@ Browser sidebar organizes the request tabs in the current session.
   active environment of the request's root group, so values never cross
   environments. Without an environment they go to the root group's tokens,
   or to the global tokens for ungrouped requests.
+- Add a response token in group or application settings. It reads a value from
+  another request's response, and Blink sends that request first when the
+  value is missing or older than the max age.
 - Watch `text/event-stream` responses as they arrive. Cancel stops the stream
   and keeps the events.
 - Open a WebSocket with a `ws://` or `wss://` URL. Send and receive messages

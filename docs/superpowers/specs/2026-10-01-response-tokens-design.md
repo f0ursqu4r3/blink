@@ -18,10 +18,12 @@ The bearer and basic-auth fields also become token fields, so a typo such as
 - Refresh: Blink sends the source request when no usable value exists or
   the value is older than the token's max age.
 - A stored value is usable only when its response was 2xx and the source
-  request still resolves to the same fingerprint. Each fingerprint keeps its
+  request still resolves to the same fingerprint. The cache stores only 2xx
+  results. Each fingerprint keeps its
   own value, so DEV and PROD each keep a token.
 - Auth fields mask literal text and show references. Response token values
-  never show in any field.
+  never show in any field. Text tokens that reference a response token
+  show the reference, never the value.
 - Response tokens are a separate list next to the text tokens.
   `Definitions` (`IndexMap<String, String>`) does not change.
 
@@ -60,6 +62,11 @@ Name rules: the nearest scope wins, as for text tokens. Within one scope,
 a response token cannot use the name of a text token or of another
 response token; the editor rejects it.
 
+A source request's fingerprint includes the values of the response tokens
+it reads. Blink solves the fingerprints of all sources together for each
+dependency cycle. A source request that really uses its own token in a
+loop gets no value.
+
 Values are read with `checks::read_source`, so paths work as in captures
 and assertions. Max age is typed as `30s`, `15m`, `1h`, or empty.
 
@@ -69,18 +76,20 @@ New module `response_token_cache.rs`.
 
 - Key: `(request_id, fingerprint)`. The fingerprint is `Prepared::fingerprint`
   of the resolved source request.
-- Entry: `fetched_at`, `status`, and the extracted values keyed by
-  `(source, path)`.
+- Entry: `fetched_at` and the extracted values keyed by `(source, path)`.
+  The cache stores only 2xx results, so an entry has no status field.
 - A value is usable when the entry for the source request's current
-  fingerprint exists, the status is 2xx, the `(source, path)` value is in
+  fingerprint exists, the `(source, path)` value is in
   the entry, and `now - fetched_at` is within the max age.
 - Every 2xx send of a request that a response token reads updates its
   entry, both manual sends and automatic sends. Blink extracts the values
   of all response tokens that read that request.
 - The cache saves to `response_tokens.json` in the app data directory,
   next to the workspace, in plaintext (the same as saved credentials). It
-  keeps the newest 8 entries per request.
-- Deleting a request removes its entries.
+  keeps the newest 8 entries per request. The file saves off the UI thread,
+  in order.
+- Entries for deleted requests are removed when the cache loads, not when
+  the request is deleted. Undo Delete therefore keeps the tokens.
 
 ## Resolution
 
@@ -100,12 +109,14 @@ Before an HTTP send or a WebSocket connect, the store runs a dependency
 step.
 
 1. `response_token_plan(session, workspace, cache, now)` (core, pure)
-   collects the token names the draft uses, following references through
+   collects the token names the request actually sends, following references through
    text token values. For each name that resolves to a response token
    without a usable value, the source request becomes a dependency. The
-   source request's own dependencies come first.
-2. A cycle fails before any send:
-   `Response token cycle: Login → Refresh → Login`.
+   source request's own dependencies come first. Disabled rows, an unsent
+   body, and overridden auth do not count. A token used as the whole URL
+   host is not sent automatically; the send shows "no current value".
+2. A cycle fails before any send. The message starts at the repeated
+   request: `Response token cycle: /refresh → /login → /refresh`.
 3. The store sends each dependency in order through the normal send path.
    The source request's tab updates its response and history as for a
    manual send, and the cache updates.
@@ -116,12 +127,20 @@ Rules:
 - Single flight: when a source request is already sending (manually or for
   another request), the step waits for that send instead of starting one.
 - While waiting, the dependent's response panel shows `Sending "Login"…`.
+  A waiting request counts as running: it cannot be deleted, and Cancel
+  ends the wait.
+- If a chain needs a source that it already sent in that chain, the
+  dependent fails with the "has no value" message. Blink does not send
+  the source again.
 - Cancel on the dependent cancels a dependency send it started. It does not
   cancel a send the user started.
 - Protected environments: the confirmation of the dependent covers
   dependencies in the same environment. When a dependency is in a different
   protected environment that is not confirmed, the step stops with
   `Send "Login" once to confirm PROD.`
+- When a dependency fails to start, the dependent fails at once. When a
+  dependency was deleted, the error is `"access_token" reads a deleted
+  request.`
 - When a dependency fails (network error, non-2xx status, missing path),
   the dependent is not sent. The error names the token and the request:
   `Could not get "access_token": "Login" returned 401.`
@@ -143,10 +162,14 @@ The bearer token, basic-auth username, and basic-auth password fields
 become `TokenInput`. `TokenInput` gets a `secret` mode, used for the bearer
 token and the password:
 
-- Literal text shows as `•` characters.
-- References show as their raw `{{name}}` text, never as values.
+- While unfocused, the field shows a masked row: literal text as `•`
+  characters, references as their raw `{{name}}` text, never as values.
+  While focused, the field is the normal token field.
 - Undefined references show in the warning color.
 - `{{` opens token suggestions.
+- In secret fields, hints and suggestions show no text token values. The
+  accessibility value is hidden. This uses a vendored gpui-component patch
+  (`Input::hide_accessibility_value`, in `BLINK-PATCH.md`).
 
 ### Response tokens in other fields
 
@@ -162,7 +185,8 @@ Hint for a response token:
 ### Source request
 
 The tab of a request that response tokens read shows a small badge with
-the number of those tokens.
+the number of those tokens. Editing a source request refreshes the stale flags
+of every request.
 
 ## Testing
 
