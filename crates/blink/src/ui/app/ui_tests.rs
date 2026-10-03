@@ -774,3 +774,84 @@ fn a_websocket_connects_after_its_source_request(cx: &mut TestAppContext) {
     let shown = harness.session(cx, |s| (s.waiting_on.clone(), s.error.clone()));
     assert_eq!(shown, (None, String::new()));
 }
+
+#[gpui_kit::test]
+fn a_source_that_inherits_auth_with_its_own_token_names_the_fix(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = engine(dir.path());
+    init(cx, &engine);
+    let harness = open(cx, &engine);
+    let (url, requests) = serve(|raw| {
+        if raw.windows(6).any(|w| w == b"/login") {
+            Reply::ok("application/json", r#"{"access_token":"abc"}"#)
+        } else {
+            Reply::ok("text/plain", "me")
+        }
+    });
+    let login = harness.active_id(cx);
+    // Login and Me are in a group whose auth is `Bearer {{access_token}}`.
+    let me = harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            let group = workspace.add_group("API", None);
+            workspace.move_request(login, Some(group));
+            workspace.session_mut(login).unwrap().draft.url = format!("{url}/login");
+            let api = workspace.groups.iter_mut().find(|g| g.id == group).unwrap();
+            api.local_auth = Some(blink_core::model::AuthorizationConfig::Bearer {
+                token: "{{access_token}}".into(),
+            });
+            api.response_tokens = Some(vec![source_token(login)]);
+            let mut me = blink_core::session::create_session(None);
+            me.group_id = Some(group);
+            me.draft.url = format!("{url}/me");
+            let id = me.id;
+            workspace.sessions.push(me);
+            id
+        })
+    });
+    let message =
+        "\"/login\" uses \"{{access_token}}\", which it supplies. Set its auth to No auth.";
+    let send = |id: u64, cx: &mut TestAppContext| {
+        harness.update(cx, |window, cx| {
+            harness
+                .store
+                .update(cx, |store, cx| store.send(id, window, cx))
+        });
+        cx.run_until_parked();
+    };
+    let error = |id: u64, cx: &TestAppContext| {
+        cx.read(|cx| {
+            harness
+                .store
+                .read(cx)
+                .workspace
+                .session(id)
+                .unwrap()
+                .error
+                .clone()
+        })
+    };
+
+    // A manual send of Login names the fix.
+    send(login, cx);
+    assert_eq!(error(login, cx), message);
+
+    // So does a send of the dependent.
+    send(me, cx);
+    assert_eq!(error(me, cx), message);
+    assert!(paths(&requests).is_empty());
+
+    // With No auth on Login, the dependent sends Login, then itself.
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.session_mut(login).unwrap().draft.local_auth =
+                Some(blink_core::model::AuthorizationConfig::None);
+        })
+    });
+    send(me, cx);
+    wait(cx, "dependent sent", |cx| {
+        let session = harness.store.read(cx).workspace.session(me).unwrap();
+        !session.busy && session.waiting_on.is_none() && !session.history.is_empty()
+    });
+    assert_eq!(paths(&requests), vec!["/login", "/me"]);
+    assert_eq!(error(me, cx), "");
+}

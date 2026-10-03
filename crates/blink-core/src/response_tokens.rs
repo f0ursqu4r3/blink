@@ -591,6 +591,9 @@ impl TokenSources<'_> {
             let Some(token) = self.claimed(session.group_id, &key) else {
                 continue;
             };
+            if token.request_id == session_id {
+                return Err(self.self_supplied_message(session, &ctx, &key));
+            }
             if let Some(start) = stack.iter().position(|id| *id == token.request_id) {
                 let labels: Vec<String> = stack[start..]
                     .iter()
@@ -614,19 +617,83 @@ impl TokenSources<'_> {
         Ok(())
     }
 
+    /// The response tokens that request `session_id` sends and supplies
+    /// itself, by token id, each with the message that says how to fix it.
+    /// Such a request can never get a value for the token.
+    pub fn self_supplied_tokens(&self, session_id: u64) -> Vec<(u64, String)> {
+        let Some(session) = self.sessions.iter().find(|s| s.id == session_id) else {
+            return Vec::new();
+        };
+        let ctx = self.request_context(session);
+        self.probe_keys(session, &ctx, true)
+            .into_iter()
+            .filter_map(|key| {
+                let token = self.claimed(session.group_id, &key)?;
+                (token.request_id == session_id)
+                    .then(|| (token.id, self.self_supplied_message(session, &ctx, &key)))
+            })
+            .collect()
+    }
+
+    /// The message for the first response token that request `session_id`
+    /// sends and supplies itself.
+    pub fn self_supplied(&self, session_id: u64) -> Option<String> {
+        self.self_supplied_tokens(session_id)
+            .into_iter()
+            .next()
+            .map(|(_, message)| message)
+    }
+
+    /// `session` sends `key`, a response token that reads `session`. Names
+    /// the fix: No auth when the reference goes away without the request's
+    /// auth, else removing the reference.
+    fn self_supplied_message(
+        &self,
+        session: &RequestSession,
+        ctx: &ResolvedRequestContext,
+        key: &str,
+    ) -> String {
+        let label = self.label(session);
+        let name = key.strip_prefix("_.").unwrap_or(key);
+        let mut without_auth = ctx.clone();
+        without_auth.auth = AuthorizationConfig::None;
+        let fix = if self
+            .probe_keys(session, &without_auth, true)
+            .iter()
+            .any(|k| k == key)
+        {
+            format!("Remove that reference from \"{label}\".")
+        } else {
+            "Set its auth to No auth.".to_string()
+        };
+        format!("\"{label}\" uses \"{{{{{name}}}}}\", which it supplies. {fix}")
+    }
+
     /// The keys of the response tokens without a usable value that `session`
     /// sends, in order of first appearance. A global key starts with `_.`.
+    fn probe(&self, session: &RequestSession, ctx: &ResolvedRequestContext) -> Vec<String> {
+        self.probe_keys(session, ctx, false)
+    }
+
+    /// The keys of the response tokens that `session` sends, in order of
+    /// first appearance: all of them when `every`, else only those without a
+    /// usable value. A global key starts with `_.`.
     ///
     /// Each such token gets a marker value and is treated as text; the built
     /// request is then scanned for the markers. A request that does not
     /// build needs nothing: the send reports the real error.
-    fn probe(&self, session: &RequestSession, ctx: &ResolvedRequestContext) -> Vec<String> {
+    fn probe_keys(
+        &self,
+        session: &RequestSession,
+        ctx: &ResolvedRequestContext,
+        every: bool,
+    ) -> Vec<String> {
         let mut probe = ctx.clone();
         let tokens = &mut probe.tokens;
         let mut keys: Vec<String> = Vec::new();
         let unusable = |map: &IndexMap<String, ResponseTokenInfo>| -> Vec<String> {
             map.iter()
-                .filter(|(_, info)| info.fetched_at_ms.is_none())
+                .filter(|(_, info)| every || info.fetched_at_ms.is_none())
                 .map(|(name, _)| name.clone())
                 .collect()
         };
@@ -1439,18 +1506,48 @@ mod tests {
     }
 
     #[test]
-    fn a_request_that_reads_its_own_token_is_a_cycle() {
-        let (mut workspace, login, _) = workspace_with_login();
+    fn a_request_that_reads_its_own_token_names_the_reference() {
+        let (mut workspace, login, me) = workspace_with_login();
         workspace
             .session_mut(login)
             .unwrap()
             .draft
             .headers
             .push(crate::request::pair("X-Token", "{{access_token}}"));
+        let message = "\"/login\" uses \"{{access_token}}\", which it supplies. Remove that reference from \"/login\".";
+        let sources = workspace.token_sources(0.0);
+        assert_eq!(response_token_plan(login, &sources).unwrap_err(), message);
+        assert_eq!(response_token_plan(me, &sources).unwrap_err(), message);
+        assert_eq!(sources.self_supplied(login).as_deref(), Some(message));
+        assert_eq!(sources.self_supplied(me), None);
+    }
+
+    #[test]
+    fn a_request_that_reads_its_own_token_through_inherited_auth_names_the_auth() {
+        let (mut workspace, login, me) = workspace_with_login();
+        workspace.groups[0].local_auth = Some(AuthorizationConfig::Bearer {
+            token: "{{access_token}}".into(),
+        });
+        // Me inherits the group auth too.
+        workspace.session_mut(me).unwrap().draft.headers.clear();
+        let message =
+            "\"/login\" uses \"{{access_token}}\", which it supplies. Set its auth to No auth.";
+        let sources = workspace.token_sources(0.0);
+        assert_eq!(response_token_plan(login, &sources).unwrap_err(), message);
+        assert_eq!(response_token_plan(me, &sources).unwrap_err(), message);
+        assert_eq!(sources.self_supplied(login).as_deref(), Some(message));
+
+        workspace.session_mut(login).unwrap().draft.local_auth = Some(AuthorizationConfig::None);
+        let sources = workspace.token_sources(0.0);
+        assert!(response_token_plan(login, &sources).unwrap().is_empty());
         assert_eq!(
-            response_token_plan(login, &workspace.token_sources(0.0)).unwrap_err(),
-            "Response token cycle: /login → /login"
+            response_token_plan(me, &sources).unwrap(),
+            vec![PlanStep {
+                request_id: login,
+                token: "access_token".into()
+            }]
         );
+        assert_eq!(sources.self_supplied(login), None);
     }
 
     #[test]

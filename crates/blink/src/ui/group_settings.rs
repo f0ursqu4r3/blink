@@ -27,7 +27,9 @@ use crate::ui::form::{
     section_heading, section_heading_with_help, selected,
 };
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
-use crate::ui::response_tokens_editor::{ResponseTokensEditor, request_choices};
+use crate::ui::response_tokens_editor::{
+    ResponseTokensEditor, request_choices, self_supplied_warnings,
+};
 use crate::ui::token_input::TokenInput;
 
 /// Open the dialog.
@@ -312,8 +314,9 @@ impl GroupForm {
         });
 
         let saved_tokens = group.response_tokens.clone().unwrap_or_default();
+        let warnings = self_supplied_warnings(&store.read(cx).workspace, &saved_tokens);
         let response_tokens =
-            cx.new(|cx| ResponseTokensEditor::new(saved_tokens, requests, window, cx));
+            cx.new(|cx| ResponseTokensEditor::new(saved_tokens, requests, warnings, window, cx));
 
         let subscriptions = vec![
             cx.subscribe_in(

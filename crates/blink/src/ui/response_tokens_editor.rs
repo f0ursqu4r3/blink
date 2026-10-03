@@ -64,6 +64,30 @@ fn path_placeholder(source: CheckSource) -> &'static str {
     }
 }
 
+/// The warning of each token in `tokens` whose source request sends that
+/// same token, by token id. Such a source can never get a value.
+pub fn self_supplied_warnings(
+    workspace: &Workspace,
+    tokens: &[ResponseToken],
+) -> HashMap<u64, String> {
+    let sources = workspace.token_sources(blink_core::history::now_ms());
+    let mut warnings = HashMap::new();
+    let mut checked = Vec::new();
+    for token in tokens {
+        if checked.contains(&token.request_id) {
+            continue;
+        }
+        checked.push(token.request_id);
+        warnings.extend(
+            sources
+                .self_supplied_tokens(token.request_id)
+                .into_iter()
+                .filter(|(id, _)| tokens.iter().any(|t| t.id == *id)),
+        );
+    }
+    warnings
+}
+
 /// Each request as `(id, "Group / Sub / label")`, in Browser order:
 /// ungrouped requests first, then each group depth-first with its requests
 /// before its child groups.
@@ -133,12 +157,16 @@ pub struct ResponseTokensEditor {
     rows: Vec<Row>,
     /// The error of each row, by token id, from the last save.
     errors: HashMap<u64, String>,
+    /// The warning of each row, by token id, from when the editor opened.
+    /// It does not block the save, and shows only when the row has no error.
+    warnings: HashMap<u64, String>,
 }
 
 impl ResponseTokensEditor {
     pub fn new(
         tokens: Vec<ResponseToken>,
         requests: Vec<(u64, String)>,
+        warnings: HashMap<u64, String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -146,6 +174,7 @@ impl ResponseTokensEditor {
             requests,
             rows: Vec::new(),
             errors: HashMap::new(),
+            warnings,
         };
         for token in tokens {
             // A source request deleted since the save shows at once.
@@ -236,6 +265,7 @@ impl ResponseTokensEditor {
     fn remove_row(&mut self, id: u64, cx: &mut Context<Self>) {
         self.rows.retain(|row| row.id != id);
         self.errors.remove(&id);
+        self.warnings.remove(&id);
         cx.notify();
     }
 
@@ -334,6 +364,8 @@ impl ResponseTokensEditor {
         let entity = cx.entity().downgrade();
         let error = self.errors.get(&id).cloned();
         let field = error.as_deref().map(field_of);
+        // An error replaces the warning in the row's note.
+        let warning = self.warnings.get(&id).filter(|_| error.is_none()).cloned();
         // Tint only the cell the error is about.
         let mark = move |cell: Div, which: Field| {
             cell.when(field == Some(which), |this| {
@@ -411,15 +443,20 @@ impl ResponseTokensEditor {
                         cx,
                     )),
             )
-            .when_some(error, |this, error| {
-                this.child(
-                    note(error, colors.destructive)
-                        .px_2()
-                        .py(px(4.))
-                        .border_b_1()
-                        .border_color(colors.border),
-                )
-            })
+            .when_some(
+                error
+                    .map(|error| (error, colors.destructive))
+                    .or(warning.map(|warning| (warning, colors.warning))),
+                |this, (text, color)| {
+                    this.child(
+                        note(text, color)
+                            .px_2()
+                            .py(px(4.))
+                            .border_b_1()
+                            .border_color(colors.border),
+                    )
+                },
+            )
             .into_any_element()
     }
 }

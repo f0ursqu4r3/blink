@@ -336,3 +336,48 @@ fn a_source_without_a_path_clears_the_path(cx: &mut TestAppContext) {
     let path = cx.read(|cx| editor.read(cx).rows[0].path.read(cx).value().to_string());
     assert_eq!(path, "");
 }
+
+#[gpui_kit::test]
+fn a_source_that_supplies_its_own_token_shows_a_warning(cx: &mut TestAppContext) {
+    let (_dir, harness, group_id, active) = setup(cx, &[]);
+    let token = ResponseToken {
+        id: blink_core::ids::RESPONSE_TOKENS.next(),
+        name: "access_token".into(),
+        request_id: active,
+        source: CheckSource::Json,
+        path: ".access_token".into(),
+        max_age_secs: None,
+    };
+    let token_id = token.id;
+    // The source request is in the group, whose auth sends the token.
+    harness.store.update(cx, |store, cx| {
+        store.update_workspace(cx, |workspace| {
+            workspace.move_request(active, Some(group_id));
+            workspace.session_mut(active).unwrap().draft.url = "https://api.test/login".into();
+            let group = workspace.groups.iter_mut().find(|g| g.id == group_id);
+            let group = group.unwrap();
+            group.local_auth = Some(blink_core::model::AuthorizationConfig::Bearer {
+                token: "{{access_token}}".into(),
+            });
+            group.response_tokens = Some(vec![token]);
+        })
+    });
+
+    // The warning shows when the dialog opens.
+    let form = open_form(&harness, cx, group_id);
+    let editor = cx.read(|cx| form.read(cx).response_tokens.clone());
+    let warning = cx.read(|cx| editor.read(cx).warnings.get(&token_id).cloned());
+    assert_eq!(
+        warning.as_deref(),
+        Some("\"/login\" uses \"{{access_token}}\", which it supplies. Set its auth to No auth.")
+    );
+    assert!(cx.read(|cx| editor.read(cx).errors.is_empty()));
+
+    // It does not block the save.
+    assert!(save(&harness, cx, &form));
+
+    // The real dialog paints the row with its warning.
+    harness.dispatch(cx, OpenGroupSettings { group_id });
+    harness.draw(cx);
+    assert!(harness.update(cx, |window, cx| window.has_active_dialog(cx)));
+}
