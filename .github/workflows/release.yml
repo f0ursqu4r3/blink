@@ -50,7 +50,8 @@ jobs:
         run: cargo test --workspace
 
       - name: Build the app bundle
-        run: BLINK_UNIVERSAL=1 script/bundle-macos
+        # vpk applies the Developer ID signature after importing the certificate.
+        run: script/bundle-macos --universal --ad-hoc
 
       - uses: actions/setup-dotnet@v4
         with:

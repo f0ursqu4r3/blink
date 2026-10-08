@@ -235,7 +235,7 @@ Set `BLINK_DATA_DIR` to run against a separate data directory:
 BLINK_DATA_DIR=/tmp/blink-dev cargo run -p blink
 ```
 
-Build the macOS app bundle at `target/release/Blink.app`:
+Build a signed and notarized macOS release:
 
 ```sh
 script/bundle-macos
@@ -248,11 +248,68 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+The script selects your Developer ID Application certificate when exactly
+one is available. It enables the hardened runtime, requests a secure
+timestamp, submits the app to Apple, and waits for acceptance. It then
+staples the notarization ticket, verifies the signature and ticket, and
+runs the Gatekeeper assessment. Only then does it replace the previous app
+and create `target/release/Blink-VERSION-macos-ARCH.zip` for distribution.
+`ARCH` is `arm64`, `x86_64`, or `universal`.
+
+The certificate and its private key must be available in your unlocked
+keychain. Signing and notarization require internet access. Store your
+notarization credentials once with this interactive command:
+
+```sh
+xcrun notarytool store-credentials blink-notary
+```
+
+Enter your Apple Developer account email, Team ID, and an app-specific
+password when prompted. The command validates and stores them in Keychain.
+Do not put passwords in source files or shell command arguments. For an
+existing profile, use `--notary-profile NAME` or set `NOTARY_PROFILE`.
+
+To select a certificate, use its exact name or SHA-1 fingerprint:
+
+```sh
+security find-identity -v -p codesigning
+script/bundle-macos --identity 'Developer ID Application: Your Name (TEAMID)'
+```
+
+`MACOS_SIGN_IDENTITY` also selects the certificate. If none is available,
+the script stops. Use `--sign-only` to skip notarization for a development
+build. For a local build without a certificate, use
+`script/bundle-macos --ad-hoc`. An ad-hoc signature does not establish
+developer identity or satisfy Gatekeeper for downloaded apps.
+
+To build for both Apple silicon and Intel:
+
+```sh
+rustup target add aarch64-apple-darwin x86_64-apple-darwin
+script/bundle-macos --universal
+```
+
+`BLINK_UNIVERSAL=1` also enables this mode. The script always builds into
+the repository's `target` directory. Run `open target/release/Blink.app`
+to launch the result.
+
+Local signing modes produce only the app, not a new release ZIP. The
+release ZIP contains the app with its attached ticket. Notarization logs
+remain in `target/release/notarization.*` for diagnosis. A submission waits
+up to 30 minutes; Apple can continue processing after that timeout. Use
+the submission ID in `submission.plist` with `xcrun notarytool info` or
+`xcrun notarytool log` to check a delayed or rejected submission.
+
+The tagged release workflow still uses Velopack for update packages. This
+standalone ZIP does not include automatic updates. See
+[Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
+
 Engine tests use local TCP and HTTPS servers. Authentication integration
 tests cover PKCE exchange, refresh rotation, concurrent refresh, cancellation,
 credential removal, token endpoint errors, and client-certificate origin
 restrictions. These tests use a private test CA and an in-memory credential
 store. They do not change Keychain or OS trust settings. Real provider login
+python3 script/test_bundle_macos.py # macOS bundle and signing checks
 and OS credential authorization still need manual checks.
 
 Snapshot compatibility tests read

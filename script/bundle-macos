@@ -1,33 +1,200 @@
 #!/bin/sh
-# Build Blink in release mode and wrap it in target/release/Blink.app.
-# BLINK_UNIVERSAL=1 builds for Apple silicon and Intel and joins the two.
+# Build, sign, notarize, and package Blink for macOS distribution.
 set -eu
+
+usage() {
+  cat <<'EOF'
+Usage: script/bundle-macos [--identity NAME_OR_SHA1] [--universal]
+                          [--notary-profile NAME | --sign-only | --ad-hoc]
+
+Build Blink.app, sign with Developer ID, notarize, staple, and verify it.
+Create a release ZIP only after Apple and Gatekeeper accept the app.
+
+  --identity VALUE  Use this exact certificate name or SHA-1 fingerprint.
+  --notary-profile NAME
+                    Use saved notarytool credentials (default: blink-notary).
+  --sign-only       Sign without notarizing or creating a release ZIP.
+  --ad-hoc          Sign for local use without a certificate.
+  --universal       Build for Apple silicon and Intel (requires both Rust targets).
+  --help            Show this help.
+
+Environment: MACOS_SIGN_IDENTITY selects the certificate; NOTARY_PROFILE
+selects saved credentials; BLINK_UNIVERSAL=1 enables a universal build.
+Command-line options take precedence.
+
+Setup: xcrun notarytool store-credentials blink-notary
+Output: target/release/Blink.app and Blink-VERSION-macos-ARCH.zip.
+Local signing modes output only Blink.app. They do not produce a release.
+EOF
+}
+
+fail() {
+  printf '%s\n' "$*" >&2
+  exit 1
+}
+
+identity=${MACOS_SIGN_IDENTITY:-}
+universal=${BLINK_UNIVERSAL:-0}
+adhoc=0
+sign_option=0
+mode=release
+mode_option=0
+notary_profile=${NOTARY_PROFILE:-blink-notary}
+profile_option=0
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --help|-h) usage; exit 0 ;;
+    --identity)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--identity requires a certificate name or SHA-1 fingerprint.'
+      [ "$sign_option" = 0 ] || fail 'Choose either --identity or --ad-hoc once.'
+      identity=$2
+      sign_option=1
+      shift 2
+      ;;
+    --ad-hoc)
+      [ "$sign_option" = 0 ] || fail 'Choose either --identity or --ad-hoc once.'
+      [ "$mode_option" = 0 ] || fail 'Choose either --sign-only or --ad-hoc once.'
+      adhoc=1
+      mode=local
+      mode_option=1
+      sign_option=1
+      shift
+      ;;
+    --sign-only)
+      [ "$mode_option" = 0 ] || fail 'Choose either --sign-only or --ad-hoc once.'
+      mode=local
+      mode_option=1
+      shift
+      ;;
+    --notary-profile)
+      [ "$#" -ge 2 ] && [ -n "$2" ] || fail '--notary-profile requires a profile name.'
+      notary_profile=$2
+      profile_option=1
+      shift 2
+      ;;
+    --universal) universal=1; shift ;;
+    *) fail "Unknown option: $1. Use --help for usage." ;;
+  esac
+done
+[ "$mode" = release ] || [ "$profile_option" = 0 ] || fail '--notary-profile cannot be combined with local signing modes.'
+
+[ "$(uname -s)" = Darwin ] || fail 'This script requires macOS.'
+for tool in cargo codesign; do
+  command -v "$tool" >/dev/null 2>&1 || fail "Required tool not found: $tool"
+done
+
+# Refuse an unavailable or ambiguous identity before spending time on a build.
+# Never silently downgrade a Developer ID build to an ad-hoc signature.
+if [ "$adhoc" = 0 ]; then
+  [ "$identity" != - ] || fail 'Use --ad-hoc explicitly for local signing.'
+  identities=$(security find-identity -v -p codesigning)
+  candidates=$(printf '%s\n' "$identities" | sed -n \
+    's/^.*) \([[:xdigit:]]\{40\}\) "\(Developer ID Application:.*\)"$/\1 \2/p')
+  count=0
+  selected=
+  while IFS= read -r candidate; do
+    [ -n "$candidate" ] || continue
+    fingerprint=${candidate%% *}
+    name=${candidate#* }
+    if [ -z "$identity" ] || [ "$identity" = "$fingerprint" ] || [ "$identity" = "$name" ]; then
+      selected=$fingerprint
+      count=$((count + 1))
+    fi
+  done <<EOF
+$candidates
+EOF
+  [ "$count" -gt 0 ] || fail 'No matching Developer ID Application certificate with a private key was found. Check security find-identity -v -p codesigning, or use --ad-hoc for local use.'
+  [ "$count" = 1 ] || fail 'Multiple Developer ID Application certificates match. Select one with --identity NAME_OR_SHA1.'
+  identity=$selected
+  printf 'Signing with Developer ID Application identity %s\n' "$identity" >&2
+else
+  printf 'Using an ad-hoc signature for local use.\n' >&2
+fi
+
+if [ "$mode" = release ]; then
+  for tool in xcrun ditto spctl lipo; do
+    command -v "$tool" >/dev/null 2>&1 || fail "Required tool not found: $tool"
+  done
+  # Check the saved credentials before building or changing any output.
+  if ! xcrun notarytool history --keychain-profile "$notary_profile" --output-format plist >/dev/null; then
+    fail "Cannot authenticate with notary profile '$notary_profile'. Run: xcrun notarytool store-credentials '$notary_profile'"
+  fi
+fi
 
 root=$(cd "$(dirname "$0")/.." && pwd)
 cd "$root"
 version=$(cargo pkgid -p blink | sed 's/.*[#@]//')
+mkdir -p target/release
+stage=$(mktemp -d "$root/target/release/.blink-bundle.XXXXXX")
+trap 'rm -rf "$stage"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+app="$stage/Blink.app"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
 
-if [ "${BLINK_UNIVERSAL:-}" = 1 ]; then
-  cargo build --release -p blink --target aarch64-apple-darwin
-  cargo build --release -p blink --target x86_64-apple-darwin
-  mkdir -p target/release
-  lipo -create -output target/release/blink \
+if [ "$universal" = 1 ]; then
+  cargo build --release --locked -p blink --target-dir target --target aarch64-apple-darwin
+  cargo build --release --locked -p blink --target-dir target --target x86_64-apple-darwin
+  lipo -create -output "$app/Contents/MacOS/blink" \
     target/aarch64-apple-darwin/release/blink \
     target/x86_64-apple-darwin/release/blink
 else
-  cargo build --release -p blink
+  cargo build --release --locked -p blink --target-dir target
+  cp target/release/blink "$app/Contents/MacOS/blink"
 fi
 
-app=target/release/Blink.app
-rm -rf "$app"
-mkdir -p "$app/Contents/MacOS" "$app/Contents/Resources"
-cp target/release/blink "$app/Contents/MacOS/blink"
 cp crates/blink/resources/Info.plist "$app/Contents/Info.plist"
 cp crates/blink/resources/icon.icns "$app/Contents/Resources/icon.icns"
 # The bundle version is the crate version.
 plist="$app/Contents/Info.plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $version" "$plist"
 /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $version" "$plist"
-# Ad-hoc sign so Gatekeeper accepts the local build.
-codesign --force --sign - "$app" >/dev/null
-echo "$app"
+# The bundle contains one executable and resources, with no nested code.
+if [ "$adhoc" = 1 ]; then
+  codesign --force --sign - --options runtime --timestamp=none "$app"
+else
+  codesign --force --sign "$identity" --options runtime --timestamp "$app"
+fi
+codesign --verify --deep --strict --verbose=2 "$app"
+
+if [ "$mode" = release ]; then
+  # Keep submission results outside the temporary bundle directory for diagnosis.
+  logs=$(mktemp -d "$root/target/release/notarization.XXXXXX")
+  ditto -c -k --sequesterRsrc --keepParent "$app" "$stage/submit.zip"
+  printf 'Submitting to Apple with profile %s. Logs: %s\n' "$notary_profile" "$logs" >&2
+  notary_exit=0
+  xcrun notarytool submit "$stage/submit.zip" \
+    --keychain-profile "$notary_profile" --wait --timeout 30m \
+    --output-format plist > "$logs/submission.plist" || notary_exit=$?
+  submission=$(/usr/libexec/PlistBuddy -c 'Print :id' "$logs/submission.plist" 2>/dev/null || true)
+  status=$(/usr/libexec/PlistBuddy -c 'Print :status' "$logs/submission.plist" 2>/dev/null || true)
+  if [ "$notary_exit" != 0 ] || [ "$status" != Accepted ]; then
+    if [ -n "$submission" ]; then
+      xcrun notarytool log "$submission" --keychain-profile "$notary_profile" "$logs/log.json" >&2 || true
+    fi
+    fail "Notarization did not succeed (status: ${status:-unknown}, submission: ${submission:-unknown}). See $logs. The previous release is unchanged."
+  fi
+  xcrun stapler staple "$app" >&2
+  xcrun stapler validate "$app" >&2
+  codesign --verify --deep --strict --verbose=2 "$app"
+  spctl --assess --type execute --verbose=2 "$app"
+
+  # ZIP files cannot be stapled. Package the app again after attaching its ticket.
+  architectures=$(lipo -archs "$app/Contents/MacOS/blink")
+  case "$architectures" in
+    arm64|x86_64) architecture=$architectures ;;
+    'arm64 x86_64'|'x86_64 arm64') architecture=universal ;;
+    *) fail "Unexpected app architectures: $architectures" ;;
+  esac
+  archive="Blink-$version-macos-$architecture.zip"
+  ditto -c -k --sequesterRsrc --keepParent "$app" "$stage/$archive"
+fi
+
+# Keep previous outputs until all requested release checks succeed.
+rm -rf target/release/Blink.app
+mv "$app" target/release/Blink.app
+if [ "$mode" = release ]; then
+  mv "$stage/$archive" "target/release/$archive"
+  printf '%s\n' "target/release/$archive"
+fi
+printf '%s\n' target/release/Blink.app
