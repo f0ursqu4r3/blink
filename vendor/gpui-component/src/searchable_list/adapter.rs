@@ -113,6 +113,7 @@ impl<D: SearchableListDelegate + 'static> ListDelegate for SearchableListAdapter
             .delegate
             .is_item_checked(ix, item, &self.selection_snapshot, cx);
         let disabled = !self.delegate.is_item_enabled(ix, item, cx);
+        let on_hover = self.delegate.item_hover_listener(ix, item);
         let size = self.size;
 
         if let Some(el) = self.delegate.render_item(ix, item, is_checked, window, cx) {
@@ -120,6 +121,7 @@ impl<D: SearchableListDelegate + 'static> ListDelegate for SearchableListAdapter
                 SearchableListItemElement::new(ix.row)
                     .disabled(disabled)
                     .with_size(size)
+                    .on_hover(on_hover)
                     .child(el),
             );
         }
@@ -140,6 +142,7 @@ impl<D: SearchableListDelegate + 'static> ListDelegate for SearchableListAdapter
                 .check_icon(check_icon)
                 .disabled(disabled)
                 .with_size(size)
+                .on_hover(on_hover)
                 .child(content.into_any_element()),
         )
     }

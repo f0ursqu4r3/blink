@@ -1254,6 +1254,7 @@ impl RequestEditor {
                     "variables-split-{}",
                     self.session_id
                 )))
+                .with_handle_appearance(crate::ui::widgets::resize_handle_appearance())
                 .on_resize(|state, _, cx| {
                     if let Some(size) = state.read(cx).sizes().get(1).copied() {
                         cx.default_global::<VariablesPane>().height = size;

@@ -1,6 +1,7 @@
-//! The Application Settings window. Port of `ApplicationSettingsDialog.vue`
-//! and `ThemeSettings.vue`; the Vue app showed them in a dialog.
+//! Application settings. Valid edits apply immediately and persist through Store.
 
+mod layout;
+mod placement;
 mod theme_settings;
 
 use blink_core::definitions::{definitions_to_rows, rows_to_definitions};
@@ -9,28 +10,31 @@ use blink_core::preferences::default_preferences;
 use blink_core::transport_options::{
     TransportField, TransportFieldErrors, proxy_url_error, transport_field_errors,
 };
+use gpui_kit::component::Sizable as _;
 use gpui_kit::component::input::{Input, InputEvent, InputState};
-use gpui_kit::component::select::Select;
+use gpui_kit::component::select::{Select, SelectEvent};
+use gpui_kit::component::switch::Switch;
 use gpui_kit::component::{TitleBar, h_flex, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use self::theme_settings::ThemeSettings;
 use crate::store::Store;
-use crate::theme::{self, AppTheme};
+use crate::theme;
 use crate::ui::form::{
-    Choice, ChoiceSelect, check, choice_select, dialog_footer, dialog_header, field_label,
-    footer_button, note, section_heading, section_heading_with_help, selected, u,
+    Choice, ChoiceSelect, choice_select, footer_button, note, section_heading,
+    section_heading_with_help, selected, u,
 };
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 use crate::ui::response_tokens_editor::{
-    ResponseTokensEditor, scoped_request_choices, self_supplied_warnings,
+    ResponseTokensChanged, ResponseTokensEditor, scoped_request_choices, self_supplied_warnings,
 };
-use crate::ui::widgets::dotted;
+use crate::ui::widgets::tracked;
 
 actions!(settings, [CancelSettings]);
 
 const CONTEXT: &str = "SettingsWindow";
+const TITLE: &str = "Blink Application Settings";
 
 pub fn init(cx: &mut App) {
     cx.bind_keys([
@@ -57,7 +61,10 @@ fn open_window(cx: &App) -> Option<WindowHandle<gpui_kit::base::Root>> {
 pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
     if let Some(handle) = open_window(cx)
         && handle
-            .update(cx, |_, window, _| window.activate_window())
+            .update(cx, |_, window, _| {
+                placement::center_existing(window);
+                window.activate_window();
+            })
             .is_ok()
     {
         return;
@@ -65,25 +72,24 @@ pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
     // A fresh window starts from the saved theme.
     theme::update_theme(cx, |theme| theme.state.revert());
     let mut titlebar = TitleBar::title_bar_options();
-    titlebar.title = Some("Application Settings".into());
-    titlebar.traffic_light_position = Some(point(px(9.0), px(13.0)));
-    let size = size(u(560.).to_pixels(window.rem_size()), px(720.));
+    titlebar.title = Some(TITLE.into());
+    titlebar.traffic_light_position = Some(crate::ui::title_bar::traffic_light_position());
+    let (display_id, bounds) = placement::settings_bounds(window, cx);
     let options = WindowOptions {
         titlebar: Some(titlebar),
-        window_bounds: Some(WindowBounds::Windowed(Bounds::centered(
-            window.display(cx).map(|display| display.id()),
-            size,
-            cx,
-        ))),
-        window_min_size: Some(gpui_kit::size(px(480.), px(420.))),
+        display_id,
+        window_bounds: Some(WindowBounds::Windowed(bounds)),
+        window_min_size: Some(gpui_kit::size(px(600.), px(420.))),
         is_minimizable: false,
         app_id: Some("com.kyle.blink.gpui".into()),
         ..TitleBar::window_options()
     };
     let opened = gpui_kit::open_window(options, cx, move |window, cx| {
         let view = cx.new(|cx| SettingsWindow::new(store, window, cx));
-        window.on_window_should_close(cx, |_, cx| {
-            // Closing the window discards edits, as Cancel does.
+        let weak = view.downgrade();
+        window.on_window_should_close(cx, move |_, cx| {
+            weak.update(cx, |view, cx| view.clear_preview(cx)).ok();
+            // Closing clears only the temporary theme preview.
             theme::update_theme(cx, |theme| theme.state.revert());
             cx.set_global(OpenWindow(None));
             true
@@ -95,54 +101,38 @@ pub fn open(store: Entity<Store>, window: &mut Window, cx: &mut App) {
     }
 }
 
-/// Close the settings window. `revert` drops an unsaved theme preview.
-fn close(revert: bool, window: &mut Window, cx: &mut App) {
-    if revert {
-        theme::update_theme(cx, |theme| theme.state.revert());
-    }
+/// Close settings and restore the selected theme after a hover preview.
+fn close(window: &mut Window, cx: &mut App) {
+    theme::update_theme(cx, |theme| theme.state.revert());
     cx.set_global(OpenWindow(None));
     window.remove_window();
 }
 
-/// The window content: the title bar, the scrolling form, and the footer.
+/// The window content: the title bar and settings panels.
 pub struct SettingsWindow {
     settings: Entity<Settings>,
     focus_handle: FocusHandle,
-    _subscriptions: Vec<Subscription>,
 }
 
 impl SettingsWindow {
     fn new(store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let settings = cx.new(|cx| Settings::new(store, window, cx));
-        // Enter in a single-line field saves, as the Vue form submit did.
-        let subscriptions = vec![cx.subscribe_in(
-            &settings,
-            window,
-            |this, _, _: &SaveRequested, window, cx| this.save(window, cx),
-        )];
-        // As `open-auto-focus`: the default method takes focus.
-        let method = settings.read(cx).method.clone();
-        window.defer(cx, move |window, cx| {
-            method.update(cx, |select, cx| select.focus(window, cx));
-        });
+        let focus_handle = cx.focus_handle();
+        window.focus(&focus_handle, cx);
         SettingsWindow {
             settings,
-            focus_handle: cx.focus_handle(),
-            _subscriptions: subscriptions,
+            focus_handle,
         }
     }
 
-    fn save(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self
-            .settings
-            .update(cx, |settings, cx| settings.save(window, cx))
-        {
-            close(false, window, cx);
-        }
+    fn clear_preview(&self, cx: &mut App) {
+        let theme = self.settings.read(cx).theme.clone();
+        theme.update(cx, |theme, cx| theme.cancel_preview(cx));
     }
 
     fn cancel(&mut self, _: &CancelSettings, window: &mut Window, cx: &mut Context<Self>) {
-        close(true, window, cx);
+        self.clear_preview(cx);
+        close(window, cx);
     }
 }
 
@@ -156,41 +146,31 @@ impl Render for SettingsWindow {
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::cancel))
             .size_full()
-            .bg(colors.background)
+            .bg(colors.frame)
             .text_color(colors.foreground)
             .font_family(theme::SANS)
             .text_size(u(theme::FONT_SIZE))
             .child(
                 TitleBar::new()
                     .h(px(crate::ui::title_bar::HEIGHT))
-                    .bg(colors.background)
-                    .border_color(colors.border)
+                    .bg(colors.frame)
+                    .border_color(colors.frame)
+                    .pl_0()
                     .child(
-                        dialog_header("Application Settings", cx)
-                            .border_b_0()
-                            .w_full()
-                            .when(mac, |this| this.pl(px(72.))),
+                        // Equal insets keep the title centered on the window,
+                        // clear of the traffic lights.
+                        h_flex()
+                            .size_full()
+                            .justify_center()
+                            .when(mac, |this| this.px(px(72.)))
+                            .font_family(theme::MONO)
+                            .text_size(px(11.))
+                            .font_weight(FontWeight::SEMIBOLD)
+                            .text_color(colors.muted_foreground)
+                            .child(tracked(TITLE.to_uppercase(), 0.08)),
                     ),
             )
-            .child(
-                div()
-                    .id("settings-body")
-                    .flex_1()
-                    .min_h_0()
-                    .overflow_y_scroll()
-                    .child(self.settings.clone()),
-            )
-            .child(
-                dialog_footer(cx)
-                    .child(
-                        footer_button("settings-cancel", "Cancel", false)
-                            .on_click(|_, window, cx| close(true, window, cx)),
-                    )
-                    .child(
-                        footer_button("settings-save", "Save", true)
-                            .on_click(cx.listener(|this, _, window, cx| this.save(window, cx))),
-                    ),
-            )
+            .child(self.settings.clone())
     }
 }
 
@@ -199,9 +179,6 @@ impl Focusable for SettingsWindow {
         self.focus_handle.clone()
     }
 }
-
-/// Enter in a single-line field asks the window to save.
-struct SaveRequested;
 
 const NUMBER_FIELDS: [(TransportField, &str, &str, Option<&str>); 4] = [
     (
@@ -280,7 +257,38 @@ fn validated(mut next: WorkspacePreferences) -> Option<WorkspacePreferences> {
     Some(next)
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Page {
+    General,
+    Appearance,
+    Network,
+    Tokens,
+}
+
+impl Page {
+    const ALL: [Page; 4] = [Page::General, Page::Appearance, Page::Network, Page::Tokens];
+
+    fn title(self) -> &'static str {
+        match self {
+            Page::General => "General",
+            Page::Appearance => "Appearance",
+            Page::Network => "Network",
+            Page::Tokens => "Tokens",
+        }
+    }
+
+    fn description(self) -> Option<&'static str> {
+        match self {
+            Page::Network => {
+                Some("These limits apply to every request you send. The download limit is 1 GiB.")
+            }
+            _ => None,
+        }
+    }
+}
+
 pub struct Settings {
+    page: Page,
     store: Entity<Store>,
     /// The saved preferences the draft started from.
     base: WorkspacePreferences,
@@ -296,15 +304,12 @@ pub struct Settings {
     proxy_url: Entity<InputState>,
     tokens: Entity<KeyValueEditor>,
     token_rows: Vec<Pair>,
+    applied_token_rows: Vec<Pair>,
     pub(crate) response_tokens: Entity<ResponseTokensEditor>,
     theme: Entity<ThemeSettings>,
-    /// Errors show only after a save attempt, so typing does not flash errors.
-    submitted: bool,
     token_error: String,
     _subscriptions: Vec<Subscription>,
 }
-
-impl EventEmitter<SaveRequested> for Settings {}
 
 impl Settings {
     pub(crate) fn new(store: Entity<Store>, window: &mut Window, cx: &mut Context<Self>) -> Self {
@@ -349,29 +354,39 @@ impl Settings {
         let warnings = self_supplied_warnings(&store.read(cx).workspace, &saved_tokens);
         let response_tokens =
             cx.new(|cx| ResponseTokensEditor::new(saved_tokens, requests, warnings, window, cx));
-        let mut subscriptions =
-            vec![cx.subscribe(&tokens, |this, _, event: &KeyValueEvent, cx| {
+        let mut subscriptions = vec![
+            cx.observe(&store, |_, _, cx| cx.notify()),
+            cx.subscribe(&tokens, |this, _, event: &KeyValueEvent, cx| {
                 if let KeyValueEvent::Change(rows) = event {
                     this.token_rows = rows.clone();
-                    cx.notify();
+                    this.apply_tokens(cx);
                 }
-            })];
-        let fields = numbers
-            .iter()
-            .map(|(_, input)| input.clone())
-            .chain([proxy_url.clone()]);
-        for input in fields {
-            subscriptions.push(cx.subscribe(&input, |_, _, event: &InputEvent, cx| {
-                if let InputEvent::PressEnter {
-                    secondary: false, ..
-                } = event
-                {
-                    cx.emit(SaveRequested);
+            }),
+            cx.subscribe(
+                &response_tokens,
+                |this, _, _: &ResponseTokensChanged, cx| {
+                    this.apply_tokens(cx);
+                },
+            ),
+        ];
+        for select in [&method, &body_mode] {
+            subscriptions.push(cx.subscribe(
+                select,
+                |this, _, _: &SelectEvent<Vec<Choice>>, cx| {
+                    this.apply_preferences(cx);
+                },
+            ));
+        }
+        for input in numbers.iter().map(|(_, input)| input).chain([&proxy_url]) {
+            subscriptions.push(cx.subscribe(input, |this, _, event: &InputEvent, cx| {
+                if let InputEvent::Change = event {
+                    this.apply_preferences(cx);
                 }
             }));
         }
         let theme = cx.new(|cx| ThemeSettings::new(store.clone(), window, cx));
         Settings {
+            page: Page::General,
             store,
             pretty: base.pretty,
             wrap: base.wrap,
@@ -385,10 +400,10 @@ impl Settings {
             numbers,
             proxy_url,
             tokens,
+            applied_token_rows: token_rows.clone(),
             token_rows,
             response_tokens,
             theme,
-            submitted: false,
             token_error: String::new(),
             _subscriptions: subscriptions,
         }
@@ -396,7 +411,7 @@ impl Settings {
 
     /// The preferences as edited, before validation.
     fn draft(&self, cx: &App) -> WorkspacePreferences {
-        let mut next = self.base.clone();
+        let mut next = self.store.read(cx).workspace.preferences.clone();
         next.default_method = selected(&self.method, cx);
         if next.default_method.is_empty() {
             next.default_method = self.base.default_method.clone();
@@ -417,73 +432,101 @@ impl Settings {
         next
     }
 
-    /// Save, as the Vue `save()`. True when the dialog may close.
-    pub(crate) fn save(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> bool {
-        self.submitted = true;
+    /// Apply valid fields independently. Keep the last valid value of unfinished input.
+    fn apply_preferences(&mut self, cx: &mut Context<Self>) {
+        let mut next = self.draft(cx);
+        let saved = &self.store.read(cx).workspace.preferences;
+        for field in relevant_errors(&next.transport).keys() {
+            set_field(&mut next.transport, *field, field.get(&saved.transport));
+        }
+        // Timeout and connect timeout are dependent. Keep both if the resulting
+        // pair is still invalid after replacing an unfinished field.
+        if !relevant_errors(&next.transport).is_empty() {
+            next.transport.timeout_seconds = saved.transport.timeout_seconds;
+            next.transport.connect_timeout_seconds = saved.transport.connect_timeout_seconds;
+        }
+        if !proxy_url_error(&next.transport.proxy_url).is_empty() {
+            next.transport.proxy_url = saved.transport.proxy_url.clone();
+        }
+        if let Some(next) = validated(next) {
+            self.store.update(cx, |store, cx| {
+                store.update_workspace(cx, |workspace| workspace.set_preferences(next));
+            });
+        }
         cx.notify();
-        let rows = if self.token_rows.is_empty() {
-            self.tokens.read(cx).rows().to_vec()
-        } else {
-            self.token_rows.clone()
-        };
-        let definitions = match rows_to_definitions(&rows) {
-            Ok(definitions) => {
-                self.token_error.clear();
-                definitions
-            }
-            Err(error) => {
-                self.token_error = error;
-                return false;
-            }
-        };
-        let text_names: Vec<&str> = definitions.keys().map(String::as_str).collect();
+    }
+
+    fn apply_tokens(&mut self, cx: &mut Context<Self>) {
         let workspace = &self.store.read(cx).workspace;
+        let saved_response_tokens = workspace.global_response_tokens.clone();
         let sessions: Vec<_> = workspace
             .sessions
             .iter()
             .filter(|s| workspace.can_move_request(s.id, None))
             .cloned()
             .collect();
-        let Some(response_tokens) = self.response_tokens.update(cx, |editor, cx| {
-            editor.validated(&text_names, &sessions, cx)
-        }) else {
-            return false;
-        };
-        if !cx.global::<AppTheme>().state.error.is_empty() {
-            return false;
+        let saved_definitions = workspace.global_definitions.clone();
+        let saved_names: Vec<_> = saved_definitions.keys().map(String::as_str).collect();
+        let saved_response_tokens = self.response_tokens.update(cx, |editor, cx| {
+            editor.valid_changes(&saved_response_tokens, &saved_names, &sessions, cx)
+        });
+        let reserved: Vec<_> = saved_response_tokens
+            .iter()
+            .map(|token| token.name.as_str())
+            .collect();
+        self.token_error.clear();
+        self.applied_token_rows
+            .retain(|saved| self.token_rows.iter().any(|row| row.id == saved.id));
+        // A later rename can free the name of an earlier pending row. Each
+        // accepted row moves only to its requested value, so this converges.
+        for _ in 0..=self.token_rows.len() {
+            let before = self.applied_token_rows.clone();
+            self.token_error.clear();
+            for row in &self.token_rows {
+                let mut next = self.applied_token_rows.clone();
+                if let Some(index) = next.iter().position(|saved| saved.id == row.id) {
+                    next[index] = row.clone();
+                } else {
+                    next.push(row.clone());
+                }
+                let result = rows_to_definitions(&next).and_then(|definitions| {
+                    if let Some(name) = definitions
+                        .keys()
+                        .find(|name| reserved.contains(&name.as_str()))
+                    {
+                        Err(format!("Another token is named \"{name}\"."))
+                    } else {
+                        Ok(definitions)
+                    }
+                });
+                match result {
+                    Ok(_) => self.applied_token_rows = next,
+                    Err(error) => self.token_error = error,
+                }
+            }
+            if self.applied_token_rows == before {
+                break;
+            }
         }
-        let Some(next) = validated(self.draft(cx)) else {
-            return false;
-        };
+        let definitions = rows_to_definitions(&self.applied_token_rows).unwrap_or_default();
+        let text_names: Vec<_> = definitions.keys().map(String::as_str).collect();
+        let response_tokens = self.response_tokens.update(cx, |editor, cx| {
+            editor.valid_changes(&saved_response_tokens, &text_names, &sessions, cx)
+        });
         self.store.update(cx, |store, cx| {
             store.update_workspace(cx, |workspace| {
                 workspace.set_global_definitions(definitions);
                 workspace.set_global_response_tokens(response_tokens);
-                workspace.set_preferences(next);
-            })
-        });
-        let failed = theme::update_theme(cx, |theme| {
-            let mut text = None;
-            let error = theme.state.commit(|value| {
-                text = Some(value);
-                Ok(())
             });
-            if let Some(value) = text
-                && let Err(_) = theme.write(value)
-            {
-                theme.state.save_error = blink_core::theme::STORAGE_FAILURE.into();
-                return true;
-            }
-            !error.is_empty()
         });
-        !failed
+        cx.notify();
     }
 
-    /// Close settings without saving, then show the cookie jar in the main
-    /// window, as the Vue dialog handed off to the cookies dialog.
+    /// Show the cookie jar in the main window.
     fn manage_cookies(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.theme.update(cx, |theme, cx| theme.cancel_preview(cx));
         let main = cx.try_global::<MainWindow>().map(|main| main.0);
-        close(true, window, cx);
+        close(window, cx);
         if let Some(main) = main {
             cx.defer(move |cx| {
                 main.update(cx, |_, window, cx| {
@@ -500,247 +543,381 @@ impl Settings {
         index: usize,
         errors: &TransportFieldErrors,
         cx: &mut Context<Self>,
-    ) -> impl IntoElement {
+    ) -> AnyElement {
         let (field, _, label, help) = NUMBER_FIELDS[index];
         let colors = theme::colors(cx);
         let input = &self.numbers[index].1;
         let disabled = field == TransportField::MaxRedirects && !self.follow_redirects;
-        let error = errors.get(&field).cloned();
-        v_flex()
-            .gap(u(6.))
-            .child(field_label(label, cx))
-            .child(
+        let description = match (errors.get(&field).cloned(), help) {
+            (Some(error), _) => Some(note(error, colors.destructive)),
+            (None, Some(help)) => Some(note(help, colors.muted_foreground)),
+            _ => None,
+        };
+        let invalid = errors.contains_key(&field);
+        layout::row(
+            label,
+            description,
+            layout::field(
                 Input::new(input)
                     .font_family(theme::MONO)
                     .text_size(u(12.))
                     .disabled(disabled)
-                    .when(error.is_some(), |this| {
-                        this.border_color(colors.destructive)
-                    }),
+                    .when(invalid, |this| this.border_color(colors.destructive)),
+            ),
+            cx,
+        )
+    }
+
+    fn toggle(
+        &self,
+        id: &'static str,
+        checked: bool,
+        set: fn(&mut Self, bool),
+        cx: &mut Context<Self>,
+    ) -> Switch {
+        Switch::new(id)
+            .checked(checked)
+            .small()
+            .on_click(cx.listener(move |this, checked: &bool, _, cx| {
+                set(this, *checked);
+                this.apply_preferences(cx);
+            }))
+    }
+
+    fn render_general(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let muted = theme::colors(cx).muted_foreground;
+        let select = |state: &Entity<ChoiceSelect>| {
+            layout::field(
+                Select::new(state)
+                    .font_family(theme::MONO)
+                    .text_size(u(12.)),
             )
-            .map(|this| match (error, help) {
-                (Some(error), _) => this.child(note(error, colors.destructive).text_size(u(12.))),
-                (None, Some(help)) => this.child(note(help, colors.muted_foreground)),
-                _ => this,
-            })
+        };
+        vec![
+            layout::group(
+                section_heading("Workspace", cx),
+                vec![layout::row(
+                    "Confirm deletes",
+                    Some(note("Ask before deleting a request with content.", muted)),
+                    self.toggle(
+                        "app-confirm-close",
+                        self.confirm_close_drafts,
+                        |this, on| this.confirm_close_drafts = on,
+                        cx,
+                    ),
+                    cx,
+                )],
+                cx,
+            ),
+            layout::group(
+                section_heading_with_help(
+                    "defaults-help",
+                    "New requests",
+                    "These settings apply only when you create a new request. They do not change existing requests or duplicates.",
+                    cx,
+                ),
+                vec![
+                    layout::row("Method", None, select(&self.method), cx),
+                    layout::row("Body mode", None, select(&self.body_mode), cx),
+                ],
+                cx,
+            ),
+            layout::group(
+                section_heading("Responses", cx),
+                vec![
+                    layout::row(
+                        "Format responses",
+                        None,
+                        self.toggle("app-pretty", self.pretty, |this, on| this.pretty = on, cx),
+                        cx,
+                    ),
+                    layout::row(
+                        "Wrap lines",
+                        None,
+                        self.toggle("app-wrap", self.wrap, |this, on| this.wrap = on, cx),
+                        cx,
+                    ),
+                ],
+                cx,
+            ),
+        ]
+    }
+
+    fn render_network(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let colors = theme::colors(cx);
+        let muted = colors.muted_foreground;
+        let draft = self.draft(cx);
+        let errors = relevant_errors(&draft.transport);
+        let proxy_error = proxy_url_error(&draft.transport.proxy_url);
+        let mut numbers: Vec<_> = (0..NUMBER_FIELDS.len())
+            .map(|index| self.render_number(index, &errors, cx))
+            .collect();
+        let inspection = numbers.pop().expect("inspection limit field");
+        let max_redirects = numbers.pop().expect("max redirects field");
+        let proxy_note = if proxy_error.is_empty() {
+            note(
+                "http, https, or socks5. Empty uses the system proxy settings.",
+                muted,
+            )
+        } else {
+            note(proxy_error.clone(), colors.destructive)
+        };
+        let tls_note = if self.verify_tls {
+            note(
+                "Blink trusts the system certificate store, including company and local development CAs.",
+                muted,
+            )
+        } else {
+            note(
+                "Blink accepts invalid and self-signed certificates for every request. Turn this on again when you finish.",
+                colors.warning,
+            )
+        };
+        vec![
+            layout::group(section_heading("Timeouts", cx), numbers, cx),
+            layout::group(
+                section_heading("Redirects", cx),
+                vec![
+                    layout::row(
+                        "Follow redirects",
+                        None,
+                        self.toggle(
+                            "app-follow-redirects",
+                            self.follow_redirects,
+                            |this, on| this.follow_redirects = on,
+                            cx,
+                        ),
+                        cx,
+                    ),
+                    max_redirects,
+                ],
+                cx,
+            ),
+            layout::group(section_heading("Responses", cx), vec![inspection], cx),
+            layout::group(
+                section_heading("Connection", cx),
+                vec![
+                    layout::row(
+                        "Proxy URL",
+                        Some(proxy_note),
+                        layout::field(
+                            Input::new(&self.proxy_url)
+                                .font_family(theme::MONO)
+                                .text_size(u(12.))
+                                .when(!proxy_error.is_empty(), |this| {
+                                    this.border_color(colors.destructive)
+                                }),
+                        ),
+                        cx,
+                    ),
+                    layout::row(
+                        "Verify TLS certificates",
+                        Some(tls_note),
+                        self.toggle(
+                            "app-verify-tls",
+                            self.verify_tls,
+                            |this, on| this.verify_tls = on,
+                            cx,
+                        ),
+                        cx,
+                    ),
+                ],
+                cx,
+            ),
+            layout::group(
+                section_heading("Cookies", cx),
+                vec![
+                    layout::row(
+                        "Store and send cookies",
+                        Some(note(
+                            "One jar for all requests, kept on this device.",
+                            muted,
+                        )),
+                        self.toggle(
+                            "app-store-cookies",
+                            self.store_cookies,
+                            |this, on| this.store_cookies = on,
+                            cx,
+                        ),
+                        cx,
+                    ),
+                    layout::row(
+                        "Cookie jar",
+                        None,
+                        footer_button("manage-cookies", "Manage cookies…", false).on_click(
+                            cx.listener(|this, _, window, cx| this.manage_cookies(window, cx)),
+                        ),
+                        cx,
+                    ),
+                ],
+                cx,
+            ),
+        ]
+    }
+
+    fn render_tokens(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        let colors = theme::colors(cx);
+        let editor = v_flex()
+            .gap(u(6.))
+            .child(
+                div()
+                    .overflow_hidden()
+                    .border_1()
+                    .border_color(colors.input)
+                    .rounded(u(4.))
+                    .bg(colors.background)
+                    .child(self.tokens.clone()),
+            )
+            .when(!self.token_error.is_empty(), |this| {
+                this.child(note(self.token_error.clone(), colors.destructive))
+            });
+        vec![
+            layout::group(
+                section_heading_with_help(
+                    "token-help-global",
+                    "Global tokens",
+                    "Workspace-global tokens use {{_.name}}. Use {{!NAME}} in a value to read NAME from Blink's process environment when sending.",
+                    cx,
+                ),
+                vec![div().pt(u(6.)).child(editor).into_any_element()],
+                cx,
+            ),
+            self.response_tokens.clone().into_any_element(),
+        ]
+    }
+
+    fn render_nav(&self, cx: &mut Context<Self>) -> impl IntoElement {
+        let colors = theme::colors(cx);
+        v_flex()
+            .flex_none()
+            .w(u(168.))
+            .bg(colors.background)
+            .border_1()
+            .border_color(colors.border)
+            .rounded(px(8.))
+            .overflow_hidden()
+            .font_family(theme::MONO)
+            .child(
+                h_flex()
+                    .flex_none()
+                    .h(u(36.))
+                    .pl(u(12.))
+                    .border_b_1()
+                    .border_color(colors.border)
+                    .text_size(u(11.))
+                    .font_weight(FontWeight::BOLD)
+                    .child(tracked("SETTINGS", 0.08)),
+            )
+            .child(
+                v_flex()
+                    .py(u(6.))
+                    .children(Page::ALL.into_iter().map(|page| {
+                        let active = self.page == page;
+                        div()
+                            .id(page.title())
+                            .debug_selector(move || format!("settings-nav-{}", page.title()))
+                            .relative()
+                            .flex()
+                            .items_center()
+                            .h(u(28.))
+                            .pl(u(12.))
+                            .text_size(u(12.))
+                            .cursor_pointer()
+                            .text_color(colors.muted_foreground)
+                            .when(active, |this| {
+                                this.bg(colors.accent).text_color(colors.foreground).child(
+                                    div()
+                                        .absolute()
+                                        .left_0()
+                                        .top_0()
+                                        .bottom_0()
+                                        .w(px(2.))
+                                        .bg(colors.primary),
+                                )
+                            })
+                            .hover(|style| style.bg(colors.accent).text_color(colors.foreground))
+                            .child(page.title())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                this.theme.update(cx, |theme, cx| theme.end_preview(cx));
+                                this.page = page;
+                                cx.notify();
+                            }))
+                    })),
+            )
     }
 }
 
 impl Render for Settings {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = theme::colors(cx);
-        let draft = self.draft(cx);
-        let (errors, proxy_error) = if self.submitted {
-            (
-                relevant_errors(&draft.transport),
-                proxy_url_error(&draft.transport.proxy_url),
-            )
-        } else {
-            (TransportFieldErrors::new(), String::new())
+        let groups = match self.page {
+            Page::General => self.render_general(cx),
+            Page::Appearance => vec![self.theme.clone().into_any_element()],
+            Page::Network => self.render_network(cx),
+            Page::Tokens => self.render_tokens(cx),
         };
-        let muted = colors.muted_foreground;
-        let two_columns = || div().grid().grid_cols(2).gap(u(12.)).text_size(u(12.));
-
-        let defaults = two_columns()
-            .child(div().col_span_full().child(section_heading_with_help(
-                "defaults-help",
-                "New request defaults",
-                "These settings apply only when you create a new request. They do not change existing requests or duplicates.",
-                cx,
-            )))
-            .child(
-                v_flex()
-                    .gap(u(6.))
-                    .child(field_label("Method", cx))
-                    .child(Select::new(&self.method).font_family(theme::MONO).text_size(u(12.))),
-            )
-            .child(
-                v_flex()
-                    .gap(u(6.))
-                    .child(field_label("Body mode", cx))
-                    .child(Select::new(&self.body_mode).font_family(theme::MONO).text_size(u(12.))),
-            )
-            .child(check("app-pretty", "Format responses", self.pretty).on_click(cx.listener(
-                |this, checked: &bool, _, cx| {
-                    this.pretty = *checked;
-                    cx.notify();
-                },
-            )))
-            .child(check("app-wrap", "Wrap response lines", self.wrap).on_click(cx.listener(
-                |this, checked: &bool, _, cx| {
-                    this.wrap = *checked;
-                    cx.notify();
-                },
-            )));
-
-        let numbers: Vec<_> = (0..NUMBER_FIELDS.len())
-            .map(|index| self.render_number(index, &errors, cx).into_any_element())
-            .collect();
-        let requests = two_columns()
-            .border_t_1()
+        let storage_error = self.store.read(cx).error.clone();
+        let content = v_flex()
+            .flex_1()
+            .min_w_0()
+            .bg(colors.background)
+            .border_1()
             .border_color(colors.border)
-            .pt(u(12.))
-            .child(div().col_span_full().child(section_heading_with_help(
-                "requests-help",
-                "Requests",
-                "These limits apply to every request you send. The download limit is 1 GiB.",
-                cx,
-            )))
+            .rounded(px(8.))
+            .overflow_hidden()
+            .child(layout::page_header(self.page.title(), cx))
             .child(
-                div().col_span_full().child(
-                    check("app-follow-redirects", "Follow redirects", self.follow_redirects)
-                        .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                            this.follow_redirects = *checked;
-                            cx.notify();
-                        })),
-                ),
-            )
-            .children(numbers)
-            .child(
-                v_flex()
-                    .col_span_full()
-                    .gap(u(6.))
-                    .child(field_label("Proxy URL", cx))
+                div()
+                    .id("settings-body")
+                    .debug_selector(|| "settings-body".into())
+                    .flex_1()
+                    .min_h_0()
+                    .overflow_y_scroll()
                     .child(
-                        Input::new(&self.proxy_url)
-                            .font_family(theme::MONO)
+                        v_flex()
+                            .p(u(16.))
+                            .gap(u(24.))
                             .text_size(u(12.))
-                            .when(!proxy_error.is_empty(), |this| {
-                                this.border_color(colors.destructive)
-                            }),
-                    )
+                            .when_some(self.page.description(), |this, description| {
+                                this.child(note(description, colors.muted_foreground))
+                            })
+                            .children(groups),
+                    ),
+            );
+        v_flex()
+            .flex_1()
+            .min_h_0()
+            .child(
+                h_flex()
+                    .flex_1()
+                    .min_h_0()
+                    .items_stretch()
+                    .p(px(6.))
+                    .pb_0()
+                    .gap(px(6.))
+                    .child(self.render_nav(cx))
+                    .child(content),
+            )
+            .child(
+                h_flex()
+                    .flex_none()
+                    .min_h(u(24.))
+                    .px(u(14.))
+                    .font_family(theme::MONO)
+                    .text_size(u(9.))
+                    .text_color(colors.muted_foreground)
+                    .bg(colors.frame)
                     .map(|this| {
-                        if proxy_error.is_empty() {
-                            this.child(note(
-                                "http, https, or socks5. Empty uses the system proxy settings.",
-                                muted,
+                        if storage_error.is_empty() {
+                            this.child(tracked(
+                                "CHANGES APPLY IMMEDIATELY · INVALID FIELDS KEEP THEIR LAST VALID VALUE",
+                                0.07,
                             ))
                         } else {
-                            this.child(note(proxy_error, colors.destructive).text_size(u(12.)))
+                            this.text_color(colors.destructive)
+                                .child(tracked(storage_error.to_uppercase(), 0.07))
                         }
                     }),
-            )
-            .child(
-                v_flex()
-                    .col_span_full()
-                    .gap(u(4.))
-                    .child(
-                        check("app-verify-tls", "Verify TLS certificates", self.verify_tls)
-                            .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                this.verify_tls = *checked;
-                                cx.notify();
-                            })),
-                    )
-                    .child(if self.verify_tls {
-                        note(
-                            "Blink trusts the system certificate store, including company and local development CAs.",
-                            muted,
-                        )
-                    } else {
-                        note(
-                            "Blink accepts invalid and self-signed certificates for every request. Turn this on again when you finish.",
-                            colors.warning,
-                        )
-                    }),
-            )
-            .child(
-                v_flex()
-                    .col_span_full()
-                    .gap(u(4.))
-                    .child(
-                        h_flex()
-                            .justify_between()
-                            .gap(u(8.))
-                            .child(
-                                check("app-store-cookies", "Store and send cookies", self.store_cookies)
-                                    .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                                        this.store_cookies = *checked;
-                                        cx.notify();
-                                    })),
-                            )
-                            .child(
-                                div()
-                                    .id("manage-cookies")
-                                    .text_size(u(11.))
-                                    .text_color(muted)
-                                    .cursor_pointer()
-                                    .hover(move |style| style.text_color(colors.foreground))
-                                    .child(dotted("Manage cookies…"))
-                                    .on_click(cx.listener(|this, _, window, cx| {
-                                        this.manage_cookies(window, cx)
-                                    })),
-                            ),
-                    )
-                    .child(note(
-                        "One jar for all requests, kept on this device.",
-                        muted,
-                    )),
-            );
-
-        let workspace = v_flex()
-            .gap(u(8.))
-            .border_t_1()
-            .border_color(colors.border)
-            .pt(u(12.))
-            .text_size(u(12.))
-            .child(section_heading("Workspace", cx))
-            .child(
-                check(
-                    "app-confirm-close",
-                    "Confirm before deleting requests with content",
-                    self.confirm_close_drafts,
-                )
-                .on_click(cx.listener(|this, checked: &bool, _, cx| {
-                    this.confirm_close_drafts = *checked;
-                    cx.notify();
-                })),
-            );
-
-        let tokens = v_flex()
-            .gap(u(8.))
-            .border_t_1()
-            .border_color(colors.border)
-            .pt(u(12.))
-            .child(section_heading_with_help(
-                "token-help-global",
-                "Global tokens",
-                "Workspace-global tokens use {{_.name}}. Use {{!NAME}} in a value to read NAME from Blink's process environment when sending.",
-                cx,
-            ))
-            .child(
-                div()
-                    .overflow_hidden()
-                    .border_1()
-                    .border_color(colors.input)
-                    .rounded(u(2.))
-                    .bg(colors.background)
-                    .child(self.tokens.clone()),
-            );
-
-        v_flex()
-            .p(u(16.))
-            .gap(u(16.))
-            .text_color(colors.foreground)
-            .child(defaults)
-            .child(requests)
-            .child(workspace)
-            .child(self.theme.clone())
-            .child(tokens)
-            .when(!self.token_error.is_empty(), |this| {
-                this.child(
-                    div()
-                        .font_family(theme::MONO)
-                        .text_size(u(12.))
-                        .text_color(colors.destructive)
-                        .child(self.token_error.clone()),
-                )
-            })
-            .child(
-                div()
-                    .border_t_1()
-                    .border_color(colors.border)
-                    .pt(u(12.))
-                    .child(self.response_tokens.clone()),
             )
     }
 }

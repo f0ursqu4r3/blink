@@ -260,13 +260,13 @@ impl BlinkApp {
                         .left(width)
                         .w(gap)
                         .flex()
+                        .items_center()
                         .justify_center()
                         .cursor_col_resize()
                         .child(
-                            div()
-                                .w(px(2.))
-                                .h_full()
-                                .group_hover("browser-resize", |this| this.bg(colors.border)),
+                            super::widgets::resize_grip(Axis::Horizontal, colors.muted_foreground)
+                                .opacity(0.6)
+                                .group_hover("browser-resize", |this| this.opacity(1.)),
                         )
                         .on_drag(BrowserResize, |_, _, _, cx| cx.new(|_| BrowserResize))
                         .on_click(cx.listener(|this, event: &ClickEvent, _, cx| {
@@ -987,8 +987,7 @@ impl BlinkApp {
 
     // ── Rendering ───────────────────────────────────────────────────────────
 
-    /// The editor frame; narrow windows drop its rounding and side borders
-    /// (`max-[760px]:rounded-none max-[760px]:border-x-0`).
+    /// The editor column uses the frame color between independent panels.
     fn render_editor(&self, narrow: bool, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = theme::colors(cx);
         let store = self.store.read(cx);
@@ -1002,10 +1001,7 @@ impl BlinkApp {
             .min_w_0()
             .min_h_0()
             .overflow_hidden()
-            .when(!narrow, |this| this.rounded(px(8.)).border_1())
-            .when(narrow, |this| this.border_y_1())
-            .border_color(colors.border)
-            .bg(colors.background)
+            .bg(colors.frame)
             .child(self.tabs.clone())
             .map(|this| match pane {
                 Some(pane) => this.child(div().flex().flex_col().flex_1().min_h_0().child(pane)),
@@ -1017,6 +1013,11 @@ impl BlinkApp {
                         .items_center()
                         .justify_center()
                         .gap_3()
+                        .mt(px(6.))
+                        .border_1()
+                        .border_color(colors.border)
+                        .when(!narrow, |this| this.rounded(px(8.)))
+                        .bg(colors.background)
                         .text_xs()
                         .text_color(colors.muted_foreground)
                         .child("No open requests. Select a request in the browser.")

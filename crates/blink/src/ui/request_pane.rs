@@ -343,6 +343,7 @@ impl RequestPane {
         prepared: &PreparedSend,
         busy: bool,
         socket_live: bool,
+        has_details: bool,
         window: &Window,
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
@@ -477,9 +478,9 @@ impl RequestPane {
             .gap_2()
             .px(px(14.))
             .py_3()
-            .border_b_1()
-            .border_color(colors.border)
-            .bg(colors.secondary)
+            .when(has_details, |this| {
+                this.border_b_1().border_color(colors.border)
+            })
             .child(
                 div()
                     .flex()
@@ -742,17 +743,34 @@ impl Render for RequestPane {
             self.session_id,
             if stacked { "v" } else { "h" }
         );
+        let panel_card = || {
+            div()
+                .flex()
+                .flex_col()
+                .size_full()
+                .min_w_0()
+                .min_h_0()
+                .overflow_hidden()
+                .rounded(px(8.))
+                .border_1()
+                .border_color(colors.border)
+                .bg(colors.background)
+        };
+        let editor = panel_card().child(self.editor.clone());
+        let response = panel_card().child(response);
         let panels = if stacked {
             v_resizable(SharedString::from(split_id))
                 .child(
                     resizable_panel()
                         .size(px(280.))
                         .size_range(px(160.)..Pixels::MAX)
-                        .child(self.editor.clone()),
+                        .pb(px(3.))
+                        .child(editor),
                 )
                 .child(
                     resizable_panel()
                         .size_range(px(200.)..Pixels::MAX)
+                        .pt(px(3.))
                         .child(response),
                 )
         } else {
@@ -761,16 +779,21 @@ impl Render for RequestPane {
                     resizable_panel()
                         .size(px(420.))
                         .size_range(px(280.)..Pixels::MAX)
-                        .child(self.editor.clone()),
+                        .pr(px(3.))
+                        .child(editor),
                 )
                 .child(
                     resizable_panel()
                         .size_range(px(340.)..Pixels::MAX)
+                        .pl(px(3.))
                         .child(response),
                 )
-        };
+        }
+        .with_handle_appearance(super::widgets::resize_handle_appearance());
         let notices = self.render_notices(&prepared, websocket, cx);
         let show_code = self.show_code && !websocket;
+        let has_details = !notices.is_empty() || show_code;
+        let narrow = window.viewport_size().width <= px(crate::ui::app::NARROW_WIDTH);
         div()
             .id(SharedString::from(format!(
                 "request-pane-{}",
@@ -781,7 +804,7 @@ impl Render for RequestPane {
             .flex_1()
             .min_h_0()
             .min_w_0()
-            .bg(colors.background)
+            .bg(colors.frame)
             .on_action(cx.listener(|this, _: &Unfocus, _, cx| {
                 if this.show_code {
                     this.show_code = false;
@@ -790,10 +813,28 @@ impl Render for RequestPane {
                     cx.propagate();
                 }
             }))
-            .child(self.render_bar(&prepared, busy, socket_live, window, cx))
-            .children(notices)
-            .when(show_code, |this| this.child(self.code.clone()))
-            .child(div().flex_1().min_h_0().child(panels))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .flex_none()
+                    .border_b_1()
+                    .when(!narrow, |this| this.border_x_1().rounded_b(px(8.)))
+                    .border_color(colors.border)
+                    .bg(colors.secondary)
+                    .child(self.render_bar(&prepared, busy, socket_live, has_details, window, cx))
+                    .children(notices)
+                    .when(show_code, |this| this.child(self.code.clone())),
+            )
+            .child(
+                div()
+                    .flex_1()
+                    .min_h_0()
+                    .min_w_0()
+                    .pt(px(6.))
+                    .bg(colors.frame)
+                    .child(panels),
+            )
             .into_any_element()
     }
 }

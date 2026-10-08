@@ -200,13 +200,17 @@ fn a_bad_max_age_blocks_the_save(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn application_settings_save_global_response_tokens(cx: &mut TestAppContext) {
+fn application_settings_apply_global_response_tokens_without_save(cx: &mut TestAppContext) {
     let (_dir, harness, _, active) = setup(cx, &[]);
     let store = harness.store.clone();
     let settings = harness.update(cx, |window, cx| {
         cx.new(|cx| crate::ui::settings_window::Settings::new(store, window, cx))
     });
     let editor = cx.read(|cx| settings.read(cx).response_tokens.clone());
+    // An unfinished row must not block a different, valid row.
+    harness.update(cx, |window, cx| {
+        editor.update(cx, |editor, cx| editor.add_row(window, cx));
+    });
     add_row(
         &harness,
         cx,
@@ -214,9 +218,7 @@ fn application_settings_save_global_response_tokens(cx: &mut TestAppContext) {
         ("session", active, CheckSource::Header, "Set-Cookie", "1h"),
     );
 
-    assert!(harness.update(cx, |window, cx| {
-        settings.update(cx, |settings, cx| settings.save(window, cx))
-    }));
+    cx.run_until_parked();
     let saved = cx.read(|cx| {
         harness
             .store
@@ -229,6 +231,50 @@ fn application_settings_save_global_response_tokens(cx: &mut TestAppContext) {
     assert_eq!(saved[0].name, "session");
     assert_eq!(saved[0].path, "Set-Cookie");
     assert_eq!(saved[0].max_age_secs, Some(3600));
+
+    let second = add_row(
+        &harness,
+        cx,
+        &editor,
+        ("other", active, CheckSource::Header, "X-Key", "1h"),
+    );
+    cx.run_until_parked();
+    harness.update(cx, |window, cx| {
+        editor.update(cx, |editor, cx| {
+            let first = editor
+                .rows
+                .iter()
+                .find(|row| row.id == saved[0].id)
+                .unwrap();
+            first.name.update(cx, |input, cx| {
+                input.set_value("other", window, cx);
+                cx.emit(super::InputEvent::Change);
+            });
+            let second = editor.rows.iter().find(|row| row.id == second).unwrap();
+            second.max_age.update(cx, |input, cx| {
+                input.set_value("2h", window, cx);
+                cx.emit(super::InputEvent::Change);
+            });
+        });
+    });
+    cx.run_until_parked();
+    let saved = cx.read(|cx| {
+        harness
+            .store
+            .read(cx)
+            .workspace
+            .global_response_tokens
+            .clone()
+    });
+    assert_eq!(saved[0].name, "session");
+    assert_eq!(
+        saved
+            .iter()
+            .find(|token| token.id == second)
+            .unwrap()
+            .max_age_secs,
+        Some(7200)
+    );
 }
 
 #[gpui_kit::test]

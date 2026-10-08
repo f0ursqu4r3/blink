@@ -23,6 +23,12 @@ lsp-types = { version = "0.97.0", features = ["proposed"] }
 serde_json = "1"
 velopack = "1.2.161"
 
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSEvent", "NSScreen", "NSView", "NSWindow", "NSGraphics"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString", "NSValue", "NSDictionary"] }
+raw-window-handle = "0.6"
+
 [dev-dependencies]
 # Headless UI integration tests: real views, simulated input, no window on screen.
 gpui-kit = { version = "0.7.0", features = ["test-support"] }

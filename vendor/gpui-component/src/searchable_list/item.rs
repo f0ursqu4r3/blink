@@ -1,6 +1,8 @@
+use std::rc::Rc;
+
 use gpui::{
     AnyElement, App, ElementId, InteractiveElement as _, IntoElement, ParentElement, RenderOnce,
-    StyleRefinement, Styled, Window, prelude::FluentBuilder,
+    StatefulInteractiveElement as _, StyleRefinement, Styled, Window, prelude::FluentBuilder,
 };
 
 use crate::{
@@ -27,6 +29,8 @@ pub struct SearchableListItemElement {
     children: Vec<AnyElement>,
     /// The icon drawn at the trailing edge when `checked` is `true`.
     check_icon: Option<Icon>,
+    /// Blink patch: called when the pointer enters or leaves the row.
+    on_hover: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>,
 }
 
 impl SearchableListItemElement {
@@ -40,7 +44,14 @@ impl SearchableListItemElement {
             disabled: false,
             children: Vec::new(),
             check_icon: Some(Icon::new(IconName::Check)),
+            on_hover: None,
         }
+    }
+
+    /// Call `listener` when the pointer enters or leaves the row.
+    pub fn on_hover(mut self, listener: Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>>) -> Self {
+        self.on_hover = listener;
+        self
     }
 
     /// Set whether the trailing check icon is visible.
@@ -115,6 +126,9 @@ impl RenderOnce for SearchableListItemElement {
                 })
             })
             .when(self.selected, |this| this.bg(cx.theme().tokens.accent))
+            .when_some(self.on_hover, |this, listener| {
+                this.on_hover(move |hovered, window, cx| listener(hovered, window, cx))
+            })
             .when(self.disabled, |this| {
                 this.cursor_not_allowed()
                     .text_color(cx.theme().muted_foreground)

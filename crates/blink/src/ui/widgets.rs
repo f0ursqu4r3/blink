@@ -2,14 +2,56 @@
 //! bar and Browser header, and text with CSS letter spacing or a dotted
 //! underline.
 
+use std::rc::Rc;
+
+use gpui_kit::base::{ResizeHandleRenderer, ResizeHandleState};
 use gpui_kit::component::button::{Button, ButtonVariants as _};
 use gpui_kit::component::{Icon, Sizable as _};
+use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
 use crate::theme;
 
 #[cfg(test)]
 mod ui_tests;
+
+/// Three dots along a separator, perpendicular to its resize axis.
+pub fn resize_grip(axis: Axis, color: Hsla) -> Div {
+    div()
+        .flex()
+        .flex_none()
+        .gap(px(2.))
+        .when(axis == Axis::Horizontal, |this| this.flex_col())
+        .children((0..3).map(|_| div().flex_none().size(px(2.)).rounded_full().bg(color)))
+}
+
+/// Keep the grip centered in GPUI's one-pixel separator content area.
+pub fn resize_handle_appearance() -> ResizeHandleRenderer {
+    Rc::new(|handle, _, cx| {
+        let colors = theme::colors(cx);
+        let color = if handle.state() == ResizeHandleState::Idle {
+            colors.muted_foreground.opacity(0.6)
+        } else {
+            colors.foreground
+        };
+        Some(
+            div()
+                .flex()
+                .flex_none()
+                .map(|this| match handle.axis() {
+                    Axis::Horizontal => this.w(px(1.)).h_full().items_center(),
+                    Axis::Vertical => this.h(px(1.)).w_full().justify_center(),
+                })
+                .child(
+                    resize_grip(handle.axis(), color).map(|this| match handle.axis() {
+                        Axis::Horizontal => this.ml(px(-0.5)),
+                        Axis::Vertical => this.mt(px(-0.5)),
+                    }),
+                )
+                .into_any_element(),
+        )
+    })
+}
 
 /// A method name in its method color, such as `GET` in success green.
 pub fn method_label(method: &str, size: f32, cx: &App) -> Div {

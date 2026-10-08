@@ -2,8 +2,9 @@
 
 This directory is `gpui-component` 0.7.0 from crates.io (git
 `0c830f4d257e69fdd17200650533ab4ca9a40cc0`, `crates/component`). The root
-`Cargo.toml` uses it through `[patch.crates-io]`. It has three patches (menu
-metrics, dialog placement, and a hidden accessibility value, below). The only other change is that
+`Cargo.toml` uses it through `[patch.crates-io]`. It has four patches (menu
+metrics, dialog placement, a hidden accessibility value, and a row hover
+hook, below). The only other change is that
 `.cargo-ok` is removed.
 
 ## Menu metrics
@@ -100,7 +101,35 @@ Without the call, the value is exposed as upstream does. Blink calls it in
 `ui::request_pane::editor::ui_tests::secret_auth_fields_keep_their_text_out_of_the_accessibility_tree`
 reads the value.
 
+## Row hover hook
+
+### Why
+
+Application Settings previews a theme while the pointer is over its row in
+the theme select, and ends the preview when the pointer leaves the row.
+Upstream has no row hover hook. An element from `SelectItem::render` sits in a
+box only as wide as its text, and an element from
+`SearchableListDelegate::render_item` sits inside the row padding, so neither
+covers the whole row.
+
+### What changed
+
+Only `src/searchable_list/delegate.rs`, `item.rs`, and `adapter.rs`.
+
+1. New `SearchableListDelegate::item_hover_listener(ix, item)`, default
+   `None`.
+2. New `SearchableListItemElement::on_hover(Option<listener>)`. The row
+   element calls the listener on hover start and end.
+3. `SearchableListAdapter::render_item` passes the delegate listener to the
+   row in both the default and the `render_item` paths.
+
+Without the hook, rows behave as upstream. Blink implements it for
+`ThemeList` in `crates/blink/src/ui/settings_window/theme_settings.rs`. The
+headless test
+`ui::settings_window::ui_tests::rendered_theme_rows_preview_select_and_sections_fit`
+hovers the row padding.
+
 ## Updating
 
 Copy the new upstream release over this directory, then apply the diff of the
-four files above again (`diff -u` against the registry copy shows it).
+files above again (`diff -u` against the registry copy shows it).

@@ -3,7 +3,6 @@
 //! options.
 
 use gpui_kit::component::button::{Button, ButtonVariants as _};
-use gpui_kit::component::checkbox::Checkbox;
 use gpui_kit::component::select::{SelectItem, SelectState};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{IndexPath, Sizable as _, h_flex};
@@ -187,26 +186,9 @@ pub fn help_tooltip(text: &'static str, window: &mut Window, cx: &mut App) -> An
     .build(window, cx)
 }
 
-/// A field label: muted 12 px text.
-pub fn field_label(text: impl Into<SharedString>, cx: &App) -> Div {
-    div()
-        .text_size(u(12.))
-        .text_color(theme::colors(cx).muted_foreground)
-        .child(text.into())
-}
-
 /// Small help or status text under a field: `text-[0.6875rem]`.
 pub fn note(text: impl Into<SharedString>, color: Hsla) -> Div {
     div().text_size(u(11.)).text_color(color).child(text.into())
-}
-
-/// A labeled checkbox at 12 px.
-pub fn check(id: impl Into<ElementId>, label: &'static str, checked: bool) -> Checkbox {
-    Checkbox::new(id)
-        .label(label)
-        .checked(checked)
-        .small()
-        .text_size(u(12.))
 }
 
 #[cfg(test)]

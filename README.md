@@ -76,7 +76,7 @@ Browser sidebar organizes the request tabs in the current session.
 - Reopen a closed tab with `Cmd/Ctrl+Shift+T`. Undo a deleted request or group
   from the status bar or with `Cmd/Ctrl+Z` for 10 seconds.
 
-Application Settings → Requests controls the timeout (default 30 s total,
+Application Settings → Network controls the timeout (default 30 s total,
 10 s to connect), whether redirects are followed (default off; up to 20 hops),
 and the inspection limit (default 4 MiB, up to 16 MiB). A body larger than the
 inspection limit shows a truncated preview. Binary bodies show a summary in
@@ -164,8 +164,15 @@ cannot start with `_` or `!`.
 
 Secondary help appears in tooltips. Errors, effective authorization, storage
 failures, and destructive confirmations remain visible.
-Settings dialogs keep Save and Cancel visible while their contents scroll.
-Escape closes a tooltip first, then the dialog. Cancel discards unsaved edits.
+Application Settings opens in the center of the display under the pointer on
+macOS. General, Appearance, Network, and Tokens organize the controls. Valid edits apply
+and save immediately. Invalid fields keep their last valid values and show an
+error. The theme menu groups themes into Dark and Light. Hover over a theme
+to preview it; click to select it. Leaving the theme restores the selected
+theme. Closing settings keeps applied changes.
+
+Group settings keep Save and Cancel visible while their contents scroll.
+Escape closes a tooltip first, then the dialog. Cancel discards unsaved group edits.
 
 ## Local state and privacy
 
@@ -241,13 +248,6 @@ Build a signed and notarized macOS release:
 script/bundle-macos
 ```
 
-## Verify
-
-```sh
-cargo test --workspace
-cargo clippy --workspace --all-targets -- -D warnings
-```
-
 The script selects your Developer ID Application certificate when exactly
 one is available. It enables the hardened runtime, requests a secure
 timestamp, submits the app to Apple, and waits for acceptance. It then
@@ -304,12 +304,19 @@ The tagged release workflow still uses Velopack for update packages. This
 standalone ZIP does not include automatic updates. See
 [Apple's notarization workflow](https://developer.apple.com/documentation/security/customizing-the-notarization-workflow).
 
+## Verify
+
+```sh
+cargo test --workspace
+cargo clippy --workspace --all-targets -- -D warnings
+python3 script/test_bundle_macos.py # macOS bundle and signing checks
+```
+
 Engine tests use local TCP and HTTPS servers. Authentication integration
 tests cover PKCE exchange, refresh rotation, concurrent refresh, cancellation,
 credential removal, token endpoint errors, and client-certificate origin
 restrictions. These tests use a private test CA and an in-memory credential
 store. They do not change Keychain or OS trust settings. Real provider login
-python3 script/test_bundle_macos.py # macOS bundle and signing checks
 and OS credential authorization still need manual checks.
 
 Snapshot compatibility tests read

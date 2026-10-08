@@ -1,3 +1,5 @@
+use std::rc::Rc;
+
 use gpui::{AnyElement, App, IntoElement, SharedString, Task, Window};
 
 use crate::IndexPath;
@@ -121,6 +123,20 @@ pub trait SearchableListDelegate: Sized + 'static {
         _window: &mut Window,
         _cx: &mut App,
     ) -> Option<AnyElement> {
+        None
+    }
+
+    /// A listener for pointer hover over the whole row of the item at `ix`,
+    /// padding included. It receives `true` when the hover starts and `false`
+    /// when it ends.
+    ///
+    /// Blink patch: upstream has no row hover hook, and an element returned by
+    /// [`Self::render_item`] sits inside the row padding.
+    fn item_hover_listener(
+        &self,
+        _ix: IndexPath,
+        _item: &Self::Item,
+    ) -> Option<Rc<dyn Fn(&bool, &mut Window, &mut App)>> {
         None
     }
 

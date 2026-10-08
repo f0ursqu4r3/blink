@@ -28,12 +28,16 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
   traffic lights, the centered command center (`Cmd/Ctrl+P` for requests; `>` or
   `Cmd/Ctrl+Shift+P` for commands), and at the right the
   pane layout toggle and the Settings cog; it doubles as the window drag area, and on
-  macOS the traffic lights sit on its left. The Browser card and the editor
-  card, which holds the request tab strip and the resizable request and
-  response split, sit on a darker frame with 6-pixel gaps. A 24-pixel status
+  macOS the traffic lights sit on its left. The Browser, tab strip with URL
+  bar, request, and response appear as separate panels on a darker frame.
+  Each panel has an 8-pixel radius and a thin border, with 6-pixel gaps.
+  The request and response panels align with the header panel edges and
+  retain a 6-pixel resize gap in either layout. A 24-pixel status
   bar closes the window. Below 900 pixels, panels stack without hiding core
   request controls. Below 760 pixels, the Browser toggle opens the Browser
   as an overlay.
+  Resize separators show three centered dots along the separator. The dots
+  brighten on hover; the full separator remains available for dragging.
 - **Shape:** 8-pixel radius for cards, popovers, menus, and dialogs; 4-pixel
   radius for controls and tooltips.
 - **Density:** Small icon-and-label controls. No floating toolbars, large
@@ -92,3 +96,12 @@ telemetry, decorative warnings, scanline overlays, and cinematic animations.
   element.
 - Apply application and group defaults only when creating a new request. Do not
   rewrite an existing request or a duplicate.
+- Application Settings uses a page list (General, Appearance, Network, Tokens)
+  and a page panel, in the same bordered panels and dark frame as the main
+  window. The title bar, page list, page header, and status bar copy the main
+  title bar, Browser, Request header, and status bar. Each page holds titled groups of rows: label and description at the
+  left, the control at the right. Lists and editors take the full width.
+  Booleans use switches. Valid edits apply
+  immediately. Invalid fields retain their last valid values. The theme
+  select groups themes into Dark and Light by background. Hovering a theme
+  row previews it until the pointer leaves the row; selection persists. Closing settings clears only the preview.

@@ -64,6 +64,12 @@ fn channel(hex: &str, start: usize) -> f32 {
         / 255.0
 }
 
+/// Whether a Ghostty theme draws light text on a darker background.
+pub fn is_dark(text: &str) -> bool {
+    let palette = parse_ghostty(text, &base_palette()).unwrap_or_else(|_| base_palette());
+    luminance(&palette.background) <= luminance(&palette.foreground)
+}
+
 /// WCAG relative luminance of a `#rrggbb` colour.
 pub fn luminance(hex: &str) -> f64 {
     let [r, g, b] = [1, 3, 5].map(|start| {

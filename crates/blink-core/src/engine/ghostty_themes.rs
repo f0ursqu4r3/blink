@@ -84,8 +84,26 @@ fn read(dirs: &[PathBuf], name: &str) -> Result<String, String> {
     Err(format!("Theme {name} not found."))
 }
 
-pub fn list_ghostty_themes() -> Vec<String> {
-    list(&theme_dirs())
+/// An installed theme and whether its background is dark.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GhosttyTheme {
+    pub name: String,
+    pub dark: bool,
+}
+
+fn classify(dirs: &[PathBuf]) -> Vec<GhosttyTheme> {
+    list(dirs)
+        .into_iter()
+        .map(|name| {
+            // An unreadable theme still lists; choosing it reports the error.
+            let dark = read(dirs, &name).map_or(true, |text| crate::theme::is_dark(&text));
+            GhosttyTheme { name, dark }
+        })
+        .collect()
+}
+
+pub fn list_ghostty_themes() -> Vec<GhosttyTheme> {
+    classify(&theme_dirs())
 }
 
 pub fn read_ghostty_theme(name: &str) -> Result<String, String> {
@@ -113,6 +131,30 @@ mod tests {
         fs::create_dir(bundled.path().join("folder")).unwrap();
         paths.push(PathBuf::from("/missing/ghostty/themes"));
         assert_eq!(list(&paths), vec!["Monokai Pro", "Zenburn"]);
+    }
+
+    #[test]
+    fn classifies_themes_by_background_and_foreground() {
+        let (user, _bundled, paths) = dirs();
+        fs::write(
+            user.path().join("Paper"),
+            "background = #ffffff\nforeground = #222222",
+        )
+        .unwrap();
+        fs::write(user.path().join("Night"), "background = #101010").unwrap();
+        assert_eq!(
+            classify(&paths),
+            vec![
+                GhosttyTheme {
+                    name: "Night".into(),
+                    dark: true
+                },
+                GhosttyTheme {
+                    name: "Paper".into(),
+                    dark: false
+                },
+            ]
+        );
     }
 
     #[test]

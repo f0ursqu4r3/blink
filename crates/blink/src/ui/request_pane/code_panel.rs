@@ -101,7 +101,7 @@ impl CodePanel {
 }
 
 impl Render for CodePanel {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let colors = theme::colors(cx);
         let target = self.target(cx);
         let copied = self.store.read(cx).copied;
@@ -146,6 +146,10 @@ impl Render for CodePanel {
             .border_b_1()
             .border_color(colors.border)
             .bg(colors.muted)
+            .when(
+                window.viewport_size().width > px(crate::ui::app::NARROW_WIDTH),
+                |this| this.rounded_b(px(7.)),
+            )
             .child(
                 div()
                     .flex()

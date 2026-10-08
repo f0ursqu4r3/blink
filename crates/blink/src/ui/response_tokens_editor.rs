@@ -12,8 +12,8 @@ use blink_core::response_tokens::{
 use blink_core::session::{LabelTokens, session_label};
 use blink_core::workspace_state::Workspace;
 use gpui_kit::assets::IconName;
-use gpui_kit::component::input::{Input, InputState};
-use gpui_kit::component::select::{Select, SelectState};
+use gpui_kit::component::input::{Input, InputEvent, InputState};
+use gpui_kit::component::select::{Select, SelectEvent, SelectState};
 use gpui_kit::component::{Sizable as _, v_flex};
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
@@ -149,7 +149,10 @@ fn group_order(groups: &[RequestGroup]) -> HashMap<u64, usize> {
     order
 }
 
+pub struct ResponseTokensChanged;
+
 struct Row {
+    _subscriptions: Vec<Subscription>,
     id: u64,
     name: Entity<InputState>,
     request: Entity<ChoiceSelect>,
@@ -169,6 +172,8 @@ pub struct ResponseTokensEditor {
     /// It does not block the save, and shows only when the row has no error.
     warnings: HashMap<u64, String>,
 }
+
+impl EventEmitter<ResponseTokensChanged> for ResponseTokensEditor {}
 
 impl ResponseTokensEditor {
     pub fn new(
@@ -220,7 +225,21 @@ impl ResponseTokensEditor {
         let index = choice_index(&choices, &token.request_id.to_string());
         let deleted_request = token.request_id != 0 && index.is_none();
         let request = cx.new(|cx| SelectState::new(choices, index, window, cx).searchable(true));
+        let mut subscriptions = Vec::new();
+        for input in [&name, &path, &max_age] {
+            subscriptions.push(cx.subscribe(input, |_, _, event: &InputEvent, cx| {
+                if let InputEvent::Change = event {
+                    cx.emit(ResponseTokensChanged);
+                }
+            }));
+        }
+        subscriptions.push(
+            cx.subscribe(&request, |_, _, _: &SelectEvent<Vec<Choice>>, cx| {
+                cx.emit(ResponseTokensChanged);
+            }),
+        );
         self.rows.push(Row {
+            _subscriptions: subscriptions,
             id: token.id,
             name,
             request,
@@ -246,6 +265,7 @@ impl ResponseTokensEditor {
             window,
             cx,
         );
+        cx.emit(ResponseTokensChanged);
         cx.notify();
         id
     }
@@ -267,6 +287,7 @@ impl ResponseTokensEditor {
                 }
             });
         }
+        cx.emit(ResponseTokensChanged);
         cx.notify();
     }
 
@@ -274,6 +295,7 @@ impl ResponseTokensEditor {
         self.rows.retain(|row| row.id != id);
         self.errors.remove(&id);
         self.warnings.remove(&id);
+        cx.emit(ResponseTokensChanged);
         cx.notify();
     }
 
@@ -364,6 +386,64 @@ impl ResponseTokensEditor {
         self.show_errors(errors, cx);
         // Without errors every max age parses, so `tokens` succeeds.
         valid.then(|| self.tokens(cx).ok()).flatten()
+    }
+
+    /// Apply valid rows independently while preserving saved values of invalid rows.
+    /// Group dialogs continue to use the atomic `validated` path.
+    pub fn valid_changes(
+        &mut self,
+        saved: &[ResponseToken],
+        text_names: &[&str],
+        sessions: &[RequestSession],
+        cx: &mut Context<Self>,
+    ) -> Vec<ResponseToken> {
+        self.errors.clear();
+        let mut next: Vec<_> = saved
+            .iter()
+            .filter(|token| self.rows.iter().any(|row| row.id == token.id))
+            .cloned()
+            .collect();
+        for _ in 0..=self.rows.len() {
+            let before = next.clone();
+            self.errors.clear();
+            for row in &self.rows {
+                let (token, age_error) = Self::row_token(row, cx);
+                let mut names = text_names.to_vec();
+                names.extend(
+                    next.iter()
+                        .filter(|other| other.id != row.id)
+                        .map(|other| other.name.as_str()),
+                );
+                let error =
+                    validate_response_tokens(std::slice::from_ref(&token), &names, sessions)
+                        .into_iter()
+                        .next()
+                        .map(|(_, error)| error)
+                        .or(age_error);
+                if let Some(error) = error {
+                    let error = if error == "Choose a request."
+                        && row.deleted_request
+                        && selected(&row.request, cx).is_empty()
+                    {
+                        DELETED_REQUEST.to_string()
+                    } else {
+                        error
+                    };
+                    self.errors.insert(row.id, error);
+                    continue;
+                }
+                if let Some(index) = next.iter().position(|other| other.id == row.id) {
+                    next[index] = token;
+                } else {
+                    next.push(token);
+                }
+            }
+            if next == before {
+                break;
+            }
+        }
+        cx.notify();
+        next
     }
 
     fn render_row(&self, index: usize, row: &Row, cx: &mut Context<Self>) -> AnyElement {

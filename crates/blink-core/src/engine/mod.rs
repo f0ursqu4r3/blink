@@ -35,6 +35,7 @@ use std::time::Duration;
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
 
 pub use cookies::StoredCookie;
+pub use ghostty_themes::GhosttyTheme;
 pub use http::{CANCELED, StreamMessage};
 pub use paths::Paths;
 pub use request_files::PickedFile;
@@ -397,7 +398,9 @@ impl Engine {
         self.0.sockets.close(connection_id);
     }
 
-    pub fn list_ghostty_themes(&self) -> impl Future<Output = Vec<String>> + Send + 'static {
+    pub fn list_ghostty_themes(
+        &self,
+    ) -> impl Future<Output = Vec<ghostty_themes::GhosttyTheme>> + Send + 'static {
         let list = self.blocking(
             || Ok(ghostty_themes::list_ghostty_themes()),
             "Theme list task failed.",

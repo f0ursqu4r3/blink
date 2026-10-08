@@ -147,6 +147,21 @@ pub struct AppTheme {
 impl Global for AppTheme {}
 
 impl AppTheme {
+    /// Commit a valid selection and retain storage errors for the settings view.
+    pub fn commit(&mut self) {
+        if !self.state.error.is_empty() {
+            return;
+        }
+        let result = self.write(blink_core::theme::save_theme(self.state.draft.as_ref()));
+        let failed = result.is_err();
+        self.state.commit(|_| result);
+        self.state.save_error = if failed {
+            blink_core::theme::STORAGE_FAILURE.into()
+        } else {
+            String::new()
+        };
+    }
+
     /// Store `text`, or remove the file for the default theme.
     pub fn write(&self, text: Option<String>) -> Result<(), String> {
         match text {

@@ -870,7 +870,10 @@ impl Render for RequestTabs {
             .flex_shrink_0()
             .h(css(36.))
             .bg(colors.muted)
+            .border_t_1()
             .border_b_1()
+            .when(!narrow, |this| this.border_x_1().rounded_t(px(8.)))
+            .when(!narrow && active.is_none(), |this| this.rounded_b(px(8.)))
             .border_color(colors.border)
             .on_drag_move(
                 cx.listener(|this, event: &DragMoveEvent<DraggedRequests>, _, cx| {
