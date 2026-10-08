@@ -10,6 +10,8 @@ edition.workspace = true
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 serde_yaml_ng = "0.10"
+sha2 = "0.10"
+rand = "0.9"
 cookie_store = { version = "0.22", features = ["serde_json"] }
 dirs = "6"
 futures = { version = "0.3", default-features = false, features = ["std", "executor"] }
@@ -17,7 +19,7 @@ futures-util = { version = "0.3", default-features = false, features = ["sink", 
 reqwest = { version = "0.12", default-features = false, features = ["charset", "cookies", "http2", "json", "macos-system-configuration", "multipart", "rustls-tls", "rustls-tls-native-roots", "socks"] }
 reqwest_cookie_store = "0.9"
 tempfile = "3.27.0"
-tokio = { version = "1", features = ["fs", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio = { version = "1", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
 tokio-tungstenite = { version = "0.28", default-features = false, features = ["connect", "handshake", "rustls-tls-native-roots"] }
 tower-layer = "0.3"
 tower-service = "0.3"
@@ -30,3 +32,9 @@ base64 = "0.22"
 regex = "1"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 indexmap = { version = "2", features = ["serde"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3.7"
+
+[dev-dependencies]
+rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }

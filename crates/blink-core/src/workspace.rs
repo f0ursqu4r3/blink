@@ -406,11 +406,11 @@ fn parse_snapshot(content: &str) -> Checked<(Value, u64)> {
         let view = record(tab.get("view").ok_or_else(invalid)?)?;
         check(matches!(
             str_of(view.get("requestTab")),
-            "query" | "headers" | "body" | "auth" | "tests"
+            "query" | "headers" | "body" | "auth" | "tests" | "contract"
         ))?;
         check(matches!(
             str_of(view.get("responseTab")),
-            "body" | "headers" | "tests" | "events"
+            "body" | "headers" | "tests" | "events" | "request"
         ))?;
         check(matches!(
             view.get("jsonView").map(|value| str_of(Some(value))),

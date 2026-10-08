@@ -9,6 +9,7 @@ pub mod form;
 pub mod group_settings;
 pub mod history_view;
 pub mod key_value_editor;
+pub mod projects;
 pub mod request_pane;
 pub mod response_panel;
 pub mod response_tokens_editor;
@@ -20,3 +21,7 @@ pub mod token_input;
 pub mod update_notice;
 pub mod websocket_panel;
 pub mod widgets;
+
+pub mod collection_runner;
+pub mod contract_panel;
+pub mod credentials_panel;

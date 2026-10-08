@@ -38,6 +38,7 @@ actions!(
     [
         ToggleBrowser,
         ImportFile,
+        OpenProjectFolder,
         ManageCookies,
         NewGroup,
         CheckForUpdates,
@@ -97,6 +98,10 @@ fn menus() -> Vec<Menu> {
             MenuItem::action("Show All", ShowAll),
             MenuItem::separator(),
             MenuItem::action("Quit Blink", Quit),
+        ]),
+        Menu::new("File").items([
+            MenuItem::action("Open Project Folder…", OpenProjectFolder),
+            MenuItem::action("Import Requests…", ImportFile),
         ]),
         Menu::new("Edit").items([
             MenuItem::os_action("Undo", input::Undo, OsAction::Undo),

@@ -377,3 +377,36 @@ fn streams_live_events_and_cancel_keeps_them(cx: &mut TestAppContext) {
     // History has the canceled stream.
     assert_eq!(harness.session(cx, |s| s.history.len()), 1);
 }
+
+#[gpui_kit::test]
+fn request_inspection_is_ephemeral_redacted_and_resets_reveal(cx: &mut TestAppContext) {
+    use blink_core::model::AuthorizationConfig;
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let (base, _requests) = serve(|_| Reply::ok("text/plain", b"ok".to_vec()));
+    let harness = test_support::open(cx, &engine);
+    harness.edit_draft(cx, |draft| {
+        draft.local_auth = Some(AuthorizationConfig::Bearer {
+            token: "inspection-fake-secret".into(),
+        })
+    });
+    send(&harness, cx, &base);
+    let id = harness.active_id(cx);
+    let panel = panel(&harness, cx);
+    cx.read(|cx| {
+        let store = harness.store.read(cx);
+        let inspection = &store.inspections[&id];
+        assert!(!inspection.text(false).contains("inspection-fake-secret"));
+        assert!(inspection.text(true).contains("inspection-fake-secret"));
+        assert!(!store.workspace.encode().contains("peerCertificateSha256"));
+    });
+    panel.update(cx, |panel, cx| {
+        panel.set_tab("request", cx);
+        panel.reveal_request = true;
+    });
+    harness.draw(cx);
+    assert!(harness.session(cx, |s| s.view.response_tab == "request"));
+    send(&harness, cx, &base);
+    assert!(!cx.read(|cx| panel.read(cx).reveal_request));
+}

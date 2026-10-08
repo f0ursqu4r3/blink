@@ -58,3 +58,69 @@ fn compares_two_sends_then_clears_history(cx: &mut TestAppContext) {
     // The response itself stays.
     assert!(harness.session(cx, |s| s.response.is_some()));
 }
+
+#[gpui_kit::test]
+fn pinned_response_compares_across_requests_and_survives_clear(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let engine = test_support::engine(dir.path());
+    test_support::init(cx, &engine);
+    let (base, _requests) =
+        serve(|_| Reply::ok("application/json", r#"{"value":1,"timestamp":1}"#));
+    let harness = test_support::open(cx, &engine);
+    harness.send(cx, &format!("{base}/staging"));
+    let panel = harness.response_panel(cx);
+    harness.update(cx, |window, cx| {
+        panel.update(cx, |panel, cx| panel.toggle_history(window, cx));
+    });
+    harness.draw(cx);
+    let view = cx.read(|cx| panel.read(cx).history_view().clone());
+    let baseline = harness.session(cx, |s| s.history[0].clone());
+    view.update(cx, |view, cx| view.pin_baseline(baseline.clone(), cx));
+    view.update(cx, |view, cx| view.clear(cx));
+    assert!(harness.session(cx, |s| s.history.is_empty()));
+
+    let mut other = baseline.clone();
+    other.url = "https://production.test/other-request".into();
+    other.body = r#"{"timestamp":2,"value":2}"#.into();
+    view.update(cx, |view, cx| {
+        let mut state = view.store.read(cx).comparison.clone();
+        state.ignored_paths.push("/timestamp".into());
+        view.save_comparison(state, cx);
+        view.compare_baseline(other.clone(), cx);
+    });
+    harness.draw(cx);
+    let pair = cx.read(|cx| view.read(cx).snapshot_pair.clone().unwrap());
+    assert_eq!(pair.0, baseline);
+    assert_eq!(pair.1, other);
+    let saved =
+        blink_core::response_comparison::ComparisonState::load(&engine.paths().data_dir).unwrap();
+    let mut persisted = saved.baseline.unwrap().entry;
+    // JSON decimal parsing can round fractional milliseconds by one ULP.
+    assert!((persisted.sent_at - baseline.sent_at).abs() < 0.001);
+    assert!((persisted.duration_ms - baseline.duration_ms).abs() < 0.000_001);
+    if let (Some(actual), Some(expected)) = (persisted.timing, baseline.timing) {
+        for (actual, expected) in [
+            (actual.dns_ms, expected.dns_ms),
+            (actual.connect_ms, expected.connect_ms),
+            (actual.tls_ms, expected.tls_ms),
+            (Some(actual.wait_ms), Some(expected.wait_ms)),
+            (Some(actual.download_ms), Some(expected.download_ms)),
+        ] {
+            assert_eq!(actual.is_some(), expected.is_some());
+            if let (Some(actual), Some(expected)) = (actual, expected) {
+                assert!((actual - expected).abs() < 0.000_001);
+            }
+        }
+    } else {
+        assert_eq!(persisted.timing, baseline.timing);
+    }
+    persisted.sent_at = baseline.sent_at;
+    persisted.duration_ms = baseline.duration_ms;
+    persisted.timing = baseline.timing;
+    assert_eq!(persisted, baseline);
+    let changes =
+        blink_core::response_comparison::compare_json(&pair.0, &pair.1, &saved.ignored_paths)
+            .unwrap();
+    assert_eq!(changes.len(), 1);
+    assert_eq!(changes[0].path, "/value");
+}

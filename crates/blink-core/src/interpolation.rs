@@ -117,7 +117,7 @@ fn replace(
     let token = &caps[0];
     let global_prefix = caps.get(1).is_some();
     let name = &caps[2];
-    if !global_prefix && name.starts_with(ENV_PREFIX) {
+    if !global_prefix && (name.starts_with(ENV_PREFIX) || name.starts_with('@')) {
         return Ok(token.to_string());
     }
     let workspace_only = global_prefix;

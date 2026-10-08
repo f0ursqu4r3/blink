@@ -8,7 +8,7 @@ mod code_panel;
 pub(crate) mod common;
 mod editor;
 
-use blink_core::codegen::generate_code;
+use blink_core::codegen::generate_redacted_code;
 use blink_core::curl_import::{is_curl_command, parse_curl};
 use blink_core::environments::request_environment;
 use blink_core::history::now_ms;
@@ -221,7 +221,7 @@ impl RequestPane {
                 prepared
                     .http
                     .request()
-                    .map(|request| generate_code(target, request, &prepared.options))
+                    .map(|request| generate_redacted_code(target, request, &prepared.options))
             })
             .unwrap_or_default()
     }
@@ -722,7 +722,7 @@ impl Render for RequestPane {
             let code = prepared
                 .http
                 .request()
-                .map(|request| generate_code(target, request, &prepared.options))
+                .map(|request| generate_redacted_code(target, request, &prepared.options))
                 .unwrap_or_default();
             self.code
                 .update(cx, |panel, cx| panel.show(target, &code, window, cx));

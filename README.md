@@ -202,7 +202,8 @@ earlier Tauri app's `com.kyle.blink` directory. It never changes those files.
 
 The versioned format supports up to 10,000 requests, 10,000 groups, and a 64 MiB total
 snapshot. Existing version 1 snapshots restore into Ungrouped. Versions 1, 2,
-3, and 4 remain readable; the next save writes version 4.
+3, 4, and 5 remain readable. Local-only snapshots use version 4; snapshots
+with projects or closed-project archives use version 5.
 
 The footer reports saving and failure states. Failed saves preserve the
 previous snapshot and expose Retry. A corrupt or unsupported snapshot is
@@ -247,7 +248,134 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
-Engine tests use a local TCP server. Snapshot compatibility tests read
+Engine tests use local TCP and HTTPS servers. Authentication integration
+tests cover PKCE exchange, refresh rotation, concurrent refresh, cancellation,
+credential removal, token endpoint errors, and client-certificate origin
+restrictions. These tests use a private test CA and an in-memory credential
+store. They do not change Keychain or OS trust settings. Real provider login
+and OS credential authorization still need manual checks.
+
+Snapshot compatibility tests read
 fixtures written by the earlier TypeScript encoder in
 `crates/blink-core/tests/fixtures/workspace`. UI tests run headless and open
 no window.
+
+## Projects
+
+A project is a Browser root group backed by a folder on disk. The workspace
+is the full Blink session. One workspace can contain several projects beside
+local groups. Child groups use their root's storage location. Each project
+keeps its own request IDs, so separate copies can be open at the same time.
+
+Use **Open Project Folder…** in the Browser header, the File menu, or the
+command center to attach an existing project. To convert a local root, use
+**Save Group to Folder…** in its group menu. Blink explains which data will be
+shared before you select an empty folder.
+
+Use **Close Project** to remove a project from the Browser. Its files stay on
+disk. Blink keeps a private local archive of its session data for reopening.
+Closing a project does not erase its credentials or history. Project roots
+cannot be nested or removed with the ordinary Delete Group action.
+Resolve project file or save errors before closing. Blink blocks Close Project
+while those errors could leave edits unsaved. Restore an unavailable folder, or
+use Reload Project to discard conflicting definition edits explicitly.
+
+Ordinary moves cannot cross storage locations. Use **Move to Another
+Project…** in the request menu for an explicit transfer. Blink checks token
+dependencies and inherited request settings before asking you to confirm.
+A transfer that would break those dependencies or change that context is
+rejected. Each project has a separate cookie jar. Project requests do not
+inherit workspace-global tokens or workspace-global response tokens;
+response-token references cannot cross projects.
+
+### Project files
+
+A project contains readable JSON files:
+
+```text
+blink.json
+nested-group-2/
+  group.json
+  get-request-3.json
+```
+
+`blink.json` is the versioned manifest. It stores the root group and lists
+managed group and request files. Nested group folders contain `group.json`;
+each request has its own JSON file. Numeric IDs identify definitions across
+renames. Names in paths are sanitized for the filesystem.
+
+You can edit these definitions outside Blink. For manual file additions or
+moves, update the manifest's `groups` and `requests` path lists. Update
+`parentId` or `groupId` when membership changes. Unlisted files are unrelated
+files; Blink does not load or remove them. Project loading does not send
+requests. Project-relative upload paths still require a file-picker grant
+before Blink can read the selected file.
+
+Blink checks attached projects for external changes every three seconds.
+It reloads changed definitions automatically when there are no local definition
+edits. It refuses conflicting saves. **Reload Project…** asks you to confirm
+before replacing definitions and discarding local definition edits. Local
+credentials and history stay in Blink. Missing or invalid project folders
+remain visible with an error; autosave does not recreate them.
+
+### Shared and private data
+
+Project files contain request definitions, group settings, and ordinary token
+and environment values. Blink replaces authorization credentials with local
+token references. Credential values, captured response values, responses,
+history, cookies, selected environments, and tab state stay in application
+storage. Capture definitions remain part of the shared request definition.
+Known credential values remain private after their authorization references
+are removed. Project GraphQL schema requests also use the project's cookie jar
+and a separate schema cache.
+
+**Request bodies, custom headers, and ordinary token values are shared.**
+Blink does not scan arbitrary content for secrets. Use token references for
+secrets and review project files before sharing or committing them to Git.
+A reference alone does not make an ordinary shared token value private.
+
+Named secrets, OAuth credentials, and client identities use macOS Keychain.
+Existing literal credentials and other private application data remain
+plaintext; they are not migrated automatically. Closed-project archives also
+contain private data. Protect the application data directory
+and its backups.
+
+Local snapshots with project attachments or closed-project archives use
+version 5. Blink reads workspace versions 1 through 5. Local-only snapshots
+without attachments or archives continue to use version 4.
+
+### Interrupted saves
+
+Each file replacement is atomic, but a whole project save spans several files.
+Before changing managed files, Blink writes synced backups and a recovery
+journal at `.blink-save-*/transaction.json`. The journal records file paths,
+backup names, and hashes of the old and new contents.
+
+After an interrupted save, Blink refuses to open or save the project and
+shows the journal path. Recovery is manual. Preserve the journal directory
+and its backups until recovery is complete. Compare current files with the
+recorded hashes before restoring backups so that later external edits are
+preserved. Blink does not perform automatic recovery or team synchronization.
+
+
+## Professional workflows
+
+- **Request inspection:** Send a request, then select **Request** in the response panel. Inspect the initial prepared request, token/auth sources, cookies, redirect destinations, HTTP version, remote address and peer-certificate SHA-256 when available. Values are hidden by default; **Reveal locally** shows sensitive values in the app. **Copy redacted** masks credential headers, query values, known named/process secrets and the body. Request-body previews stop at 64 KiB. TLS version/cipher, protocol framing and per-hop request headers are not exposed by the transport.
+- **Collection runs:** Choose **Run collection…** from a group menu. Set request order, load CSV or a JSON array of token objects, choose stop-on-failure and run. Assertions, captures and attached contracts determine pass/fail. Each dataset row has fresh captures and cookies; later requests in that row can use earlier captures. Runs use a snapshot and do not edit saved drafts. Failed-case retries keep prior setup captures in memory. Export a JSON report for CI. Protected environments require an explicit run confirmation.
+- **Credentials:** In a request's **Auth** tab, open **Secrets, OAuth and client certificates…**. Store a named secret and use `{{@name}}` in HTTP request fields. Values resolve only when sending. Each project has its own Keychain scope; local groups share a scope. Basic and Bearer auth, headers, query rows, form fields and text bodies can use references. Code exports redact literal credential headers by default. Arbitrary literal secrets in bodies/custom fields still require review.
+- **OAuth 2:** The credentials window supports native public-client authorization-code login with S256 PKCE, a browser and a loopback callback. Register `http://127.0.0.1` with a dynamic port and `/oauth/callback` with the provider. Use the chosen secret name as a Bearer token. Expiring tokens refresh on send when the provider returns a refresh token. Endpoints require HTTPS. Provider-specific client-secret flows are not supported. The flow follows [RFC 7636](https://www.rfc-editor.org/rfc/rfc7636) and [RFC 8252](https://www.rfc-editor.org/rfc/rfc8252).
+- **Client certificates:** Choose a PEM certificate chain and private key for an exact HTTPS origin in the credentials window. Blink stores the identity in Keychain. A client-certificate request cannot redirect to another origin. Credential storage requires macOS; live provider login and OS authorization prompts need manual validation.
+- **Response comparisons:** Pin a history response, then compare another history response from any request or environment. JSON comparisons show field changes and ignore object key order. Add JSON pointer paths such as `/updatedAt` to ignore fields or subtrees. Other responses retain text diffs. The pinned snapshot and ignore rules stay in local application storage and survive history pruning and project close/reopen.
+- **OpenAPI contracts:** Imported OpenAPI 3.x requests retain their operation, referenced schemas and source file path. Source reload updates only the selected request. Use the **Contract** tab for parameter suggestions, examples, request checks, response checks and source reload. Local references are supported. Unsupported schema rules, remote references and incomplete response bodies produce an incomplete result; collection runs do not count them as passes. Source snapshots may contain examples and defaults, so review imported documents before sharing a project.
+
+The headless runner uses project files and reports failures through its exit code:
+
+```sh
+cargo run -p blink-core --bin blink-run -- /path/to/project \
+  --dataset cases.csv --stop-on-failure --report results.json
+```
+
+Use `--group NAME`, `--environment NAME`, and `--allow-protected` when needed.
+Exit codes are `0` for all passed, `1` for failed/canceled/skipped cases, and `2`
+for input or file errors. Reports omit response bodies and captured values.
+Use process-environment references such as `{{!API_TOKEN}}` for CI secrets.

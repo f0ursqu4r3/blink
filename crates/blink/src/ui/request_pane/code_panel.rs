@@ -168,7 +168,7 @@ impl Render for CodePanel {
                             .when(copied, |this| {
                                 this.icon(Icon::new(IconName::Check).size(px(13.)))
                             })
-                            .label(if copied { "Copied" } else { "Copy" })
+                            .label(if copied { "Copied" } else { "Copy redacted" })
                             .on_click(cx.listener(|this, _, _, cx| this.copy(cx))),
                     ),
             )
@@ -197,10 +197,10 @@ impl Render for CodePanel {
                     .cursor_default()
                     // `tracking-[0.08em] underline decoration-dotted
                     // underline-offset-3`.
-                    .child(tracked("INCLUDES CREDENTIALS", 0.08).dotted_underline(None))
+                    .child(tracked("CREDENTIAL HEADERS REDACTED", 0.08).dotted_underline(None))
                     .tooltip(|window, cx| {
                         Tooltip::new(
-                            "The generated code includes credentials. Review it before sharing.",
+                            "Authorization and sensitive headers are masked. Credential references stay as placeholders. Other request fields can contain private data.",
                         )
                         .build(window, cx)
                     }),

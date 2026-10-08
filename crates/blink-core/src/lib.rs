@@ -28,6 +28,7 @@ pub mod interpolation;
 pub mod jq;
 pub mod json;
 pub mod preferences;
+pub mod project;
 pub mod request;
 pub mod response_body;
 pub mod response_content;
@@ -48,3 +49,11 @@ pub mod tree_guides;
 pub mod websocket_log;
 pub mod workspace;
 pub mod workspace_state;
+
+pub mod project_state;
+
+pub mod collection_runner;
+pub mod credentials;
+pub mod inspection;
+pub mod openapi_contract;
+pub mod response_comparison;

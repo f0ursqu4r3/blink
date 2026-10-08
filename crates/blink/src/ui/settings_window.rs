@@ -24,7 +24,7 @@ use crate::ui::form::{
 };
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 use crate::ui::response_tokens_editor::{
-    ResponseTokensEditor, request_choices, self_supplied_warnings,
+    ResponseTokensEditor, scoped_request_choices, self_supplied_warnings,
 };
 use crate::ui::widgets::dotted;
 
@@ -311,7 +311,7 @@ impl Settings {
         let workspace = &store.read(cx).workspace;
         let base = workspace.preferences.clone();
         let saved_tokens = workspace.global_response_tokens.clone();
-        let requests = request_choices(workspace);
+        let requests = scoped_request_choices(workspace, None);
         let token_rows = definitions_to_rows(&workspace.global_definitions);
         let methods = METHODS.iter().map(|m| Choice::same(*m)).collect();
         let method = choice_select(methods, &base.default_method, window, cx);
@@ -437,7 +437,13 @@ impl Settings {
             }
         };
         let text_names: Vec<&str> = definitions.keys().map(String::as_str).collect();
-        let sessions = self.store.read(cx).workspace.sessions.clone();
+        let workspace = &self.store.read(cx).workspace;
+        let sessions: Vec<_> = workspace
+            .sessions
+            .iter()
+            .filter(|s| workspace.can_move_request(s.id, None))
+            .cloned()
+            .collect();
         let Some(response_tokens) = self.response_tokens.update(cx, |editor, cx| {
             editor.validated(&text_names, &sessions, cx)
         }) else {

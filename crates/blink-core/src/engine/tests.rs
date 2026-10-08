@@ -864,3 +864,63 @@ fn engine_rejects_a_bad_websocket_url() {
         "Not connected."
     );
 }
+
+#[tokio::test]
+async fn inspector_records_redirects_prepared_headers_and_protocol() {
+    let base = serve(vec![
+        ("302 Found", "Location: {base}/final\r\n".into(), vec![]),
+        ("200 OK", String::new(), b"ok".to_vec()),
+    ]);
+    let root = tempfile::tempdir().unwrap();
+    let store = ResponseStore::new(root.path().join("responses"));
+    let grants = FileGrants::load(root.path().join("grants.json"));
+    let trace = std::sync::Arc::new(std::sync::Mutex::new(
+        crate::inspection::Inspection::default(),
+    ));
+    let mut request = input(format!("{base}/start"));
+    request.headers.push(Header {
+        key: "X-Trace".into(),
+        value: "sent".into(),
+    });
+    execute_observed(
+        request,
+        TransportOptions {
+            follow_redirects: true,
+            ..Default::default()
+        },
+        &store,
+        &grants,
+        DOWNLOAD_LIMIT,
+        None,
+        None,
+        trace.clone(),
+        None,
+    )
+    .await
+    .unwrap();
+    let trace = trace.lock().unwrap();
+    assert_eq!(trace.redirects.len(), 1);
+    assert_eq!(trace.redirects[0].status, 302);
+    assert_eq!(trace.redirects[0].to, format!("{base}/final"));
+    assert_eq!(trace.http_version.as_deref(), Some("HTTP/1.1"));
+    assert!(
+        trace
+            .headers
+            .iter()
+            .any(|h| h.key == "x-trace" && h.value == "sent")
+    );
+}
+
+#[tokio::test]
+async fn cancellation_reserved_before_task_start_never_polls_transport() {
+    let flights = InFlight::default();
+    let receiver = flights.reserve("early");
+    flights.cancel("early");
+    let result: Result<(), String> = flights
+        .run_reserved("early".into(), receiver, async {
+            panic!("canceled task must not run")
+        })
+        .await;
+    assert_eq!(result.unwrap_err(), CANCELED);
+    assert!(flights.is_empty());
+}

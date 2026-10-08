@@ -242,6 +242,8 @@ pub struct ResponseToken {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Draft {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub openapi_contract: Option<crate::openapi_contract::OpenApiContract>,
     pub method: String,
     pub url: String,
     pub query: Vec<Pair>,

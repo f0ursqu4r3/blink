@@ -517,10 +517,10 @@ impl BlinkApp {
             let Some(path) = paths.into_iter().next() else {
                 return;
             };
-            let name = path
-                .file_name()
-                .map(|name| name.to_string_lossy().into_owned())
-                .unwrap_or_default();
+            let name = path.to_string_lossy().into_owned();
+            let engine = store.read_with(cx, |store, _| store.engine.clone());
+            let grant = engine.grant_file(path.clone());
+            let _ = grant.await;
             let text = cx
                 .background_executor()
                 .spawn(async move {
@@ -558,6 +558,18 @@ impl BlinkApp {
             .ok();
         })
         .detach();
+    }
+
+    fn on_open_project(
+        &mut self,
+        _: &OpenProjectFolder,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if self.ready(cx) {
+            self.show_browser(window);
+            crate::ui::projects::open_folder(self.store.clone(), cx);
+        }
     }
 
     fn on_run_command_id(
@@ -689,6 +701,12 @@ impl BlinkApp {
             ));
         }
         commands.extend([
+            command(
+                "open-project",
+                "File: Open Project Folder…".into(),
+                &[],
+                false,
+            ),
             command(
                 "duplicate-request",
                 "Request: Duplicate request".into(),
@@ -939,6 +957,7 @@ impl BlinkApp {
                 self.update_workspace(cx, |workspace| workspace.unfocus(true));
             }
             "import" => self.on_import(&ImportFile, window, cx),
+            "open-project" => self.on_open_project(&OpenProjectFolder, window, cx),
             "manage-cookies" => self.on_manage_cookies(&ManageCookies, window, cx),
             "clear-cookies" => {
                 let _ = self.store.read(cx).engine.clear_cookies();
@@ -1090,6 +1109,7 @@ impl Render for BlinkApp {
             .on_action(cx.listener(Self::on_new_group))
             .on_action(cx.listener(Self::on_collapse_groups))
             .on_action(cx.listener(Self::on_import))
+            .on_action(cx.listener(Self::on_open_project))
             .on_action(cx.listener(Self::on_run_command_id))
             .on_action(cx.listener(Self::on_reveal))
             .on_action(cx.listener(Self::on_quit))

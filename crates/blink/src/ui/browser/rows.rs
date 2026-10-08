@@ -194,7 +194,12 @@ pub fn selection_already_in(workspace: &Workspace, group_id: Option<u64>) -> boo
 
 /// True when requests are selected and not all of them are in `group_id`.
 pub fn has_movable_selection(workspace: &Workspace, group_id: Option<u64>) -> bool {
-    !workspace.selected_ids.is_empty() && !selection_already_in(workspace, group_id)
+    !workspace.selected_ids.is_empty()
+        && !selection_already_in(workspace, group_id)
+        && workspace
+            .selected_ids
+            .iter()
+            .all(|id| workspace.can_move_request(*id, group_id))
 }
 
 /// Move the selection (or the active request) into `group_id`.

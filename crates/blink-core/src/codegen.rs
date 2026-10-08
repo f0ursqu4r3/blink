@@ -522,6 +522,95 @@ pub fn generate_code(
     }
 }
 
+/// Generate code for display or sharing. Saved credential references stay
+/// references; literal authorization and sensitive header values are masked.
+/// The pure generator remains available for callers that need exact requests.
+pub fn generate_redacted_code(
+    target: CodeTarget,
+    request: &RequestInput,
+    options: &TransportOptions,
+) -> String {
+    let mut request = request.clone();
+    for header in &mut request.headers {
+        if crate::inspection::sensitive(&header.key) {
+            header.value = redact_header_value(&header.value);
+        }
+    }
+    request.url = redact_url_credentials(&request.url);
+    let mut options = options.clone();
+    options.proxy_url = redact_url_credentials(&options.proxy_url);
+    generate_code(target, &request, &options)
+}
+
+fn redact_header_value(value: &str) -> String {
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    if let Some((scheme, credentials)) = value.split_once(' ')
+        && (scheme.eq_ignore_ascii_case("basic") || scheme.eq_ignore_ascii_case("bearer"))
+    {
+        if scheme.eq_ignore_ascii_case("basic") {
+            // Basic auth was encoded during request preparation. Keep only
+            // reference placeholders from its decoded value, never literals.
+            if let Ok(bytes) = STANDARD.decode(credentials)
+                && let Ok(decoded) = String::from_utf8(bytes)
+            {
+                let safe = decoded
+                    .split_once(':')
+                    .map(|(user, password)| {
+                        format!("{}:{}", redact_value(user), redact_value(password))
+                    })
+                    .unwrap_or_else(|| redact_value(&decoded));
+                if safe.contains("{{") {
+                    return format!("{scheme} {}", STANDARD.encode(safe));
+                }
+            }
+            return format!("{scheme} [redacted]");
+        }
+        return format!("{scheme} {}", redact_value(credentials));
+    }
+    redact_value(value)
+}
+
+static CREDENTIAL_REFERENCES: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"\{\{[@!][A-Za-z0-9_.-]+\}\}").expect("credential reference pattern")
+});
+
+fn redact_value(value: &str) -> String {
+    let mut safe = String::new();
+    let mut end = 0;
+    for reference in CREDENTIAL_REFERENCES.find_iter(value) {
+        if reference.start() > end {
+            safe.push_str("[redacted]");
+        }
+        safe.push_str(reference.as_str());
+        end = reference.end();
+    }
+    if end < value.len() {
+        safe.push_str("[redacted]");
+    }
+    safe
+}
+
+fn redact_url_credentials(value: &str) -> String {
+    let Some((scheme, rest)) = value.split_once("://") else {
+        return value.into();
+    };
+    let authority_end = rest.find(['/', '?', '#']).unwrap_or(rest.len());
+    let authority = &rest[..authority_end];
+    let Some((at, _)) = authority.rmatch_indices('@').find(|(at, _)| {
+        !CREDENTIAL_REFERENCES
+            .find_iter(authority)
+            .any(|reference| reference.range().contains(at))
+    }) else {
+        return value.into();
+    };
+    let (userinfo, host) = (&authority[..at], &authority[at + 1..]);
+    format!(
+        "{scheme}://{}@{host}{}",
+        redact_value(userinfo),
+        &rest[authority_end..]
+    )
+}
+
 /// The highlight language for a target's snippet.
 pub fn code_language(target: CodeTarget) -> &'static str {
     match target {
@@ -697,5 +786,104 @@ mod tests {
         assert!(code.contains(".body(\"a\\\"\\\\\\u{8}\")"));
         assert!(code.contains("reqwest::Method::from_bytes(b\"PURGE\")?"));
         assert!(code.contains("reqwest::redirect::Policy::none()"));
+    }
+    #[test]
+    fn shared_code_masks_auth_and_sensitive_headers_for_every_target() {
+        let request = RequestInput {
+            method: "GET".into(),
+            url: "https://example.test".into(),
+            headers: vec![
+                Header {
+                    key: "Authorization".into(),
+                    value: "Bearer private-bearer".into(),
+                },
+                Header {
+                    key: "X-API-Key".into(),
+                    value: "private-key".into(),
+                },
+                Header {
+                    key: "Cookie".into(),
+                    value: "session=private-cookie".into(),
+                },
+                Header {
+                    key: "Accept".into(),
+                    value: "application/json".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        let mut options = defaults();
+        options.proxy_url = "http://proxy-user:private-proxy@localhost:8888".into();
+        for target in CodeTarget::ALL {
+            let code = generate_redacted_code(target, &request, &options);
+            for secret in [
+                "private-bearer",
+                "private-key",
+                "private-cookie",
+                "private-proxy",
+                "proxy-user",
+            ] {
+                assert!(!code.contains(secret), "{target:?}: {secret}");
+            }
+            assert!(code.contains("application/json"));
+            assert!(code.contains("[redacted]"));
+        }
+        assert_eq!(request.headers[0].value, "Bearer private-bearer");
+    }
+
+    #[test]
+    fn shared_code_preserves_named_and_environment_references() {
+        let request = RequestInput {
+            method: "GET".into(),
+            url: "https://example.test/{{@path}}".into(),
+            headers: vec![
+                Header {
+                    key: "Authorization".into(),
+                    value: "Bearer {{@token}}".into(),
+                },
+                Header {
+                    key: "X-API-Key".into(),
+                    value: "{{!API_KEY}}".into(),
+                },
+            ],
+            ..Default::default()
+        };
+        for target in CodeTarget::ALL {
+            let code = generate_redacted_code(target, &request, &defaults());
+            assert!(code.contains("{{@token}}"));
+            assert!(code.contains("{{!API_KEY}}"));
+        }
+        assert_eq!(
+            redact_url_credentials("https://{{@host}}/path"),
+            "https://{{@host}}/path"
+        );
+        assert_eq!(
+            redact_url_credentials("https://user:{{@password}}@example.test"),
+            "https://[redacted]{{@password}}@example.test"
+        );
+    }
+
+    #[test]
+    fn basic_auth_redacts_encoded_literals_but_keeps_references() {
+        use base64::{Engine as _, engine::general_purpose::STANDARD};
+        assert_eq!(
+            redact_header_value(&format!("Basic {}", STANDARD.encode("user:password"))),
+            "Basic [redacted]"
+        );
+        let safe = redact_header_value(&format!(
+            "Basic {}",
+            STANDARD.encode("private-user:{{@password}}")
+        ));
+        let decoded = String::from_utf8(
+            STANDARD
+                .decode(safe.strip_prefix("Basic ").unwrap())
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(decoded, "[redacted]:{{@password}}");
+        assert_eq!(
+            redact_header_value("literal{{@name}}literal"),
+            "[redacted]{{@name}}[redacted]"
+        );
     }
 }

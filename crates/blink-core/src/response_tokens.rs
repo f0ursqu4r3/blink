@@ -125,6 +125,8 @@ pub struct TokenSources<'a> {
     pub sessions: &'a [RequestSession],
     pub cache: &'a ResponseTokenCache,
     pub now_ms: f64,
+    project_roots: HashSet<u64>,
+    projects: &'a [crate::project_state::ProjectAttachment],
     /// Use a cached value even after its max age passes. Staleness reads
     /// sources this way, so an expired value does not mark a request edited.
     ignore_max_age: bool,
@@ -157,6 +159,8 @@ impl<'a> TokenSources<'a> {
             sessions,
             cache,
             now_ms: 0.0,
+            project_roots: HashSet::new(),
+            projects: &[],
             ignore_max_age: false,
             fingerprints: RefCell::new(None),
             labels: RefCell::new(HashMap::new()),
@@ -170,6 +174,77 @@ impl<'a> TokenSources<'a> {
     /// Text tokens only: no response tokens, empty cache.
     pub fn text(groups: &'a [RequestGroup], globals: &'a Definitions) -> Self {
         Self::new(groups, globals, &[], &[], &EMPTY_CACHE)
+    }
+
+    /// Apply project boundaries to all token lookups and dependency plans.
+    pub fn with_project_roots(mut self, roots: impl IntoIterator<Item = u64>) -> Self {
+        self.project_roots = roots.into_iter().collect();
+        self.fingerprints = RefCell::new(None);
+        self
+    }
+
+    pub fn with_projects(
+        mut self,
+        projects: &'a [crate::project_state::ProjectAttachment],
+    ) -> Self {
+        self.projects = projects;
+        self.with_project_roots(projects.iter().map(|p| p.root_id))
+    }
+
+    fn project_root(&self, group_id: Option<u64>) -> Option<u64> {
+        crate::environments::root_group(group_id, self.groups)
+            .map(|g| g.id)
+            .filter(|id| self.project_roots.contains(id))
+    }
+
+    fn scoped_definitions(&self, group: &RequestGroup) -> Definitions {
+        let mut values = group.local_definitions.clone().unwrap_or_default();
+        if let Some(project) = self.projects.iter().find(|p| p.root_id == group.id) {
+            if let Some(private) = project.private_values.get(&0) {
+                values.extend(private.clone());
+            }
+            if let Some(environment) = crate::environments::active_environment(Some(group)) {
+                values.extend(environment.values.clone());
+            }
+            if let Some(private) = group
+                .active_environment_id
+                .and_then(|id| project.private_values.get(&id))
+            {
+                values.extend(private.clone());
+            }
+        } else {
+            values = group_definitions(group);
+        }
+        values
+    }
+
+    fn same_scope(&self, group_id: Option<u64>, token: &ResponseToken) -> bool {
+        self.sessions
+            .iter()
+            .find(|s| s.id == token.request_id)
+            .is_none_or(|s| self.project_root(group_id) == self.project_root(s.group_id))
+    }
+
+    fn scoped_resolve(
+        &self,
+        group_id: Option<u64>,
+        token: &ResponseToken,
+        fingerprints: &Fingerprints,
+    ) -> (ResponseTokenInfo, Option<String>) {
+        if !self.same_scope(group_id, token) {
+            return (
+                ResponseTokenInfo {
+                    request_label: "a request in another storage scope".into(),
+                    source: token.source,
+                    path: token.path.clone(),
+                    fetched_at_ms: None,
+                    environment: None,
+                    problem: Some("reads a request outside this project scope.".into()),
+                },
+                None,
+            );
+        }
+        self.resolve(token, fingerprints)
     }
 
     /// The same sources at `now_ms`.
@@ -332,7 +407,7 @@ impl<'a> TokenSources<'a> {
         let mut texts: HashSet<String> = HashSet::new();
         let mut group = Vec::<&ResponseToken>::new();
         for scope in ancestry(group_id, self.groups) {
-            for key in group_definitions(scope).into_keys() {
+            for key in self.scoped_definitions(scope).into_keys() {
                 if !group.iter().any(|t| t.name == key) {
                     texts.insert(key);
                 }
@@ -342,6 +417,9 @@ impl<'a> TokenSources<'a> {
                     group.push(token);
                 }
             }
+        }
+        if self.project_root(group_id).is_some() {
+            return group;
         }
         let mut global = Vec::<&ResponseToken>::new();
         for token in self.global_response_tokens {
@@ -363,7 +441,7 @@ impl<'a> TokenSources<'a> {
         let mut definitions = Definitions::new();
         let mut response_tokens = IndexMap::new();
         for group in ancestry(group_id, self.groups) {
-            for (key, value) in group_definitions(group) {
+            for (key, value) in self.scoped_definitions(group) {
                 // A nearer response token without a value still owns its name.
                 if !response_tokens.contains_key(&key) {
                     definitions.entry(key).or_insert(value);
@@ -375,7 +453,7 @@ impl<'a> TokenSources<'a> {
                 {
                     continue;
                 }
-                let (info, value) = self.resolve(token, fingerprints);
+                let (info, value) = self.scoped_resolve(group_id, token, fingerprints);
                 if let Some(value) = value {
                     definitions.insert(token.name.clone(), value);
                 }
@@ -383,15 +461,20 @@ impl<'a> TokenSources<'a> {
             }
         }
 
-        let mut workspace_definitions = self.globals.clone();
+        let project = self.project_root(group_id).is_some();
+        let mut workspace_definitions = if project {
+            Definitions::new()
+        } else {
+            self.globals.clone()
+        };
         let mut workspace_response_tokens = IndexMap::new();
-        for token in self.global_response_tokens {
+        for token in self.global_response_tokens.iter().filter(|_| !project) {
             if self.globals.contains_key(&token.name)
                 || workspace_response_tokens.contains_key(&token.name)
             {
                 continue;
             }
-            let (info, value) = self.resolve(token, fingerprints);
+            let (info, value) = self.scoped_resolve(group_id, token, fingerprints);
             if let Some(value) = value {
                 workspace_definitions.insert(token.name.clone(), value);
             }
@@ -414,8 +497,12 @@ impl<'a> TokenSources<'a> {
     fn used_names(&self, session: &RequestSession) -> HashSet<String> {
         let texts: Vec<Definitions> = ancestry(session.group_id, self.groups)
             .into_iter()
-            .map(group_definitions)
-            .chain(std::iter::once(self.globals.clone()))
+            .map(|group| self.scoped_definitions(group))
+            .chain(
+                self.project_root(session.group_id)
+                    .is_none()
+                    .then(|| self.globals.clone()),
+            )
             .collect();
         let mut pending = vec![
             serde_json::to_string(&session.draft).unwrap_or_default(),
@@ -590,6 +677,7 @@ impl TokenSources<'_> {
     /// with `_.` names a global response token.
     fn claimed(&self, group_id: Option<u64>, key: &str) -> Option<&ResponseToken> {
         match key.strip_prefix("_.") {
+            Some(_) if self.project_root(group_id).is_some() => None,
             Some(name) => self
                 .global_response_tokens
                 .iter()

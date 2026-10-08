@@ -9,6 +9,104 @@ use gpui_kit::{ElementId, Pixels, TestAppContext, px};
 use super::{CONFIRM_BUTTONS, CONFIRM_GAP, CONFIRM_LINE, CONFIRM_PADDING, confirm_height};
 use crate::test_support::{self, Harness};
 
+#[gpui_kit::test]
+fn browser_exposes_open_project_folder(cx: &mut TestAppContext) {
+    let (_dir, harness, _, _) = setup(cx);
+    assert!(found(&harness, cx, "browser-open-project"));
+}
+
+#[gpui_kit::test]
+fn projects_share_the_browser_and_close_without_deleting_files(cx: &mut TestAppContext) {
+    let (_dir, harness, first, _) = setup(cx);
+    let folder = tempfile::tempdir().unwrap();
+    let mut source = blink_core::workspace_state::Workspace::new();
+    let root = source.add_group("Disk API", None);
+    let request = source.create(Some(Some(root)));
+    source.session_mut(request).unwrap().draft.url = "https://project.test/users".into();
+    let document = source
+        .convert_group_to_project(root, folder.path().to_string_lossy().into_owned())
+        .unwrap();
+    blink_core::project::ProjectDisk::create(folder.path(), &document).unwrap();
+    harness
+        .store
+        .update(cx, |s, cx| s.open_project(folder.path().into(), cx));
+    test_support::wait(cx, "project open", |cx| {
+        let s = harness.store.read(cx);
+        s.ready && s.workspace.projects.len() == 1 && !s.saving
+    });
+    harness.draw(cx);
+    let root = cx.read(|cx| harness.store.read(cx).workspace.projects[0].root_id);
+    assert!(found(&harness, cx, ("browser-project", root)));
+    assert!(exists(&harness, cx, first));
+    // Last root menu item is Close Project, not Delete group.
+    pick_delete(&harness, cx, ("browser-group", root));
+    test_support::wait(cx, "project closed", |cx| {
+        let s = harness.store.read(cx);
+        s.ready && s.workspace.projects.is_empty() && !s.saving
+    });
+    assert!(folder.path().join("blink.json").is_file());
+    assert!(exists(&harness, cx, first));
+    harness
+        .store
+        .update(cx, |s, cx| s.open_project(folder.path().into(), cx));
+    test_support::wait(cx, "project reopened", |cx| {
+        harness.store.read(cx).ready && harness.store.read(cx).workspace.projects.len() == 1
+    });
+}
+
+#[gpui_kit::test]
+fn rejected_project_reload_keeps_external_files(cx: &mut TestAppContext) {
+    let (_dir, harness, _, _) = setup(cx);
+    let folder = tempfile::tempdir().unwrap();
+    let mut source = blink_core::workspace_state::Workspace::new();
+    let root = source.add_group("Disk API", None);
+    let document = source
+        .convert_group_to_project(root, folder.path().to_string_lossy().into_owned())
+        .unwrap();
+    blink_core::project::ProjectDisk::create(folder.path(), &document).unwrap();
+    harness
+        .store
+        .update(cx, |s, cx| s.open_project(folder.path().into(), cx));
+    test_support::wait(cx, "project open", |cx| {
+        harness.store.read(cx).ready && !harness.store.read(cx).saving
+    });
+    let root = cx.read(|cx| harness.store.read(cx).workspace.projects[0].root_id);
+    let (mut disk, mut document) = blink_core::project::ProjectDisk::open(folder.path()).unwrap();
+    document.root_id += 1000;
+    document.groups[0].id = document.root_id;
+    document.groups[0].name = "Replacement".into();
+    disk.save(&document).unwrap();
+    harness.store.update(cx, |s, cx| s.reload_project(root, cx));
+    test_support::wait(cx, "reload rejected", |cx| {
+        harness.store.read(cx).ready && !harness.store.read(cx).saving
+    });
+    assert!(cx.read(|cx| harness.store.read(cx).project_errors.contains_key(&root)));
+    assert_eq!(
+        blink_core::project::ProjectDisk::open(folder.path())
+            .unwrap()
+            .1
+            .groups[0]
+            .name,
+        "Replacement"
+    );
+    // A second Open must not accept a new write baseline for the attached
+    // recovery copy after the failed reload unregisters its disk handle.
+    harness
+        .store
+        .update(cx, |s, cx| s.open_project(folder.path().into(), cx));
+    test_support::wait(cx, "duplicate open rejected", |cx| {
+        harness.store.read(cx).ready && !harness.store.read(cx).saving
+    });
+    assert_eq!(
+        blink_core::project::ProjectDisk::open(folder.path())
+            .unwrap()
+            .1
+            .groups[0]
+            .name,
+        "Replacement"
+    );
+}
+
 /// The real app with `confirm_close_drafts` on, and two top-level requests:
 /// the first has a URL (a draft), the second is blank.
 fn setup(cx: &mut TestAppContext) -> (tempfile::TempDir, Harness, u64, u64) {

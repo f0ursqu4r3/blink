@@ -141,6 +141,7 @@ pub fn request_menu(
             .any(|id| workspace.session(*id).is_some_and(|session| session.busy));
         let mode = rows::shared_auth_mode(workspace, &targets);
         let groups = Rc::new(workspace.groups.clone());
+        let transfer_groups = groups.clone();
         let current = (targets.len() == 1).then_some(session.group_id);
         let single = targets.len() == 1;
         let count = targets.len();
@@ -210,8 +211,22 @@ pub fn request_menu(
             let s = store.clone();
             let targets = targets.clone();
             let pick: Pick = Rc::new(move |group_id, _, cx| {
-                update(&s, cx, |workspace| {
-                    rows::move_targets(workspace, &targets, group_id)
+                s.update(cx, |store, cx| {
+                    if targets
+                        .iter()
+                        .all(|id| store.workspace.can_move_request(*id, group_id))
+                    {
+                        store.update_workspace(cx, |workspace| {
+                            rows::move_targets(workspace, &targets, group_id)
+                        });
+                    } else {
+                        store.notify_import(
+                            "Use Move to Another Project for this storage location.".into(),
+                            true,
+                            String::new(),
+                            cx,
+                        );
+                    }
                 });
             });
             menu = menu.submenu(
@@ -223,6 +238,37 @@ pub fn request_menu(
                         menu,
                         groups.clone(),
                         "Ungrouped",
+                        current,
+                        None,
+                        None,
+                        pick.clone(),
+                        window,
+                        cx,
+                    )
+                },
+            );
+        }
+        {
+            let s = store.clone();
+            let ids = targets.clone();
+            let pick: Pick = Rc::new(move |group_id, window, cx| {
+                crate::ui::projects::transfer(
+                    s.clone(),
+                    ids.as_ref().clone(),
+                    group_id,
+                    window,
+                    cx,
+                );
+            });
+            menu = menu.submenu(
+                "Move to Another Project…",
+                window,
+                cx,
+                move |menu, window, cx| {
+                    group_menu_tree(
+                        menu,
+                        transfer_groups.clone(),
+                        "Local Ungrouped",
                         current,
                         None,
                         None,
@@ -261,12 +307,23 @@ pub fn group_menu(
         let can_move = rows::has_movable_selection(workspace, Some(group_id));
         let collapsed = group.collapsed;
         let parent_id = group.parent_id;
+        let project_path = workspace
+            .projects
+            .iter()
+            .find(|p| p.root_id == group_id)
+            .map(|p| p.path.clone());
         let groups = Rc::new(workspace.groups.clone());
 
         let s = store.clone();
         let b = browser.clone();
         let b2 = browser.clone();
+        let run_store = store.clone();
         let mut menu = menu
+            .item(
+                PopupMenuItem::new("Run collection…").on_click(move |_, window, cx| {
+                    crate::ui::collection_runner::open(run_store.clone(), group_id, window, cx)
+                }),
+            )
             .item(PopupMenuItem::new("New request").on_click(move |_, _, cx| {
                 update(&s, cx, |workspace| {
                     workspace.create(Some(Some(group_id)));
@@ -335,7 +392,7 @@ pub fn group_menu(
                 },
             ));
         }
-        {
+        if project_path.is_none() {
             let s = store.clone();
             let pick: Pick = Rc::new(move |parent, _, cx| {
                 update(&s, cx, |workspace| {
@@ -355,6 +412,44 @@ pub fn group_menu(
                     cx,
                 )
             });
+        }
+        if let Some(path) = project_path {
+            let s = store.clone();
+            let reveal_path = path.clone();
+            let reload_store = store.clone();
+            let close_store = store.clone();
+            return menu
+                .separator()
+                .item(
+                    PopupMenuItem::new("Reveal Project Folder").on_click(move |_, _, cx| {
+                        cx.reveal_path(std::path::Path::new(&reveal_path))
+                    }),
+                )
+                .item(
+                    PopupMenuItem::new("Copy Project Path")
+                        .on_click(move |_, _, cx| s.update(cx, |s, cx| s.copy(path.clone(), cx))),
+                )
+                .item(
+                    PopupMenuItem::new("Reload Project…").on_click(move |_, window, cx| {
+                        crate::ui::projects::reload(reload_store.clone(), group_id, window, cx)
+                    }),
+                )
+                .separator()
+                .item(
+                    PopupMenuItem::new("Close Project").on_click(move |_, _, cx| {
+                        close_store.update(cx, |s, cx| s.close_project(group_id, cx))
+                    }),
+                );
+        }
+        if parent_id.is_none() {
+            let s = store.clone();
+            menu = menu
+                .separator()
+                .item(PopupMenuItem::new("Save Group to Folder…").on_click(
+                    move |_, window, cx| {
+                        crate::ui::projects::save_group(s.clone(), group_id, window, cx)
+                    },
+                ));
         }
         let browser = browser.clone();
         menu.separator()
@@ -418,6 +513,11 @@ pub fn blank_menu(
                     .ok();
             }),
         )
+        .item({
+            let s = store.clone();
+            PopupMenuItem::new("Open Project Folder…")
+                .on_click(move |_, _, cx| crate::ui::projects::open_folder(s.clone(), cx))
+        })
         .item({
             let s = store.clone();
             PopupMenuItem::new("Collapse all")

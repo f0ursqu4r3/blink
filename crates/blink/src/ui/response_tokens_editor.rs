@@ -117,6 +117,14 @@ pub fn request_choices(workspace: &Workspace) -> Vec<(u64, String)> {
         .collect()
 }
 
+/// A response token can read only requests in its own storage scope.
+pub fn scoped_request_choices(workspace: &Workspace, group_id: Option<u64>) -> Vec<(u64, String)> {
+    request_choices(workspace)
+        .into_iter()
+        .filter(|(id, _)| workspace.can_move_request(*id, group_id))
+        .collect()
+}
+
 /// The depth-first index of each group, as the Browser lists them.
 fn group_order(groups: &[RequestGroup]) -> HashMap<u64, usize> {
     let mut children: HashMap<Option<u64>, Vec<u64>> = HashMap::new();
@@ -535,6 +543,31 @@ mod ui_tests;
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn response_source_choices_stay_in_their_storage_scope() {
+        let mut workspace = Workspace::new();
+        let local = workspace.sessions[0].id;
+        let root = workspace.add_group("Project", None);
+        let project_request = workspace.create(Some(Some(root)));
+        workspace
+            .convert_group_to_project(root, "/project".into())
+            .unwrap();
+        assert_eq!(
+            scoped_request_choices(&workspace, None)
+                .iter()
+                .map(|c| c.0)
+                .collect::<Vec<_>>(),
+            vec![local]
+        );
+        assert_eq!(
+            scoped_request_choices(&workspace, Some(root))
+                .iter()
+                .map(|c| c.0)
+                .collect::<Vec<_>>(),
+            vec![project_request]
+        );
+    }
     use core::prelude::v1::test;
 
     #[test]

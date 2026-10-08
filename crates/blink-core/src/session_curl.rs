@@ -1,11 +1,12 @@
 //! Port of `src/lib/session-curl.ts`.
 
-use crate::model::{RequestSession, TransportOptions};
-use crate::request::{build_request, to_curl};
+use crate::codegen::generate_redacted_code;
+use crate::model::{CodeTarget, RequestSession, TransportOptions};
+use crate::request::build_request;
 use crate::response_tokens::TokenSources;
 
 /// The cURL command for a session, resolved as a send resolves it. Empty when
-/// the draft does not build.
+/// the draft does not build. Literal credentials are masked for sharing.
 pub fn session_curl(
     session: &RequestSession,
     sources: &TokenSources,
@@ -13,7 +14,7 @@ pub fn session_curl(
 ) -> String {
     let ctx = sources.request_context(session);
     build_request(&session.draft, Some((&ctx).into()))
-        .map(|request| to_curl(&request, options))
+        .map(|request| generate_redacted_code(CodeTarget::Curl, &request, options))
         .unwrap_or_default()
 }
 
@@ -50,7 +51,8 @@ mod tests {
         );
         assert!(command.starts_with("curl"));
         assert!(command.contains("https://api.example.test/users"));
-        assert!(command.contains("Bearer abc"));
+        assert!(!command.contains("Bearer abc"));
+        assert!(command.contains("Bearer [redacted]"));
     }
 
     #[test]

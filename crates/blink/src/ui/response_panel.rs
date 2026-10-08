@@ -158,6 +158,7 @@ pub struct ResponsePanel {
     history: Entity<HistoryView>,
     history_open: bool,
     inspector_visible: bool,
+    reveal_request: bool,
     /// Hide lines that do not match, instead of highlighting matches.
     filter_lines: bool,
     search: Entity<InputState>,
@@ -218,6 +219,7 @@ impl ResponsePanel {
             history,
             history_open: false,
             inspector_visible: false,
+            reveal_request: false,
             filter_lines: false,
             search,
             jq_input,
@@ -264,6 +266,7 @@ impl ResponsePanel {
         let busy = session.running();
         let key = response_key(session.response.as_ref());
         if busy && !self.was_busy {
+            self.reveal_request = false;
             self.history_open = false;
         }
         self.was_busy = busy;
@@ -957,6 +960,16 @@ impl ResponsePanel {
         let entity = cx.entity();
 
         let tabs = div()
+            .child(
+                tab_trigger(
+                    "response-tab-request",
+                    "Request",
+                    None,
+                    tab == "request",
+                    cx,
+                )
+                .on_click(cx.listener(|this, _, _, cx| this.set_tab("request", cx))),
+            )
             .flex()
             .items_center()
             .child(
@@ -1401,6 +1414,63 @@ impl ResponsePanel {
             .into_any_element()
     }
 
+    fn render_request_inspection(&self, cx: &mut Context<Self>) -> AnyElement {
+        let inspection = self
+            .store
+            .read(cx)
+            .inspections
+            .get(&self.session_id)
+            .cloned();
+        let Some(inspection) = inspection else {
+            return div()
+                .p_4()
+                .child("Send this request to inspect its transport details.")
+                .into_any_element();
+        };
+        let safe = inspection.text(false);
+        div()
+            .size_full()
+            .flex()
+            .flex_col()
+            .child(
+                div()
+                    .flex()
+                    .gap_2()
+                    .p_2()
+                    .child(
+                        ghost_button("reveal-sent-request", cx)
+                            .label(if self.reveal_request {
+                                "Hide sensitive values"
+                            } else {
+                                "Reveal locally"
+                            })
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.reveal_request = !this.reveal_request;
+                                cx.notify();
+                            })),
+                    )
+                    .child(
+                        ghost_button("copy-sent-request", cx)
+                            .label("Copy redacted")
+                            .on_click(cx.listener(move |_, _, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(safe.clone()))
+                            })),
+                    ),
+            )
+            .child(
+                div()
+                    .id("request-inspection-content")
+                    .flex_1()
+                    .overflow_y_scroll()
+                    .p_3()
+                    .font_family(theme::MONO)
+                    .text_size(r(11.))
+                    .whitespace_normal()
+                    .child(inspection.text(self.reveal_request)),
+            )
+            .into_any_element()
+    }
+
     fn render_headers(&self, response: &ApiResponse, cx: &mut Context<Self>) -> AnyElement {
         let colors = theme::colors(cx);
         let query = self.search_text(cx);
@@ -1616,6 +1686,7 @@ impl ResponsePanel {
             children.push(self.render_truncated(response, cx).into_any_element());
         }
         let content = match tab.as_str() {
+            "request" => self.render_request_inspection(cx),
             "headers" => self.render_headers(response, cx),
             "tests" => self.render_tests(session, cx),
             "events" => {

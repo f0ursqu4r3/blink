@@ -172,7 +172,9 @@ pub fn token_spans(text: &str, ctx: Option<&InterpolationContext>) -> Vec<TokenS
             let global = caps.get(2).is_some();
             let name = js_trim(&caps[3]);
             let full = format!("{}{name}", if global { "_." } else { "" });
-            let token = if ctx.and_then(|c| c.response_info(&full)).is_some() {
+            let token = if !global && name.starts_with('@') {
+                TokenState::Env
+            } else if ctx.and_then(|c| c.response_info(&full)).is_some() {
                 TokenState::Response
             } else if is_resolved(name, global, ctx) {
                 TokenState::Resolved

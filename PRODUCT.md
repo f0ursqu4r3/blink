@@ -38,3 +38,61 @@ compact, inspectable workspace instead of a project-management tool.
 - No oversized metric cards or decorative gradients.
 - No hidden state behind menus when it can be visible in the workspace.
 - No limits that exist only to keep the tool simple.
+
+## Disk-backed projects
+
+A project is one Browser root group backed by a disk folder. The workspace
+is the full application session. Multiple projects and local groups can
+coexist. Child groups inherit their root's storage location. Project files
+are the source of shared definitions; application storage keeps private
+session data.
+
+Users can open a project from the Browser header, File menu, or command
+center. Save Group to Folder converts a local root after a disclosure of
+shared data. Close Project keeps the folder and a private local session
+archive. Project roots cannot be nested or deleted through ordinary group
+actions.
+
+The manifest, `blink.json`, stores the root group and inventories nested
+`group.json` files and individual request files. Stable project-local IDs
+preserve identity across renames. Manual additions and moves require manifest
+inventory updates and valid group membership fields. Loading a project never
+sends a request or grants upload access. Project-relative upload paths require
+an explicit file-picker grant.
+
+Ordinary moves cannot cross storage locations. Move to Another Project checks
+token dependencies and inherited request settings before confirmation. Cookie
+jars are separate per project. Project requests cannot inherit workspace-global
+tokens or depend on responses from another project.
+
+Blink checks for external changes every three seconds and reloads them when
+local definitions are unchanged. Conflicting saves stop with an error.
+Explicit reload requires confirmation before discarding definition edits.
+Missing folders remain visible and are not recreated by autosave.
+
+Authorization credentials and captured response values stay in local
+application storage. Responses, history, cookies, selected environments,
+tab state, and closed-project archives also stay local. This storage is
+plaintext. Request credentials do not use the OS Keychain; Keychain storage
+remains future work. Bodies, custom headers, and ordinary token values are
+shared deliberately. Use token references and review shared files; arbitrary
+secret detection is not provided.
+
+Workspace snapshots use version 5 when they contain project attachments or
+closed-project archives. Versions 1 through 5 remain readable. Local-only
+snapshots without these records continue to use version 4.
+
+Project saves use staged files, synced backups, and a durable journal at
+`.blink-save-*/transaction.json`. An interrupted multi-file save blocks loading
+and saving until manual recovery. Preserve that journal and its backups until
+recovery is complete. Automatic recovery, team synchronization, and collection
+execution are outside this feature's scope.
+
+
+## Professional workflows
+
+The Browser supports ordered collection runs with CSV/JSON rows, checks, captures, failed-case retries, isolated row cookies and JSON reports. The `blink-run` binary runs disk-backed projects for CI.
+
+Requests include an ephemeral transport inspector. Credential headers and known named secrets are redacted by default. Named secrets, OAuth PKCE tokens and origin-scoped PEM client identities use macOS Keychain. Existing literal secrets are not migrated automatically.
+
+History supports JSON field comparisons, ignored JSON pointers and a persistent local baseline across requests and environments. Imported OpenAPI 3.x operations retain source context and provide parameter suggestions, examples, request/response checks and source reload. Unsupported schema checks remain explicit.

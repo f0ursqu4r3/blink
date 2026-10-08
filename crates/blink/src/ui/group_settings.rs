@@ -28,7 +28,7 @@ use crate::ui::form::{
 };
 use crate::ui::key_value_editor::{KeyValueEditor, KeyValueEvent, KeyValueOptions};
 use crate::ui::response_tokens_editor::{
-    ResponseTokensEditor, request_choices, self_supplied_warnings,
+    ResponseTokensEditor, scoped_request_choices, self_supplied_warnings,
 };
 use crate::ui::token_input::TokenInput;
 
@@ -220,21 +220,27 @@ impl GroupForm {
         let group = workspace.group(group_id).cloned().expect("group exists");
         let groups = workspace.groups.clone();
         let preferences = workspace.preferences.clone();
-        let requests = request_choices(workspace);
+        let requests = scoped_request_choices(workspace, Some(group_id));
         // The group's own tokens, as a request in it resolves them.
         let context = workspace
             .token_sources(blink_core::history::now_ms())
             .context(Some(group_id));
 
-        let name = text_input(&group.name, window, cx);
-        let mut parent_choices = vec![Choice::new("", "Root")];
+        let mut parent_choices = Vec::new();
+        if workspace.can_move_group(group_id, None) {
+            parent_choices.push(Choice::new("", "Root"));
+        }
         parent_choices.extend(
             groups
                 .iter()
-                .filter(|candidate| can_nest_group(&groups, group_id, Some(candidate.id)))
+                .filter(|candidate| {
+                    can_nest_group(&groups, group_id, Some(candidate.id))
+                        && workspace.can_move_group(group_id, Some(candidate.id))
+                })
                 .map(|candidate| Choice::new(candidate.id.to_string(), candidate.name.clone())),
         );
         let parent_value = group.parent_id.map(|id| id.to_string()).unwrap_or_default();
+        let name = text_input(&group.name, window, cx);
         let parent_index = choice_index(&parent_choices, &parent_value);
         let parent = cx.new(|cx| {
             gpui_kit::component::select::SelectState::new(parent_choices, parent_index, window, cx)
@@ -485,7 +491,13 @@ impl GroupForm {
             .chain(environments.iter().flatten().flat_map(|e| e.values.keys()))
             .map(String::as_str)
             .collect();
-        let sessions = self.store.read(cx).workspace.sessions.clone();
+        let workspace = &self.store.read(cx).workspace;
+        let sessions: Vec<_> = workspace
+            .sessions
+            .iter()
+            .filter(|s| workspace.can_move_request(s.id, Some(self.group_id)))
+            .cloned()
+            .collect();
         let Some(response_tokens) = self.response_tokens.update(cx, |editor, cx| {
             editor.validated(&text_names, &sessions, cx)
         }) else {

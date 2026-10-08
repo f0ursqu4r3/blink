@@ -48,6 +48,7 @@ pub fn pair(key: impl Into<String>, value: impl Into<String>) -> Pair {
 
 pub fn create_draft() -> Draft {
     Draft {
+        openapi_contract: None,
         method: "GET".into(),
         url: String::new(),
         query: vec![pair("", "")],

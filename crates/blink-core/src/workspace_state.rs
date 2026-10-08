@@ -126,6 +126,9 @@ pub fn import_failed_notice(error: &str) -> String {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Workspace {
+    pub projects: Vec<crate::project_state::ProjectAttachment>,
+    pub closed_projects: Vec<crate::project_state::ClosedProject>,
+    pub(crate) local_capture_names: std::collections::BTreeMap<u64, HashSet<String>>,
     pub sessions: Vec<RequestSession>,
     pub groups: Vec<RequestGroup>,
     /// Ids of requests open as tabs, in tab order. The Browser tree owns the requests.
@@ -169,6 +172,9 @@ impl Workspace {
         let session = create_session(None);
         let id = session.id;
         Workspace {
+            projects: Vec::new(),
+            closed_projects: Vec::new(),
+            local_capture_names: Default::default(),
             sessions: vec![session],
             groups: Vec::new(),
             open_ids: vec![id],
@@ -199,6 +205,7 @@ impl Workspace {
             &self.sessions,
             &self.response_cache,
         )
+        .with_projects(&self.projects)
         .at(now_ms)
     }
 
@@ -260,8 +267,112 @@ impl Workspace {
 
     // ── Persistence ─────────────────────────────────────────────────────────
 
+    fn encode_projects(&self, legacy: String) -> String {
+        if self.projects.is_empty()
+            && self.closed_projects.is_empty()
+            && self.local_capture_names.is_empty()
+        {
+            return legacy;
+        }
+        let mut value: serde_json::Value =
+            serde_json::from_str(&legacy).expect("encoded workspace");
+        if !self.projects.is_empty() || !self.closed_projects.is_empty() {
+            value["version"] = 5.into();
+        }
+        value["localCaptureNames"] =
+            serde_json::to_value(&self.local_capture_names).expect("capture names");
+        value["projects"] = serde_json::to_value(&self.projects).expect("project attachments");
+        value["closedProjects"] =
+            serde_json::to_value(&self.closed_projects).expect("closed projects");
+        serde_json::to_string(&value).expect("workspace")
+    }
+
+    fn decode_projects(
+        content: &str,
+    ) -> Result<
+        (
+            String,
+            Vec<crate::project_state::ProjectAttachment>,
+            Vec<crate::project_state::ClosedProject>,
+        ),
+        String,
+    > {
+        if content.len() > crate::workspace::MAX_STATE_BYTES {
+            return Err("Saved workspace is too large.".into());
+        }
+        let mut value: serde_json::Value =
+            serde_json::from_str(content).map_err(|e| e.to_string())?;
+        if value["version"] != 5 {
+            return Ok((content.to_string(), Vec::new(), Vec::new()));
+        }
+        let projects: Vec<crate::project_state::ProjectAttachment> =
+            serde_json::from_value(value["projects"].clone()).map_err(|e| e.to_string())?;
+        for p in &projects {
+            let valid_id = |id: u64| id > 0 && id < 1_000_000_000;
+            if !valid_id(p.root_id) || !valid_id(p.disk_root_id) || p.path.is_empty() {
+                return Err("Invalid saved project attachment.".into());
+            }
+            for map in [
+                &p.group_ids,
+                &p.request_ids,
+                &p.environment_ids,
+                &p.token_ids,
+            ] {
+                let unique: HashSet<u64> = map.values().copied().collect();
+                if unique.len() != map.len()
+                    || map.iter().any(|(a, b)| !valid_id(*a) || !valid_id(*b))
+                {
+                    return Err("Invalid saved project ID mapping.".into());
+                }
+            }
+            if p.group_ids
+                .get(&p.disk_root_id)
+                .is_some_and(|id| *id != p.root_id)
+            {
+                return Err("Invalid saved project root mapping.".into());
+            }
+            for (disk, runtime) in &p.group_ids {
+                crate::ids::GROUPS.reserve((*disk).max(*runtime));
+            }
+            for (disk, runtime) in &p.request_ids {
+                crate::ids::SESSIONS.reserve((*disk).max(*runtime));
+            }
+            for (disk, runtime) in &p.environment_ids {
+                crate::ids::ENVIRONMENTS.reserve((*disk).max(*runtime));
+            }
+            for (disk, runtime) in &p.token_ids {
+                crate::ids::RESPONSE_TOKENS.reserve((*disk).max(*runtime));
+            }
+        }
+        let closed: Vec<crate::project_state::ClosedProject> = match value.get("closedProjects") {
+            Some(value) => serde_json::from_value(value.clone()).map_err(|e| e.to_string())?,
+            None => Vec::new(),
+        };
+        for archive in &closed {
+            let archived: serde_json::Value =
+                serde_json::from_str(&archive.snapshot).map_err(|e| e.to_string())?;
+            if archived
+                .get("closedProjects")
+                .and_then(|v| v.as_array())
+                .is_some_and(|v| !v.is_empty())
+            {
+                return Err("Nested closed project archives are invalid.".into());
+            }
+            let restored = Self::decode(&archive.snapshot)?;
+            if restored.projects.len() != 1 || restored.projects[0].path != archive.path {
+                return Err("Invalid closed project archive.".into());
+            }
+        }
+        value["version"] = 4.into();
+        Ok((
+            serde_json::to_string(&value).map_err(|e| e.to_string())?,
+            projects,
+            closed,
+        ))
+    }
+
     pub fn encode(&self) -> String {
-        encode_workspace(
+        self.encode_projects(encode_workspace(
             &self.sessions,
             self.active_id,
             &self.groups,
@@ -269,7 +380,7 @@ impl Workspace {
             &self.preferences,
             &self.open_ids,
             &self.global_response_tokens,
-        )
+        ))
     }
 
     /// Changes when a save is due. Elapsed time and the response scroll
@@ -286,7 +397,7 @@ impl Workspace {
                 session
             })
             .collect();
-        encode_workspace(
+        self.encode_projects(encode_workspace(
             &sessions,
             self.active_id,
             &self.groups,
@@ -294,7 +405,7 @@ impl Workspace {
             &self.preferences,
             &self.open_ids,
             &self.global_response_tokens,
-        )
+        ))
     }
 
     pub fn decode(content: &str) -> Result<Workspace, String> {
@@ -305,8 +416,46 @@ impl Workspace {
 
     /// Replace the saved state with a decoded snapshot.
     pub fn restore(&mut self, content: &str) -> Result<(), String> {
-        let restored = decode_workspace(content)?;
+        let (content, projects, closed_projects) = Self::decode_projects(content)?;
+        let restored = decode_workspace(&content)?;
+        let raw: serde_json::Value = serde_json::from_str(&content).map_err(|e| e.to_string())?;
+        let capture_names = match raw.get("localCaptureNames") {
+            Some(names) => serde_json::from_value(names.clone()).map_err(|e| e.to_string())?,
+            None => Default::default(),
+        };
+        let mut seen = HashSet::new();
+        let mut paths = HashSet::new();
+        for project in &projects {
+            if !seen.insert(project.root_id)
+                || !paths.insert(&project.path)
+                || !restored
+                    .groups
+                    .iter()
+                    .any(|g| g.id == project.root_id && g.parent_id.is_none())
+            {
+                return Err("Invalid saved project attachment.".into());
+            }
+            for runtime in project.group_ids.values() {
+                if let Some(group) = restored.groups.iter().find(|g| g.id == *runtime)
+                    && root_group(Some(group.id), &restored.groups)
+                        .is_none_or(|g| g.id != project.root_id)
+                {
+                    return Err("Project group mapping crosses storage scopes.".into());
+                }
+            }
+            for runtime in project.request_ids.values() {
+                if let Some(session) = restored.sessions.iter().find(|s| s.id == *runtime)
+                    && root_group(session.group_id, &restored.groups)
+                        .is_none_or(|g| g.id != project.root_id)
+                {
+                    return Err("Project request mapping crosses storage scopes.".into());
+                }
+            }
+        }
         self.batch(|ws| {
+            ws.local_capture_names = capture_names;
+            ws.projects = projects;
+            ws.closed_projects = closed_projects;
             ws.sessions = restored.sessions;
             ws.groups = restored.groups;
             ws.open_ids = restored.open_ids;
@@ -326,6 +475,9 @@ impl Workspace {
             ws.active_id = Some(session.id);
             ws.sessions = vec![session];
             ws.groups.clear();
+            ws.projects.clear();
+            ws.closed_projects.clear();
+            ws.local_capture_names.clear();
             ws.global_definitions = Definitions::new();
             ws.global_response_tokens.clear();
             ws.preferences = default_preferences();
@@ -899,6 +1051,9 @@ impl Workspace {
     }
 
     pub fn move_request(&mut self, session_id: u64, group_id: Option<u64>) {
+        if !self.can_move_request(session_id, group_id) {
+            return;
+        }
         self.batch(|ws| {
             if group_id.is_some_and(|id| ws.group(id).is_none()) {
                 return;
@@ -924,6 +1079,12 @@ impl Workspace {
         group_id: Option<u64>,
         before_session_id: Option<u64>,
     ) {
+        if session_ids
+            .iter()
+            .any(|id| self.session(*id).is_some() && !self.can_move_request(*id, group_id))
+        {
+            return;
+        }
         if group_id.is_some_and(|id| self.group(id).is_none()) {
             return;
         }
@@ -960,6 +1121,9 @@ impl Workspace {
         parent_id: Option<u64>,
         before_group_id: Option<u64>,
     ) {
+        if !self.can_move_group(group_id, parent_id) {
+            return;
+        }
         let Some(mut next) = groups_after_move(&self.groups, group_id, parent_id, before_group_id)
         else {
             return;
@@ -972,6 +1136,9 @@ impl Workspace {
 
     /// Delete a group. Its child groups and requests move to its parent.
     pub fn delete_group(&mut self, id: u64) {
+        if self.projects.iter().any(|p| p.root_id == id) {
+            return;
+        }
         self.batch(|ws| {
             let Some(index) = ws.groups.iter().position(|group| group.id == id) else {
                 return;
@@ -1430,6 +1597,26 @@ impl Workspace {
 
     /// Captured values go to the request's environment, so they never mix.
     pub fn capture(&mut self, group_id: Option<u64>, values: &Definitions) {
+        if let Some(root) = self.project_for_group(group_id).map(|p| p.root_id) {
+            let environment = request_environment(group_id, &self.groups)
+                .map(|e| e.id)
+                .unwrap_or(0);
+            self.projects
+                .iter_mut()
+                .find(|p| p.root_id == root)
+                .unwrap()
+                .private_values
+                .entry(environment)
+                .or_default()
+                .extend(values.clone());
+            return;
+        }
+        if let Some(root) = root_group(group_id, &self.groups) {
+            self.local_capture_names
+                .entry(root.id)
+                .or_default()
+                .extend(values.keys().cloned());
+        }
         if apply_capture(group_id, &mut self.groups, values) == CaptureTarget::Global {
             self.global_definitions
                 .extend(values.iter().map(|(k, v)| (k.clone(), v.clone())));

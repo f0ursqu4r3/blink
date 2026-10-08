@@ -26,6 +26,7 @@ use crate::store::{Store, Waiting};
 pub struct InFlight {
     request_id: String,
     ticket: SendTicket,
+    sources: Vec<String>,
     _task: Task<()>,
     _clock: Task<()>,
 }
@@ -343,7 +344,54 @@ impl Store {
         };
         let sources = workspace.token_sources(now_ms());
         let prepared = prepare_send(session, &sources, &workspace.preferences);
+        let mut inspection_sources = Vec::new();
+        inspection_sources.push(format!(
+            "Authorization: {}",
+            if session.draft.local_auth.is_some() {
+                "request override"
+            } else {
+                "inherited group settings"
+            }
+        ));
+        if let Some(environment) = request_environment(session.group_id, &workspace.groups) {
+            inspection_sources.push(format!("Environment: {}", environment.name));
+        }
+        let raw = serde_json::to_string(&session.draft).unwrap_or_default();
+        let mut rest = raw.as_str();
+        let mut seen = std::collections::HashSet::new();
+        while let Some((_, after)) = rest.split_once("{{") {
+            let Some((name, tail)) = after.split_once("}}") else {
+                break;
+            };
+            if seen.insert(name.to_owned()) {
+                let source = if name.starts_with('@') {
+                    "OS credential store"
+                } else if name.starts_with('!') {
+                    "process environment"
+                } else if prepared.ctx.tokens.response_info(name).is_some() {
+                    "response capture"
+                } else if name.starts_with("_.")
+                    || !prepared.ctx.tokens.definitions.contains_key(name)
+                {
+                    "workspace tokens"
+                } else {
+                    "group or active environment tokens"
+                };
+                inspection_sources.push(format!("Token {name}: {source}"));
+            }
+            rest = tail;
+        }
+        inspection_sources.push(format!(
+            "Cookie jar: {}",
+            workspace
+                .project_for_group(session.group_id)
+                .map(|p| p.path.as_str())
+                .unwrap_or("local groups")
+        ));
         let options = prepared.options.clone();
+        let project = workspace
+            .project_for_group(session.group_id)
+            .map(|p| p.path.clone());
         let Some(ticket) = self.update_workspace(cx, |workspace| {
             begin_send(workspace.session_mut(session_id)?, &prepared.http, &options)
         }) else {
@@ -354,11 +402,12 @@ impl Store {
         }
         let request_id = self.engine.next_id("request");
         let (sender, receiver) = unbounded();
-        let response = self.engine.send_request(
+        let response = self.engine.send_request_scoped(
             ticket.request.clone(),
             options,
             request_id.clone(),
             Some(sender),
+            project,
         );
         let task = cx.spawn(async move |this, cx| {
             let mut stream: UnboundedReceiver<StreamMessage> = receiver;
@@ -415,6 +464,7 @@ impl Store {
             InFlight {
                 request_id,
                 ticket,
+                sources: inspection_sources,
                 _task: task,
                 _clock: clock,
             },
@@ -441,6 +491,13 @@ impl Store {
         let Some(flight) = self.in_flight.remove(&session_id) else {
             return;
         };
+        if let Some(mut inspection) = self.engine.take_inspection(&flight.request_id) {
+            inspection.sources = flight.sources;
+            if self.inspections.len() >= 128 {
+                self.inspections.clear();
+            }
+            self.inspections.insert(session_id, inspection);
+        }
         let cancelled = matches!(&result, Err(message) if message == REQUEST_CANCELED);
         let group_id = self.workspace.session(session_id).map(|s| s.group_id);
         let Some(group_id) = group_id else {

@@ -4,8 +4,12 @@ use blink_core::diff::{DIFF_EDIT_LIMIT, DiffHunk, DiffKind, DiffLine, diff_lines
 use blink_core::history::{clock_time, diff_text, header_lines, now_ms, relative_time};
 use blink_core::model::HistoryEntry;
 use blink_core::request::format_bytes;
+use blink_core::response_comparison::{
+    ComparisonState, FieldChange, PinnedResponse, compare_json, validate_pointer,
+};
 use gpui_kit::assets::IconName;
 use gpui_kit::component::button::{Button, ButtonVariants as _};
+use gpui_kit::component::input::{Input, InputState};
 use gpui_kit::component::menu::{ContextMenuExt as _, PopupMenuItem};
 use gpui_kit::component::tooltip::Tooltip;
 use gpui_kit::component::{Disableable as _, Icon, Sizable as _};
@@ -112,6 +116,9 @@ pub struct HistoryView {
     session_id: u64,
     /// Ids of the older and newer entry in the open comparison.
     comparing: Option<(u64, u64)>,
+    snapshot_pair: Option<(HistoryEntry, HistoryEntry)>,
+    ignored_input: Entity<InputState>,
+    comparison_error: String,
     scroll: ScrollHandle,
     _subscriptions: Vec<Subscription>,
 }
@@ -120,14 +127,22 @@ impl HistoryView {
     pub fn new(
         store: Entity<Store>,
         session_id: u64,
-        _window: &mut Window,
+        window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
         let _subscriptions = vec![cx.observe(&store, |_, _, cx| cx.notify())];
+        let ignored_input =
+            cx.new(|cx| InputState::new(window, cx).placeholder("/timestamp or /meta/requestId"));
+        let comparison_error = ComparisonState::load(&store.read(cx).engine.paths().data_dir)
+            .err()
+            .unwrap_or_default();
         HistoryView {
             store,
             session_id,
             comparing: None,
+            snapshot_pair: None,
+            ignored_input,
+            comparison_error,
             scroll: ScrollHandle::new(),
             _subscriptions,
         }
@@ -135,6 +150,7 @@ impl HistoryView {
 
     fn compare(&mut self, pair: Option<(u64, u64)>, cx: &mut Context<Self>) {
         if pair.is_some() {
+            self.snapshot_pair = None;
             self.comparing = pair;
             self.scroll.set_offset(point(px(0.), px(0.)));
             cx.notify();
@@ -152,6 +168,205 @@ impl HistoryView {
         });
     }
 
+    fn save_comparison(&mut self, state: ComparisonState, cx: &mut Context<Self>) {
+        let data_dir = self.store.read(cx).engine.paths().data_dir.clone();
+        // Refuse to overwrite an unreadable file with the fallback state.
+        let saved = ComparisonState::load(&data_dir).and_then(|_| state.save(&data_dir));
+        match saved {
+            Ok(()) => {
+                self.comparison_error.clear();
+                self.store.update(cx, |store, cx| {
+                    store.comparison = state;
+                    cx.notify();
+                });
+            }
+            Err(error) => self.comparison_error = error,
+        }
+        cx.notify();
+    }
+
+    fn pin_baseline(&mut self, entry: HistoryEntry, cx: &mut Context<Self>) {
+        let mut state = self.store.read(cx).comparison.clone();
+        state.baseline = Some(PinnedResponse {
+            label: format!(
+                "{} {} · {}",
+                entry.method,
+                entry.url,
+                blink_core::history::short_date_time(entry.sent_at as i64)
+            ),
+            entry,
+        });
+        self.save_comparison(state, cx);
+    }
+
+    fn compare_baseline(&mut self, after: HistoryEntry, cx: &mut Context<Self>) {
+        if let Some(baseline) = &self.store.read(cx).comparison.baseline {
+            self.snapshot_pair = Some((baseline.entry.clone(), after));
+            self.comparing = None;
+            self.scroll.set_offset(point(px(0.), px(0.)));
+            cx.notify();
+        }
+    }
+
+    fn render_baseline(&self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = theme::colors(cx);
+        let baseline = self.store.read(cx).comparison.baseline.clone();
+        div()
+            .flex()
+            .flex_col()
+            .gap(r(4.))
+            .px(r(16.))
+            .py(r(8.))
+            .text_size(r(11.))
+            .text_color(colors.muted_foreground)
+            .child(match baseline {
+                Some(baseline) => div()
+                    .flex()
+                    .items_center()
+                    .gap(r(8.))
+                    .child(
+                        div()
+                            .flex_1()
+                            .min_w_0()
+                            .truncate()
+                            .child(format!("Baseline: {}", baseline.label)),
+                    )
+                    .child(
+                        Button::new("unpin-baseline")
+                            .ghost()
+                            .small()
+                            .label("Unpin")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                let mut state = this.store.read(cx).comparison.clone();
+                                state.baseline = None;
+                                this.save_comparison(state, cx);
+                            })),
+                    ),
+                None => div()
+                    .child("Pin a response. Compare it with any send, request, or environment."),
+            })
+            .when(!self.comparison_error.is_empty(), |this| {
+                this.child(
+                    div()
+                        .text_color(colors.destructive)
+                        .child(self.comparison_error.clone()),
+                )
+            })
+            .into_any_element()
+    }
+
+    fn render_ignored_paths(&self, cx: &mut Context<Self>) -> AnyElement {
+        let colors = theme::colors(cx);
+        let paths = self.store.read(cx).comparison.ignored_paths.clone();
+        div().flex().flex_col().gap(r(5.)).px(r(16.)).py(r(8.)).border_b_1().border_color(colors.border)
+            .child(div().text_size(r(11.)).text_color(colors.muted_foreground)
+                .child("Ignore JSON fields and their children. Use /items/0 for an array item; ~1 for / in a key."))
+            .child(div().flex().gap(r(8.)).items_center()
+                .child(div().flex_1().min_w_0().child(Input::new(&self.ignored_input).small()))
+                .child(Button::new("add-ignored-path").ghost().small().label("Ignore path")
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        let path = this.ignored_input.read(cx).value().trim().to_string();
+                        if path.is_empty() {
+                            this.comparison_error = "Enter a JSON pointer, such as /timestamp.".into();
+                            cx.notify();
+                            return;
+                        }
+                        if let Err(error) = validate_pointer(&path) {
+                            this.comparison_error = error; cx.notify(); return;
+                        }
+                        let mut state = this.store.read(cx).comparison.clone();
+                        if !state.ignored_paths.contains(&path) { state.ignored_paths.push(path); }
+                        this.save_comparison(state, cx);
+                    }))))
+            .child(div().flex().flex_wrap().gap(r(4.)).children(paths.into_iter().enumerate().map(|(index, path)| {
+                Button::new(("remove-ignored-path", index)).ghost().small()
+                    .label(format!("{} ×", if path.is_empty() { "(root)" } else { &path })).tooltip("Include this field again")
+                    .on_click(cx.listener(move |this, _, _, cx| {
+                        let mut state = this.store.read(cx).comparison.clone();
+                        state.ignored_paths.retain(|item| item != &path);
+                        this.save_comparison(state, cx);
+                    }))
+            })))
+            .when(!self.comparison_error.is_empty(), |this| this.child(div().text_size(r(11.)).text_color(colors.destructive).child(self.comparison_error.clone())))
+            .into_any_element()
+    }
+
+    fn render_fields(&self, changes: &[FieldChange], cx: &mut Context<Self>) -> AnyElement {
+        let colors = theme::colors(cx);
+        div()
+            .child(
+                div()
+                    .bg(colors.muted)
+                    .px(r(16.))
+                    .py(r(6.))
+                    .text_size(r(10.))
+                    .text_color(colors.muted_foreground)
+                    .child(format!("JSON FIELDS · {} changes", changes.len())),
+            )
+            .when(changes.is_empty(), |this| {
+                this.child(
+                    div()
+                        .px(r(16.))
+                        .py(r(8.))
+                        .text_size(r(12.))
+                        .child("No field changes after ignored paths."),
+                )
+            })
+            .children(changes.iter().enumerate().map(|(index, change)| {
+                let path = change.path.clone();
+                let value = |value: &Option<serde_json::Value>| {
+                    value
+                        .as_ref()
+                        .map(ToString::to_string)
+                        .unwrap_or_else(|| "(missing)".into())
+                };
+                div()
+                    .px(r(16.))
+                    .py(r(6.))
+                    .border_b_1()
+                    .border_color(colors.border)
+                    .text_size(r(11.))
+                    .font_family(theme::MONO)
+                    .child(
+                        div()
+                            .flex()
+                            .items_center()
+                            .gap(r(8.))
+                            .child(div().flex_1().child(if path.is_empty() {
+                                "(root)".into()
+                            } else {
+                                path.clone()
+                            }))
+                            .child(
+                                Button::new(("ignore-changed-field", index))
+                                    .ghost()
+                                    .small()
+                                    .label("Ignore")
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        let mut state = this.store.read(cx).comparison.clone();
+                                        if !state.ignored_paths.contains(&path) {
+                                            state.ignored_paths.push(path.clone());
+                                        }
+                                        this.save_comparison(state, cx);
+                                    })),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .text_color(colors.destructive)
+                            .whitespace_normal()
+                            .child(format!("− {}", value(&change.before))),
+                    )
+                    .child(
+                        div()
+                            .text_color(colors.success)
+                            .whitespace_normal()
+                            .child(format!("+ {}", value(&change.after))),
+                    )
+            }))
+            .into_any_element()
+    }
+
     fn render_comparison(
         &self,
         before: &HistoryEntry,
@@ -159,7 +374,20 @@ impl HistoryView {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let colors = theme::colors(cx);
-        let sections = diff_sections(before, after);
+        let ignored = &self.store.read(cx).comparison.ignored_paths;
+        let fields = compare_json(before, after, ignored);
+        let sections = if fields.is_some() {
+            let lines = diff_lines(&header_lines(before), &header_lines(after), DIFF_EDIT_LIMIT);
+            vec![DiffSection {
+                title: "Headers",
+                changed: lines
+                    .as_ref()
+                    .is_none_or(|lines| lines.iter().any(|line| line.kind != DiffKind::Same)),
+                hunks: lines.map(|lines| fold_diff(&lines, DIFF_CONTEXT)),
+            }]
+        } else {
+            diff_sections(before, after)
+        };
         let header = div()
             .flex()
             .flex_none()
@@ -182,6 +410,7 @@ impl HistoryView {
                     .tooltip("Back to history")
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.comparing = None;
+                        this.snapshot_pair = None;
                         cx.notify();
                     })),
             )
@@ -322,13 +551,26 @@ impl HistoryView {
                     Some(_) => None,
                 };
                 div().child(title).children(content)
-            }));
+            }))
+            .children(fields.as_ref().map(|fields| self.render_fields(fields, cx)));
         div()
             .flex()
             .flex_col()
             .flex_1()
             .min_h_0()
             .child(header)
+            .child(
+                div()
+                    .px(r(16.))
+                    .py(r(5.))
+                    .text_size(r(10.))
+                    .text_color(colors.muted_foreground)
+                    .child(format!(
+                        "{} {} → {} {}",
+                        before.method, before.url, after.method, after.url
+                    )),
+            )
+            .child(self.render_ignored_paths(cx))
             .child(body)
             .into_any_element()
     }
@@ -365,9 +607,12 @@ impl HistoryView {
                     .disabled(history.is_empty())
                     .on_click(cx.listener(|this, _, _, cx| this.clear(cx))),
             );
+        let has_baseline = self.store.read(cx).comparison.baseline.is_some();
         let latest = history.first().map(|entry| entry.id);
         let entity = cx.entity();
         let rows = history.iter().enumerate().map(|(index, entry)| {
+            let pinned_entry = entry.clone();
+            let compared_entry = entry.clone();
             let title: SharedString = format!(
                 "{} {}{}",
                 entry.method,
@@ -460,6 +705,29 @@ impl HistoryView {
                             format_bytes(entry.size_bytes)
                         }),
                 )
+                .child(
+                    Button::new(("pin-baseline", entry.id))
+                        .ghost()
+                        .small()
+                        .label("Pin")
+                        .tooltip("Keep this response as the baseline for any request")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.pin_baseline(pinned_entry.clone(), cx);
+                        })),
+                )
+                .child(
+                    Button::new(("compare-baseline", entry.id))
+                        .ghost()
+                        .small()
+                        .label("Compare")
+                        .disabled(!has_baseline)
+                        .tooltip("Compare this response with the pinned baseline")
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            cx.stop_propagation();
+                            this.compare_baseline(compared_entry.clone(), cx);
+                        })),
+                )
                 .child(match with_latest {
                     Some(pair) => div()
                         .flex_none()
@@ -527,6 +795,7 @@ impl HistoryView {
             .flex_1()
             .min_h_0()
             .child(header)
+            .child(self.render_baseline(cx))
             .when(history.is_empty(), |this| {
                 this.child(
                     div()
@@ -557,9 +826,11 @@ impl Render for HistoryView {
             .session(self.session_id)
             .map(|session| session.history.clone())
             .unwrap_or_default();
-        let pair = self.comparing.and_then(|(before, after)| {
-            let find = |id| history.iter().find(|entry| entry.id == id);
-            Some((find(before)?.clone(), find(after)?.clone()))
+        let pair = self.snapshot_pair.clone().or_else(|| {
+            self.comparing.and_then(|(before, after)| {
+                let find = |id| history.iter().find(|entry| entry.id == id);
+                Some((find(before)?.clone(), find(after)?.clone()))
+            })
         });
         let content = match pair {
             Some((before, after)) => self.render_comparison(&before, &after, cx),

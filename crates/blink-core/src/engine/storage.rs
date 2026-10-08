@@ -58,6 +58,17 @@ impl Storage {
     /// Blocking: run on a blocking thread. Skips the write when a newer
     /// snapshot is already on disk.
     pub fn save_ticketed(&self, ticket: u64, content: &str) -> Result<(), String> {
+        self.save_ticketed_with(ticket, content, || Ok(()))
+    }
+
+    /// Keep project writes under the same ordering lock as the recovery
+    /// snapshot. A project failure still preserves the latest local edits.
+    pub fn save_ticketed_with(
+        &self,
+        ticket: u64,
+        content: &str,
+        save_projects: impl FnOnce() -> Result<(), String>,
+    ) -> Result<(), String> {
         let mut written = self
             .lock
             .lock()
@@ -67,7 +78,7 @@ impl Storage {
         }
         save(&self.path, content)?;
         *written = ticket;
-        Ok(())
+        save_projects()
     }
 }
 
@@ -99,13 +110,13 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
     let value: serde_json::Value =
         serde_json::from_str(content).map_err(|_| "Workspace data is not valid JSON.")?;
     let version = value.get("version").and_then(|v| v.as_u64());
-    let supports_groups = matches!(version, Some(2) | Some(3) | Some(4))
+    let supports_groups = matches!(version, Some(2) | Some(3) | Some(4) | Some(5))
         && value.get("groups").is_some_and(|v| v.is_array());
-    let supports_global_definitions = matches!(version, Some(3) | Some(4))
+    let supports_global_definitions = matches!(version, Some(3) | Some(4) | Some(5))
         && value
             .get("globalDefinitions")
             .is_some_and(|v| v.is_object());
-    let supports_open_ids = version == Some(4)
+    let supports_open_ids = matches!(version, Some(4) | Some(5))
         && value.get("openIds").is_some_and(|v| v.is_array())
         && value
             .get("activeId")
@@ -147,15 +158,19 @@ fn save(path: &Path, content: &str) -> Result<(), String> {
             && p.get("wrap").is_some_and(|v| v.is_boolean())
             && p.get("confirmCloseDrafts").is_some_and(|v| v.is_boolean())
     });
-    if !matches!(version, Some(1) | Some(2) | Some(3) | Some(4))
+    if !matches!(version, Some(1) | Some(2) | Some(3) | Some(4) | Some(5))
         || !value.get("tabs").is_some_and(|v| v.is_array())
-        || (matches!(version, Some(2) | Some(3) | Some(4)) && !supports_groups)
-        || (matches!(version, Some(3) | Some(4)) && !supports_global_definitions)
-        || (version == Some(4) && !supports_open_ids)
+        || (matches!(version, Some(2) | Some(3) | Some(4) | Some(5)) && !supports_groups)
+        || (matches!(version, Some(3) | Some(4) | Some(5)) && !supports_global_definitions)
+        || (matches!(version, Some(4) | Some(5)) && !supports_open_ids)
+        || (version == Some(5) && !value.get("projects").is_some_and(|v| v.is_array()))
         || !preferences_valid
         || !group_defaults_valid
     {
         return Err("Unsupported workspace format.".into());
+    }
+    if version == Some(5) {
+        crate::workspace_state::Workspace::decode(content)?;
     }
     let directory = path.parent().ok_or("Invalid workspace path.")?;
     let mut builder = fs::DirBuilder::new();
@@ -271,6 +286,41 @@ mod tests {
                 0o600
             );
         }
+    }
+    #[test]
+    fn stale_save_never_runs_project_writes() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Storage::new(dir.path());
+        let old = storage.ticket();
+        let new = storage.ticket();
+        let writes = std::cell::Cell::new(0);
+        storage
+            .save_ticketed_with(new, SECOND, || {
+                writes.set(writes.get() + 1);
+                Ok(())
+            })
+            .unwrap();
+        storage
+            .save_ticketed_with(old, FIRST, || {
+                writes.set(writes.get() + 1);
+                Ok(())
+            })
+            .unwrap();
+        assert_eq!(writes.get(), 1);
+        assert_eq!(storage.load().unwrap().as_deref(), Some(SECOND));
+    }
+
+    #[test]
+    fn failed_project_write_keeps_latest_local_recovery() {
+        let dir = tempfile::tempdir().unwrap();
+        let storage = Storage::new(dir.path());
+        storage.save(FIRST).unwrap();
+        assert!(
+            storage
+                .save_ticketed_with(storage.ticket(), SECOND, || Err("Project conflict".into()))
+                .is_err()
+        );
+        assert_eq!(storage.load().unwrap().as_deref(), Some(SECOND));
     }
     #[test]
     fn failed_save_preserves_previous_data() {

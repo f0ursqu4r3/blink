@@ -119,6 +119,7 @@ struct CookieJar {
     cookies: Vec<StoredCookie>,
     filter: Entity<InputState>,
     error: String,
+    project: Option<String>,
     _subscriptions: Vec<Subscription>,
 }
 
@@ -131,18 +132,29 @@ impl CookieJar {
                 cx.notify();
             }
         })];
-        let cookies = store.read(cx).engine.list_cookies();
+        let project = store.read(cx).active_project_path();
+        let cookies = store
+            .read(cx)
+            .engine
+            .list_cookies_scoped(project.as_deref())
+            .unwrap_or_default();
         CookieJar {
             store,
             cookies,
             filter,
             error: String::new(),
+            project,
             _subscriptions: subscriptions,
         }
     }
 
     fn load(&mut self, cx: &mut Context<Self>) {
-        self.cookies = self.store.read(cx).engine.list_cookies();
+        self.cookies = self
+            .store
+            .read(cx)
+            .engine
+            .list_cookies_scoped(self.project.as_deref())
+            .unwrap_or_default();
         cx.notify();
     }
 
@@ -155,16 +167,21 @@ impl CookieJar {
     }
 
     fn delete(&mut self, cookie: &StoredCookie, cx: &mut Context<Self>) {
-        let result =
-            self.store
-                .read(cx)
-                .engine
-                .delete_cookie(&cookie.domain, &cookie.path, &cookie.name);
+        let result = self.store.read(cx).engine.delete_cookie_scoped(
+            self.project.as_deref(),
+            &cookie.domain,
+            &cookie.path,
+            &cookie.name,
+        );
         self.run(result, cx);
     }
 
     fn clear(&mut self, cx: &mut Context<Self>) {
-        let result = self.store.read(cx).engine.clear_cookies();
+        let result = self
+            .store
+            .read(cx)
+            .engine
+            .clear_cookies_scoped(self.project.as_deref());
         self.run(result, cx);
     }
 
@@ -192,7 +209,7 @@ impl CookieJar {
                             .text_size(px(14.))
                             .font_weight(FontWeight::BOLD)
                             .text_color(colors.foreground)
-                            .child(tracked("Cookies", 0.08)),
+                            .child(tracked(if self.project.is_some() { "Project Cookies" } else { "Local Cookies" }, 0.08)),
                     )
                     .child(
                         div()

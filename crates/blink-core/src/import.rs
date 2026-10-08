@@ -325,7 +325,7 @@ fn token_name(name: &str) -> String {
     out
 }
 
-fn import_openapi(spec: &Value) -> ImportResult {
+fn import_openapi_source(spec: &Value, source: &str) -> ImportResult {
     let root_map = object(Some(spec));
     let info = object(root_map.get("info"));
     let mut skipped = Vec::new();
@@ -381,7 +381,7 @@ fn import_openapi(spec: &Value) -> ImportResult {
     }
 
     for (path, path_item) in js_entries(object(root_map.get("paths"))) {
-        let path_map = object(Some(path_item));
+        let path_map = resolve(spec, Some(path_item));
         let shared = list(path_map.get("parameters"));
         for method in OPERATIONS {
             if !path_map.contains_key(method) {
@@ -485,6 +485,11 @@ fn import_openapi(spec: &Value) -> ImportResult {
                     })
                     .collect()
             };
+            if spec.get("openapi").is_some() {
+                request.openapi_contract = Some(crate::openapi_contract::OpenApiContract::new(
+                    source, spec, path, method,
+                ));
+            }
             let tag = str(list(operation.get("tags")).first());
             if tag.is_empty() {
                 root.requests.push(request);
@@ -981,7 +986,7 @@ pub fn parse_import(text: &str, file_name: &str) -> Result<ImportResult, String>
     if let Some(data) = &data {
         let spec = object(Some(data));
         if truthy(spec.get("openapi")) || truthy(spec.get("swagger")) {
-            return Ok(import_openapi(data));
+            return Ok(import_openapi_source(data, file_name));
         }
         let info = object(spec.get("info"));
         if truthy(info.get("schema")) || (truthy(info.get("name")) && truthy(spec.get("item"))) {
@@ -989,7 +994,11 @@ pub fn parse_import(text: &str, file_name: &str) -> Result<ImportResult, String>
         }
         return Err("Blink can import OpenAPI, Postman collections, and .http files.".into());
     }
-    let result = import_http(text, &strip_http_extension(file_name));
+    let display_name = std::path::Path::new(file_name)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or(file_name);
+    let result = import_http(text, &strip_http_extension(display_name));
     if result.root.requests.is_empty() {
         return Err(
             "No requests found. Blink can import OpenAPI, Postman collections, and .http files."

@@ -86,13 +86,36 @@ fn build_client(
     redirects: Arc<AtomicUsize>,
     phases: Arc<Phases>,
     jar: Option<Arc<CookieStoreMutex>>,
+    trace: Arc<Mutex<crate::inspection::Inspection>>,
+    identity: Option<reqwest::Identity>,
 ) -> Result<Client, String> {
+    let has_identity = identity.is_some();
     let policy = if options.follow_redirects {
         let max = options.max_redirects as usize;
         Policy::custom(move |attempt| {
             // `previous` holds every URL already requested, so its length is
             // the number of this hop.
             let hops = attempt.previous().len();
+            if let Some(from) = attempt.previous().last() {
+                trace
+                    .lock()
+                    .unwrap()
+                    .redirects
+                    .push(crate::inspection::RedirectHop {
+                        status: attempt.status().as_u16(),
+                        from: from.to_string(),
+                        to: attempt.url().to_string(),
+                    });
+            }
+            if has_identity
+                && attempt
+                    .previous()
+                    .first()
+                    .is_some_and(|origin| origin.origin() != attempt.url().origin())
+            {
+                return attempt
+                    .error("Client certificate redirects must stay on the configured origin.");
+            }
             if hops > max {
                 attempt.error(format!("Stopped after {max} redirects."))
             } else {
@@ -106,11 +129,19 @@ fn build_client(
     // The total timeout is applied around the send and the body read, so an
     // event stream can stay open after its headers arrive.
     let mut builder = Client::builder()
+        .tls_info(true)
         .connect_timeout(Duration::from_secs(options.connect_timeout_seconds))
         .redirect(policy)
         .dns_resolver(Arc::new(TimedResolver(phases.clone())))
         .connector_layer(TimedConnectLayer(phases))
         .danger_accept_invalid_certs(!options.verify_tls);
+    #[cfg(test)]
+    {
+        builder = super::auth_test_support::trust_fixture(builder);
+    }
+    if let Some(identity) = identity {
+        builder = builder.identity(identity);
+    }
     if let Some(jar) = jar {
         builder = builder.cookie_provider(jar);
     }
@@ -140,11 +171,26 @@ impl InFlight {
         id: String,
         task: impl std::future::Future<Output = Result<T, String>>,
     ) -> Result<T, String> {
+        let receiver = self.reserve(&id);
+        self.run_reserved(id, receiver, task).await
+    }
+
+    pub fn reserve(&self, id: &str) -> oneshot::Receiver<()> {
         let (sender, receiver) = oneshot::channel();
-        self.0.lock().unwrap().insert(id.clone(), sender);
+        self.0.lock().unwrap().insert(id.to_owned(), sender);
+        receiver
+    }
+
+    pub async fn run_reserved<T>(
+        &self,
+        id: String,
+        receiver: oneshot::Receiver<()>,
+        task: impl std::future::Future<Output = Result<T, String>>,
+    ) -> Result<T, String> {
         let result = tokio::select! {
-            result = task => result,
+            biased;
             _ = receiver => Err(CANCELED.to_string()),
+            result = task => result,
         };
         self.0.lock().unwrap().remove(&id);
         result
@@ -185,7 +231,7 @@ async fn read_upload(grants: &FileGrants, path: &str) -> Result<(String, Vec<u8>
 /// Send one request and read its body into the store. Must run on a tokio
 /// runtime.
 pub async fn execute(
-    mut request: RequestInput,
+    request: RequestInput,
     options: TransportOptions,
     store: &ResponseStore,
     grants: &FileGrants,
@@ -193,9 +239,63 @@ pub async fn execute(
     jar: Option<Arc<CookieStoreMutex>>,
     on_stream: StreamSink<'_>,
 ) -> Result<ApiResponse, String> {
+    execute_observed(
+        request,
+        options,
+        store,
+        grants,
+        download_limit,
+        jar,
+        on_stream,
+        Default::default(),
+        None,
+    )
+    .await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn execute_observed(
+    mut request: RequestInput,
+    options: TransportOptions,
+    store: &ResponseStore,
+    grants: &FileGrants,
+    download_limit: u64,
+    jar: Option<Arc<CookieStoreMutex>>,
+    on_stream: StreamSink<'_>,
+    trace: Arc<Mutex<crate::inspection::Inspection>>,
+    identity: Option<reqwest::Identity>,
+) -> Result<ApiResponse, String> {
     validate(&options)?;
+    {
+        let mut values = trace.lock().unwrap();
+        let text = serde_json::to_string(&request).unwrap_or_default();
+        let mut tail = text.as_str();
+        while let Some((_, after)) = tail.split_once("{{!") {
+            let Some((name, rest)) = after.split_once("}}") else {
+                break;
+            };
+            if let Ok(value) = std::env::var(name) {
+                values.secrets.push(value);
+            }
+            tail = rest;
+        }
+    }
     request.url = resolve_environment_references(&request.url)?;
     for header in &mut request.headers {
+        if header.key.eq_ignore_ascii_case("authorization")
+            && let Some(encoded) = header.value.strip_prefix("Basic ")
+        {
+            use base64::{Engine as _, engine::general_purpose::STANDARD};
+            if let Ok(bytes) = STANDARD.decode(encoded)
+                && let Ok(decoded) = String::from_utf8(bytes)
+            {
+                header.value = format!(
+                    "Basic {}",
+                    STANDARD.encode(resolve_environment_references(&decoded)?)
+                );
+                continue;
+            }
+        }
         header.value = resolve_environment_references(&header.value)?;
     }
     if let Some(body) = &mut request.body {
@@ -220,7 +320,18 @@ pub async fn execute(
     let has_body = method != Method::GET && method != Method::HEAD;
     let redirects = Arc::new(AtomicUsize::new(0));
     let phases = Arc::new(Phases::default());
-    let client = build_client(&options, redirects.clone(), phases.clone(), jar)?;
+    let client_certificate = identity.is_some();
+    let cookie_header = jar
+        .as_ref()
+        .and_then(|jar| reqwest::cookie::CookieStore::cookies(jar.as_ref(), &url));
+    let client = build_client(
+        &options,
+        redirects.clone(),
+        phases.clone(),
+        jar,
+        trace.clone(),
+        identity,
+    )?;
     let mut builder = client.request(method, url);
 
     for header in request.headers {
@@ -254,6 +365,43 @@ pub async fn execute(
         }
     }
 
+    let built = builder
+        .build()
+        .map_err(|_| "Cannot prepare request.".to_string())?;
+    {
+        let mut observed = trace.lock().unwrap();
+        observed.method = built.method().to_string();
+        observed.url = built.url().to_string();
+        observed.headers = built
+            .headers()
+            .iter()
+            .map(|(key, value)| Header {
+                key: key.to_string(),
+                value: value.to_str().unwrap_or("[binary]").into(),
+            })
+            .collect();
+        if !built.headers().contains_key("cookie")
+            && let Some(cookie) = cookie_header
+        {
+            observed.headers.push(Header {
+                key: "cookie".into(),
+                value: cookie.to_str().unwrap_or("[binary]").into(),
+            });
+        }
+        observed.body = built.body().map(|body| {
+            body.as_bytes()
+                .and_then(|bytes| std::str::from_utf8(bytes).ok())
+                .map(|text| {
+                    crate::inspection::body_preview(
+                        text,
+                        (options.inspection_limit_mi_b as usize * MIB).min(64 * 1024),
+                    )
+                })
+                .unwrap_or_else(|| "[multipart or binary upload]".into())
+        });
+        observed.tls_verified = options.verify_tls;
+        observed.client_certificate = client_certificate;
+    }
     let started_at = Instant::now();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(options.timeout_seconds);
     let timed_out = || {
@@ -262,10 +410,21 @@ pub async fn execute(
             options.connect_timeout_seconds, options.timeout_seconds
         )
     };
-    let mut response = tokio::time::timeout_at(deadline, builder.send())
+    let mut response = tokio::time::timeout_at(deadline, client.execute(built))
         .await
         .map_err(|_| timed_out())?
         .map_err(|error| network_error(error, &options))?;
+    {
+        use sha2::{Digest, Sha256};
+        let mut observed = trace.lock().unwrap();
+        observed.http_version = Some(format!("{:?}", response.version()));
+        observed.remote_address = response.remote_addr().map(|address| address.to_string());
+        observed.peer_certificate_sha256 = response
+            .extensions()
+            .get::<reqwest::tls::TlsInfo>()
+            .and_then(|tls| tls.peer_certificate())
+            .map(|der| format!("{:x}", Sha256::digest(der)));
+    }
     let headers_at = Instant::now();
     // The policy has run for every hop once `send` returns.
     let redirect_count = redirects.load(Ordering::Relaxed);

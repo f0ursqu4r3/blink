@@ -15,6 +15,9 @@ use gpui_kit::*;
 
 use crate::runner::InFlight;
 
+mod collection_runner;
+mod projects;
+
 /// A semantic change a view reacts to beyond re-rendering.
 #[derive(Debug, Clone)]
 pub enum StoreEvent {
@@ -42,6 +45,12 @@ pub(crate) struct Waiting {
 }
 
 pub struct Store {
+    pub comparison: blink_core::response_comparison::ComparisonState,
+    pub collection_run: Option<blink_core::collection_runner::RunReport>,
+    pub collection_running: bool,
+    pub collection_error: String,
+    pub(crate) collection_control: Option<blink_core::collection_runner::RunControl>,
+    pub inspections: HashMap<u64, blink_core::inspection::Inspection>,
     pub workspace: Workspace,
     pub engine: Engine,
     /// The snapshot loaded, or the user started fresh.
@@ -53,6 +62,10 @@ pub struct Store {
     pub exit_blocked: bool,
     /// Quitting: the UI is inert until the last save lands.
     pub closing: bool,
+    /// Per-project read/conflict errors, also shown beside the Browser root.
+    pub project_errors: HashMap<u64, String>,
+    project_poll: Option<Task<()>>,
+    project_operation: bool,
     /// The user chose Quit without saving: the exit writes nothing.
     discard_on_exit: bool,
     revision: u64,
@@ -84,7 +97,16 @@ impl EventEmitter<StoreEvent> for Store {}
 
 impl Store {
     pub fn new(engine: Engine, cx: &mut Context<Self>) -> Self {
+        let comparison =
+            blink_core::response_comparison::ComparisonState::load(&engine.paths().data_dir);
+        let comparison_error = comparison.as_ref().err().cloned();
         let mut store = Store {
+            comparison: comparison.unwrap_or_default(),
+            collection_run: None,
+            collection_running: false,
+            collection_error: String::new(),
+            collection_control: None,
+            inspections: HashMap::new(),
             workspace: Workspace::new(),
             engine,
             ready: false,
@@ -92,6 +114,9 @@ impl Store {
             saving: false,
             exit_blocked: false,
             closing: false,
+            project_errors: HashMap::new(),
+            project_poll: None,
+            project_operation: false,
             discard_on_exit: false,
             revision: 0,
             saved_key: String::new(),
@@ -110,6 +135,9 @@ impl Store {
             sockets: HashMap::new(),
         };
         store.restore(cx);
+        if let Some(error) = comparison_error {
+            store.error = error;
+        }
         store
     }
 
@@ -132,12 +160,23 @@ impl Store {
         self.ready = false;
         cx.notify();
         let load = self.engine.load_workspace();
+        let engine = self.engine.clone();
         cx.spawn(async move |this, cx| {
-            let result = load.await;
+            let result = match load.await {
+                Ok(Some(content)) => engine
+                    .restore_project_workspace(content)
+                    .await
+                    .map(|(content, errors)| (Some(content), errors)),
+                Ok(None) => Ok((None, HashMap::new())),
+                Err(error) => Err(error),
+            };
             this.update(cx, |this, cx| {
-                match result.and_then(|content| match content {
-                    Some(content) => this.workspace.restore(&content),
-                    None => Ok(()),
+                match result.and_then(|(content, errors)| {
+                    this.project_errors = errors;
+                    match content {
+                        Some(content) => this.workspace.restore(&content),
+                        None => Ok(()),
+                    }
                 }) {
                     Ok(()) => {
                         this.workspace.response_cache = this.engine.load_response_tokens();
@@ -153,6 +192,7 @@ impl Store {
                         // snapshot version is upgraded and interrupted
                         // requests are saved idle.
                         this.flush(cx);
+                        this.watch_projects(cx);
                     }
                     Err(error) => this.error = error,
                 }
@@ -223,6 +263,7 @@ impl Store {
     /// scroll offsets are not part of the key, so a running request never
     /// causes timer-driven disk writes.
     pub fn changed(&mut self, cx: &mut Context<Self>) {
+        self.workspace.remember_project_privacy();
         cx.notify();
         if !self.ready {
             return;
@@ -240,6 +281,7 @@ impl Store {
         if !self.ready {
             return;
         }
+        self.workspace.remember_project_privacy();
         self.revision += 1;
         self.pending = Some(self.workspace.encode());
         self.saving = true;
@@ -263,6 +305,7 @@ impl Store {
                 let current = revision == this.revision;
                 match result {
                     Ok(()) => {
+                        this.record_project_save(&content);
                         if current {
                             this.error.clear();
                         }
@@ -305,11 +348,18 @@ impl Store {
     /// restore never overwrites the existing file. Returns false when the
     /// save failed and quitting must wait for the user.
     pub fn save_before_exit(&mut self, cx: &mut Context<Self>) -> bool {
+        self.cancel_collection(cx);
+        if self.project_operation {
+            self.error = "Wait for the project operation to finish before quitting.".into();
+            cx.notify();
+            return false;
+        }
         // Already saved by an earlier exit step, or the user discards changes.
         if !self.ready || self.closing || self.discard_on_exit {
             return true;
         }
         self.closing = true;
+        self.workspace.remember_project_privacy();
         match self.engine.save_workspace_now(&self.workspace.encode()) {
             Ok(()) => true,
             Err(error) => {
@@ -324,6 +374,7 @@ impl Store {
 
     /// Quit now and write nothing: the storage notice's Quit without saving.
     pub fn quit_without_saving(&mut self, cx: &mut Context<Self>) {
+        self.cancel_collection(cx);
         self.discard_on_exit = true;
         cx.quit();
     }

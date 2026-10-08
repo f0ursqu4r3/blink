@@ -5,10 +5,12 @@
 //! any executor can poll, and streams arrive on `futures` channels. Dropping
 //! a returned future does not stop the work; cancel a request by its id.
 
+pub mod authentication;
 pub mod cookies;
 pub mod ghostty_themes;
 pub mod http;
 pub mod paths;
+mod projects;
 pub mod request_files;
 pub mod response_store;
 mod response_token_state;
@@ -19,12 +21,15 @@ pub mod websocket;
 pub mod window_state;
 
 #[cfg(test)]
+pub(crate) mod auth_test_support;
+#[cfg(test)]
 mod tests;
 
+use std::collections::HashMap;
 use std::future::Future;
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 use futures::channel::mpsc::{UnboundedReceiver, UnboundedSender, unbounded};
@@ -53,11 +58,15 @@ struct Inner {
     in_flight: Arc<http::InFlight>,
     sockets: websocket::Sockets,
     cookies: Arc<cookies::Cookies>,
+    project_cookies: Mutex<HashMap<String, Arc<cookies::Cookies>>>,
+    projects: Mutex<HashMap<String, crate::project::ProjectDisk>>,
     store: Arc<response_store::ResponseStore>,
     window_state: window_state::WindowState,
     update_state: update_state::UpdateState,
     response_tokens: response_token_state::ResponseTokenState,
     sequence: AtomicU64,
+    inspections: Mutex<HashMap<String, crate::inspection::Inspection>>,
+    credential_lock: Arc<tokio::sync::Mutex<()>>,
 }
 
 impl Drop for Inner {
@@ -89,13 +98,29 @@ impl Engine {
             in_flight: Arc::default(),
             sockets: websocket::Sockets::default(),
             cookies: Arc::new(cookies::Cookies::load(paths.cookies())),
+            project_cookies: Mutex::default(),
+            projects: Mutex::default(),
             store: Arc::new(response_store::ResponseStore::new(paths.responses())),
             window_state: window_state::WindowState::new(paths.window_state()),
             update_state: update_state::UpdateState::new(paths.update_state()),
             response_tokens: response_token_state::ResponseTokenState::new(paths.response_tokens()),
             sequence: AtomicU64::new(0),
+            inspections: Mutex::default(),
+            credential_lock: Arc::new(tokio::sync::Mutex::new(())),
             paths,
         })))
+    }
+
+    /// Each dataset row owns a temporary cookie/body store and keeps the caller's
+    /// explicit upload grants and credential serialization.
+    pub fn for_collection_row(&self) -> Result<(Self, tempfile::TempDir), String> {
+        let directory =
+            tempfile::tempdir().map_err(|_| "Cannot create collection data directory.")?;
+        let mut engine = Self::new(Paths::with_base(directory.path().to_path_buf()))?;
+        let inner = Arc::get_mut(&mut engine.0).expect("new engine has one owner");
+        inner.grants = self.0.grants.clone();
+        inner.credential_lock = self.0.credential_lock.clone();
+        Ok((engine, directory))
     }
 
     pub fn paths(&self) -> &Paths {
@@ -139,42 +164,144 @@ impl Engine {
         request_id: String,
         on_stream: Option<UnboundedSender<StreamMessage>>,
     ) -> impl Future<Output = Result<ApiResponse, String>> + Send + 'static {
-        let store = self.0.store.clone();
-        let grants = self.0.grants.clone();
-        let in_flight = self.0.in_flight.clone();
-        let cookies = self.0.cookies.clone();
+        self.send_request_scoped(request, options, request_id, on_stream, None)
+    }
+
+    /// Project requests use their own persistent cookie jar.
+    pub fn send_request_scoped(
+        &self,
+        request: RequestInput,
+        options: TransportOptions,
+        request_id: String,
+        on_stream: Option<UnboundedSender<StreamMessage>>,
+        project: Option<String>,
+    ) -> impl Future<Output = Result<ApiResponse, String>> + Send + 'static {
+        let engine = self.clone();
+        let receiver = self.0.in_flight.reserve(&request_id);
         self.spawn(
             async move {
-                let jar = options.store_cookies.then(|| cookies.jar());
-                let sink = on_stream.map(|sender| {
-                    move |message: StreamMessage| {
-                        let _ = sender.unbounded_send(message);
+                let trace = Arc::new(Mutex::new(crate::inspection::Inspection::default()));
+                let send = async {
+                    let mut request = request;
+                    projects::resolve_project_files(&mut request, project.as_deref())?;
+                    let cookies = engine.scoped_cookies(project.as_deref())?;
+                    // Refresh and Keychain replacement must finish even if the API
+                    // send is canceled after the provider rotates its refresh token.
+                    let credential_engine = engine.clone();
+                    let credential_scope = project.clone();
+                    let (request_resolved, secrets) = engine
+                        .spawn(
+                            async move {
+                                #[cfg(test)]
+                                auth_test_support::credential_waiting(
+                                    credential_scope.as_deref(),
+                                    "resolve",
+                                );
+                                let _guard = credential_engine.0.credential_lock.lock().await;
+                                let secrets = authentication::resolve(
+                                    &mut request,
+                                    credential_scope.as_deref(),
+                                )
+                                .await?;
+                                Ok((request, secrets))
+                            },
+                            "Cannot resolve request credentials.",
+                        )
+                        .await?;
+                    let mut request = request_resolved;
+                    trace.lock().unwrap().secrets.extend(secrets);
+                    // Select the identity after native environment expansion too.
+                    let mut tail = request.url.as_str();
+                    while let Some((_, after)) = tail.split_once("{{!") {
+                        let Some((name, rest)) = after.split_once("}}") else {
+                            break;
+                        };
+                        if let Ok(value) = std::env::var(name) {
+                            trace.lock().unwrap().secrets.push(value);
+                        }
+                        tail = rest;
                     }
-                });
-                let sink = sink
-                    .as_ref()
-                    .map(|sink| sink as &(dyn Fn(StreamMessage) + Send + Sync));
-                let result = in_flight
-                    .run(
-                        request_id,
-                        http::execute(
-                            request,
-                            options,
-                            &store,
-                            &grants,
-                            http::DOWNLOAD_LIMIT,
-                            jar.clone(),
-                            sink,
-                        ),
+                    let native_url = http::resolve_environment_references(&request.url)?;
+                    if native_url != request.url {
+                        trace.lock().unwrap().secrets.push(native_url.clone());
+                    }
+                    request.url = native_url;
+                    let identity =
+                        if url::Url::parse(&request.url).is_ok_and(|u| u.scheme() == "https") {
+                            let key = crate::credentials::identity_key(&request.url)?;
+                            crate::credentials::get(project.as_deref(), &key)?
+                                .map(|pem| {
+                                    reqwest::Identity::from_pem(&pem)
+                                        .map_err(|_| "Invalid saved client identity.".to_string())
+                                })
+                                .transpose()?
+                        } else {
+                            None
+                        };
+                    let jar = options.store_cookies.then(|| cookies.jar());
+                    let sink = on_stream.map(|sender| {
+                        move |message: StreamMessage| {
+                            let _ = sender.unbounded_send(message);
+                        }
+                    });
+                    let sink = sink
+                        .as_ref()
+                        .map(|sink| sink as &(dyn Fn(StreamMessage) + Send + Sync));
+                    let result = http::execute_observed(
+                        request,
+                        options,
+                        &engine.0.store,
+                        &engine.0.grants,
+                        http::DOWNLOAD_LIMIT,
+                        jar.clone(),
+                        sink,
+                        trace.clone(),
+                        identity,
                     )
                     .await;
-                if jar.is_some() {
-                    // A failed cookie save does not fail the request.
-                    let _ = cookies.save();
+                    if jar.is_some() {
+                        let _ = cookies.save();
+                    }
+                    result
+                };
+                let result = engine
+                    .0
+                    .in_flight
+                    .run_reserved(request_id.clone(), receiver, send)
+                    .await;
+                let mut inspections = engine.0.inspections.lock().unwrap();
+                if inspections.len() >= 128 {
+                    inspections.clear();
                 }
+                inspections.insert(request_id, trace.lock().unwrap().clone());
                 result
             },
             "Request task failed.",
+        )
+    }
+
+    pub fn take_inspection(&self, request_id: &str) -> Option<crate::inspection::Inspection> {
+        self.0.inspections.lock().unwrap().remove(request_id)
+    }
+
+    pub fn read_contract_source(
+        &self,
+        path: String,
+    ) -> impl Future<Output = Result<String, String>> + Send + 'static {
+        let grants = self.0.grants.clone();
+        self.blocking(
+            move || {
+                let file = grants.check(&path)?;
+                if std::fs::metadata(&file)
+                    .map_err(|_| "Cannot read contract source.")?
+                    .len()
+                    > 16 * 1024 * 1024
+                {
+                    return Err("Contract source exceeds 16 MiB.".into());
+                }
+                std::fs::read_to_string(file).map_err(|_| "Cannot read contract source.".into())
+            },
+            "Cannot read contract source.",
         )
     }
 
@@ -303,8 +430,13 @@ impl Engine {
     ) -> impl Future<Output = Result<(), String>> + Send + 'static {
         let storage = self.0.storage.clone();
         let ticket = storage.ticket();
+        let engine = self.clone();
         self.blocking(
-            move || storage.save_ticketed(ticket, &content),
+            move || {
+                storage.save_ticketed_with(ticket, &content, || {
+                    engine.save_project_definitions(&content)
+                })
+            },
             "Workspace save task failed.",
         )
     }
@@ -312,7 +444,11 @@ impl Engine {
     /// Blocking: the workspace JSON, for a save on quit that must finish
     /// before the process exits.
     pub fn save_workspace_now(&self, content: &str) -> Result<(), String> {
-        self.0.storage.save(content)
+        self.0
+            .storage
+            .save_ticketed_with(self.0.storage.ticket(), content, || {
+                self.save_project_definitions(content)
+            })
     }
 
     pub fn load_window_state(&self) -> Option<WindowBounds> {

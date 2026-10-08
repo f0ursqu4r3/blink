@@ -493,9 +493,24 @@ fn introspection_draft(draft: &Draft, body: &str) -> Draft {
 }
 
 pub fn schema_key(draft: &Draft, ctx: Option<RequestContext>) -> Option<String> {
+    schema_key_scoped(draft, ctx, None)
+}
+
+pub fn schema_key_scoped(
+    draft: &Draft,
+    ctx: Option<RequestContext>,
+    project: Option<&str>,
+) -> Option<String> {
     build_request(&introspection_draft(draft, "{__typename}"), ctx)
         .ok()
-        .map(|request| request.url)
+        .map(|request| scoped_key(&request.url, project))
+}
+
+fn scoped_key(url: &str, project: Option<&str>) -> String {
+    match project {
+        Some(project) => serde_json::to_string(&(project, url)).expect("schema scope"),
+        None => url.to_string(),
+    }
 }
 
 pub fn get_cached_schema(key: &str) -> Option<CachedSchema> {
@@ -534,8 +549,22 @@ where
     S: FnOnce(RequestInput) -> F,
     F: Future<Output = Result<ApiResponse, String>>,
 {
+    fetch_schema_with_scope(draft, ctx, None, send, release).await
+}
+
+async fn fetch_schema_with_scope<S, F>(
+    draft: &Draft,
+    ctx: Option<RequestContext<'_>>,
+    project: Option<&str>,
+    send: S,
+    release: impl FnOnce(&ApiResponse),
+) -> Result<Arc<GraphqlSchema>, String>
+where
+    S: FnOnce(RequestInput) -> F,
+    F: Future<Output = Result<ApiResponse, String>>,
+{
     let request = introspection_request(draft, ctx)?;
-    let url = request.url.clone();
+    let url = scoped_key(&request.url, project);
     let response = send(request).await?;
     let result = schema_from_response(&response);
     release(&response);
@@ -574,12 +603,25 @@ pub async fn fetch_schema(
     ctx: Option<RequestContext<'_>>,
     options: &TransportOptions,
 ) -> Result<Arc<GraphqlSchema>, String> {
+    fetch_schema_scoped(engine, draft, ctx, options, None).await
+}
+
+pub async fn fetch_schema_scoped(
+    engine: &Engine,
+    draft: &Draft,
+    ctx: Option<RequestContext<'_>>,
+    options: &TransportOptions,
+    project: Option<&str>,
+) -> Result<Arc<GraphqlSchema>, String> {
     let id = engine.next_id("schema");
     let options = options.clone();
-    fetch_schema_with(
+    fetch_schema_with_scope(
         draft,
         ctx,
-        |request| engine.send_request(request, options, id, None),
+        project,
+        |request| {
+            engine.send_request_scoped(request, options, id, None, project.map(str::to_string))
+        },
         |response| {
             if let Some(body_id) = &response.body_id {
                 engine.release_response(body_id);
@@ -1595,5 +1637,16 @@ mod tests {
         };
         let ctx = ctx();
         assert_eq!(schema_key(&d, Some((&ctx).into())).as_deref(), Some(URL));
+    }
+
+    #[test]
+    fn project_schema_keys_do_not_share_the_local_or_other_project_cache() {
+        let d = draft();
+        let context = ctx();
+        let local = schema_key(&d, Some((&context).into()));
+        let first = schema_key_scoped(&d, Some((&context).into()), Some("/project/a"));
+        let second = schema_key_scoped(&d, Some((&context).into()), Some("/project/b"));
+        assert_ne!(local, first);
+        assert_ne!(first, second);
     }
 }

@@ -6,7 +6,9 @@ use std::time::Duration;
 
 use blink_core::engine::PickedFile;
 use blink_core::graphql::{format_graphql, graphql_error_location};
-use blink_core::graphql_schema::{fetch_schema, format_schema_age, get_cached_schema, schema_key};
+use blink_core::graphql_schema::{
+    fetch_schema_scoped, format_schema_age, get_cached_schema, schema_key_scoped,
+};
 use blink_core::history::now_ms;
 use blink_core::interpolation::InterpolationContext;
 use blink_core::json::{format_json, json_error_location};
@@ -239,6 +241,7 @@ pub struct RequestEditor {
     text_body: Entity<TextareaState>,
     variables: Entity<EditorState>,
     checks: Entity<ChecksEditor>,
+    contract: Entity<crate::ui::contract_panel::ContractPanel>,
     token: Entity<TokenInput>,
     username: Entity<TokenInput>,
     password: Entity<TokenInput>,
@@ -260,6 +263,8 @@ impl RequestEditor {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
+        let contract = cx
+            .new(|cx| crate::ui::contract_panel::ContractPanel::new(store.clone(), session_id, cx));
         let draft = store
             .read(cx)
             .workspace
@@ -485,6 +490,7 @@ impl RequestEditor {
             text_body,
             variables,
             checks,
+            contract,
             token,
             username,
             password,
@@ -769,15 +775,20 @@ impl RequestEditor {
         };
         let engine = store.engine.clone();
         let options = transport_options(&store.workspace.preferences);
+        let project = store
+            .workspace
+            .project_for_group(session.group_id)
+            .map(|p| p.path.clone());
         self.schema_loading = true;
         self.schema_error.clear();
         cx.notify();
         cx.spawn(async move |this, cx| {
-            let result = fetch_schema(
+            let result = fetch_schema_scoped(
                 &engine,
                 &session.draft,
                 Some(RequestContext::Resolved(&ctx)),
                 &options,
+                project.as_deref(),
             )
             .await;
             this.update(cx, |this, cx| {
@@ -883,43 +894,45 @@ impl RequestEditor {
         cx: &mut Context<Self>,
     ) -> impl IntoElement {
         let colors = theme::colors(cx);
-        let tabs = tab_counts(draft, effective)
-            .into_iter()
-            .map(|(id, label, count)| {
-                let selected = id == active;
-                div()
-                    .id(SharedString::from(format!("request-tab-{id}")))
-                    .h(px(38.))
-                    .px_3()
-                    .flex()
-                    .items_center()
-                    .gap(px(7.))
-                    .border_b_1()
-                    .border_color(if selected {
-                        colors.primary
-                    } else {
-                        gpui_kit::transparent_black()
-                    })
-                    .text_size(px(12.))
-                    .text_color(if selected {
-                        colors.foreground
-                    } else {
-                        colors.muted_foreground
-                    })
-                    .hover(|this| this.text_color(colors.foreground).bg(colors.muted))
-                    .cursor_pointer()
-                    .child(label)
-                    .when(count > 0, |this| {
-                        this.child(
-                            div()
-                                .font_family(theme::MONO)
-                                .text_size(px(10.))
-                                .text_color(colors.muted_foreground)
-                                .child(count.to_string()),
-                        )
-                    })
-                    .on_click(cx.listener(move |this, _, _, cx| this.set_tab(id, cx)))
-            });
+        let mut counts = tab_counts(draft, effective).to_vec();
+        if draft.openapi_contract.is_some() {
+            counts.push(("contract", "Contract", 0));
+        }
+        let tabs = counts.into_iter().map(|(id, label, count)| {
+            let selected = id == active;
+            div()
+                .id(SharedString::from(format!("request-tab-{id}")))
+                .h(px(38.))
+                .px_3()
+                .flex()
+                .items_center()
+                .gap(px(7.))
+                .border_b_1()
+                .border_color(if selected {
+                    colors.primary
+                } else {
+                    gpui_kit::transparent_black()
+                })
+                .text_size(px(12.))
+                .text_color(if selected {
+                    colors.foreground
+                } else {
+                    colors.muted_foreground
+                })
+                .hover(|this| this.text_color(colors.foreground).bg(colors.muted))
+                .cursor_pointer()
+                .child(label)
+                .when(count > 0, |this| {
+                    this.child(
+                        div()
+                            .font_family(theme::MONO)
+                            .text_size(px(10.))
+                            .text_color(colors.muted_foreground)
+                            .child(count.to_string()),
+                    )
+                })
+                .on_click(cx.listener(move |this, _, _, cx| this.set_tab(id, cx)))
+        });
         div()
             .flex()
             .flex_none()
@@ -949,8 +962,13 @@ impl RequestEditor {
         let has_body = !draft.body.is_empty();
 
         // The schema of the current URL, and its age.
+        let workspace = &self.store.read(cx).workspace;
+        let project = workspace
+            .session(self.session_id)
+            .and_then(|s| workspace.project_for_group(s.group_id))
+            .map(|p| p.path.as_str());
         let key = (mode == BodyMode::Graphql)
-            .then(|| schema_key(draft, Some(RequestContext::Resolved(ctx))))
+            .then(|| schema_key_scoped(draft, Some(RequestContext::Resolved(ctx)), project))
             .flatten();
         if key != self.schema_key {
             self.schema_key = key.clone();
@@ -1372,6 +1390,19 @@ impl RequestEditor {
                     cx,
                 )),
             )
+            .child(
+                Button::new("manage-credentials")
+                    .ghost()
+                    .label("Secrets, OAuth and client certificates…")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        crate::ui::credentials_panel::open(
+                            this.store.clone(),
+                            this.session_id,
+                            window,
+                            cx,
+                        );
+                    })),
+            )
             .when(choice == AuthChoice::Inherit, |this| {
                 this.child(
                     div()
@@ -1572,7 +1603,7 @@ impl Render for RequestEditor {
         let effective = ctx.auth.clone();
         let source = inherited_source(draft, session.group_id, &groups);
         let tab = match session.view.request_tab.as_str() {
-            tab @ ("query" | "headers" | "body" | "auth" | "tests") => tab.to_string(),
+            tab @ ("query" | "headers" | "body" | "auth" | "tests" | "contract") => tab.to_string(),
             _ => "query".to_string(),
         };
         let content: AnyElement = match tab.as_str() {
@@ -1592,6 +1623,7 @@ impl Render for RequestEditor {
                 .render_auth(draft, &effective, source, cx)
                 .into_any_element(),
             "tests" => self.checks.clone().into_any_element(),
+            "contract" => self.contract.clone().into_any_element(),
             _ => div()
                 .flex()
                 .flex_col()

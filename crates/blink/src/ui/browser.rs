@@ -34,7 +34,7 @@ use gpui_kit::component::{
 use gpui_kit::prelude::FluentBuilder as _;
 use gpui_kit::*;
 
-use crate::actions::{CollapseAllGroups, ImportFile, OpenGroupSettings};
+use crate::actions::{CollapseAllGroups, ImportFile, OpenGroupSettings, OpenProjectFolder};
 use crate::store::Store;
 use crate::theme;
 use crate::ui::tabs::DraggedRequests;
@@ -340,6 +340,17 @@ impl Browser {
     /// Ask in a strip below the group row. Its requests and child groups
     /// move to its parent.
     pub(super) fn ask_delete_group(&mut self, id: u64, cx: &mut Context<Self>) {
+        if self
+            .store
+            .read(cx)
+            .workspace
+            .projects
+            .iter()
+            .any(|p| p.root_id == id)
+        {
+            self.store.update(cx, |s,cx| s.notify_import("Use Close Project to remove this root from the Browser. Its files stay on disk.".into(), false, String::new(), cx));
+            return;
+        }
         self.deleting_group = Some(id);
         cx.notify();
     }
@@ -659,6 +670,21 @@ impl Browser {
         let hit = self.hit.take();
         self.end_drag();
         if let Some(hit) = hit {
+            let workspace = &self.store.read(cx).workspace;
+            let allowed = match &hit.command {
+                TreeCommand::MoveRequests { ids, group_id, .. } => ids
+                    .iter()
+                    .all(|id| workspace.can_move_request(*id, *group_id)),
+                TreeCommand::MoveGroup {
+                    group_id,
+                    parent_id,
+                    ..
+                } => workspace.can_move_group(*group_id, *parent_id),
+            };
+            if !allowed {
+                self.store.update(cx, |s,cx| s.notify_import("Use Move to Another Project to transfer requests between storage locations.".into(), true, String::new(), cx));
+                return;
+            }
             update(&self.store, cx, |workspace| match hit.command {
                 TreeCommand::MoveRequests {
                     ids,
@@ -1111,6 +1137,8 @@ impl Browser {
         let focused = focus == Some(id);
         let open = rows::is_open(group, focus);
         let name: SharedString = group.name.clone().into();
+        let project = workspace.projects.iter().find(|p| p.root_id == id);
+        let project_error = self.store.read(cx).project_errors.get(&id).cloned();
         let key = format!("group-{id}");
         let dragged = self.drag_payload == Some(DragPayload::Group(id));
         let inside = self.inside_hit(&key);
@@ -1210,6 +1238,28 @@ impl Browser {
                 .font_family(theme::MONO)
                 .text_size(css(11.))
                 .child(div().min_w_0().truncate().child(name.clone()))
+                .when(project.is_some(), |this| {
+                    this.child(
+                        div()
+                            .id(("browser-project", id))
+                            .test_support()
+                            .text_size(css(9.))
+                            .text_color(colors.muted_foreground)
+                            .child("PROJECT"),
+                    )
+                })
+                .when_some(project_error, |this, error| {
+                    this.child(
+                        small_button(
+                            ("browser-project-error", id),
+                            IconName::CircleAlert,
+                            12.,
+                            cx,
+                        )
+                        .text_color(colors.destructive)
+                        .tooltip(error),
+                    )
+                })
                 .when(locked, |this| {
                     this.child(
                         Icon::new(IconName::Lock)
@@ -1580,6 +1630,14 @@ impl Browser {
                     }),
             )
             .child(
+                header_button("browser-open-project", IconName::FolderOpen, cx)
+                    .tooltip("Open Project Folder…")
+                    .accessibility_label("Open Project Folder")
+                    .on_click(|_, window, cx| {
+                        window.dispatch_action(Box::new(OpenProjectFolder), cx)
+                    }),
+            )
+            .child(
                 header_button("browser-import", IconName::Import, cx)
                     .tooltip("Import OpenAPI, Postman, or .http file…")
                     .accessibility_label("Import requests")
@@ -1625,6 +1683,39 @@ impl Browser {
                         .on_click(move |_, _, cx| {
                             update(&store, cx, |workspace| workspace.unfocus(true))
                         }),
+                ),
+        )
+    }
+
+    fn render_project_notice(&self, cx: &mut Context<Self>) -> Option<impl IntoElement + use<>> {
+        let store = self.store.read(cx);
+        let project = store
+            .workspace
+            .projects
+            .iter()
+            .find(|p| store.project_errors.contains_key(&p.root_id))?;
+        let root = project.root_id;
+        let error = store.project_errors.get(&root)?.clone();
+        let name = store.workspace.group(root)?.name.clone();
+        let s = self.store.clone();
+        let colors = theme::colors(cx);
+        Some(
+            div()
+                .id("browser-project-notice")
+                .test_support()
+                .px(css(10.))
+                .py(css(8.))
+                .border_b_1()
+                .border_color(colors.border)
+                .text_size(css(11.))
+                .text_color(colors.destructive)
+                .child(format!("{name}: {error}"))
+                .child(
+                    text_button("browser-project-reload", "Reload…", cx).on_click(
+                        move |_, window, cx| {
+                            crate::ui::projects::reload(s.clone(), root, window, cx)
+                        },
+                    ),
                 ),
         )
     }
@@ -1687,6 +1778,7 @@ impl Render for Browser {
             .when(!narrow, |this| this.rounded(css(8.)))
             .child(self.render_header(cx))
             .children(self.render_focus_bar(cx))
+            .children(self.render_project_notice(cx))
             .children(top_form)
             .child(
                 div()
